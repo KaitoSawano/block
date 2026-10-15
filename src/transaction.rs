@@ -12,6 +12,7 @@ pub struct Transaction {
     pub inputs: Vec<String>,
     pub public_key: String,
     pub signature: String,
+    pub output_script: String,
 }
 
 impl Transaction {
@@ -37,6 +38,7 @@ impl Transaction {
             inputs,
             public_key: String::new(),
             signature: String::new(),
+            output_script: String::new(),
         };
         tx.txid = tx.compute_txid();
         tx
@@ -53,6 +55,7 @@ impl Transaction {
             inputs: Vec::new(),
             public_key: String::new(),
             signature: String::new(),
+            output_script: String::new(),
         };
         tx.txid = tx.compute_txid();
         tx
@@ -69,6 +72,7 @@ impl Transaction {
             inputs: Vec::new(),
             public_key: String::new(),
             signature: String::new(),
+            output_script: String::new(),
         };
         tx.txid = tx.compute_txid();
         tx
@@ -76,19 +80,18 @@ impl Transaction {
 
     pub fn compute_txid(&self) -> String {
         let payload = format!(
-            "{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}",
             self.from,
             self.to,
             self.amount,
             self.fee,
             self.note,
-            self.inputs.join(",")
+            self.inputs.join(","),
+            self.output_script
         );
         sha3_256_hex(payload.as_bytes())
     }
 
-    /// Hanya menghitung txid. Validasi signature dilakukan di
-    /// `crate::validation::rule_signature`.
     pub fn sign(&mut self, secret_hex: &str) -> Result<(), String> {
         use crate::secp256k1::{keypair::KeyPair, sign};
 
@@ -105,14 +108,10 @@ impl Transaction {
         Ok(())
     }
 
-    /// Shortcut ke validasi signature.
-    /// Semua logika ada di `crate::validation::rule_signature`.
     pub fn verify_signature(&self) -> bool {
         crate::validation::rule_signature(self).is_ok()
     }
 
-    /// Shortcut ke validasi alamat.
-    /// Semua logika ada di `crate::validation::rule_address_matches_pubkey`.
     pub fn expected_address(&self) -> Option<String> {
         if self.public_key.is_empty() {
             return None;
@@ -121,8 +120,6 @@ impl Transaction {
         crate::secp256k1::address::address_from_public_key(&pk).ok()
     }
 
-    /// Shortcut ke validasi lengkap.
-    /// Butuh chain, karena ada aturan double-spend dan saldo.
     pub fn is_valid(&self) -> bool {
         crate::validation::rule_txid_consistent(self).is_ok()
             && crate::validation::rule_address_format(&self.from).is_ok()
@@ -132,6 +129,6 @@ impl Transaction {
             && crate::validation::rule_note_length(self).is_ok()
             && crate::validation::rule_input_count(self).is_ok()
             && crate::validation::rule_signature(self).is_ok()
-            && crate::validation::rule_address_matches_pubkey(self).is_ok()
+            && crate::validation::rule_address_match_pubkey(self).is_ok()
     }
 }
