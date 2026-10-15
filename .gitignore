@@ -1,0 +1,5 @@
+/target
+Cargo.lock
+*.log
+chain.json
+wallet.dat
