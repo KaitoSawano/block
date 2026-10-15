@@ -1,4 +1,5 @@
 use crate::blockchain::{self, Blockchain};
+use crate::pow;
 use crate::transaction::Transaction;
 use crate::utils::{format_datetime, now_millis, sha3_256_hex};
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,7 @@ pub struct Block {
     pub previous_hash: String,
     pub hash: String,
     pub nonce: u64,
+    pub nbits: u32,
     pub reward: u64,
     pub coinbase_txid: String,
     pub transactions: Vec<Transaction>,
@@ -22,22 +24,23 @@ impl Block {
         index: u64,
         previous_hash: String,
         reward: u64,
+        nbits: u32,
         transactions: Vec<Transaction>,
     ) -> Self {
-        Self::new_for(index, previous_hash, reward, transactions, String::new())
+        Self::new_for(index, previous_hash, reward, nbits, transactions, String::new())
     }
 
     pub fn new_for(
         index: u64,
         previous_hash: String,
         reward: u64,
+        nbits: u32,
         transactions: Vec<Transaction>,
         mined_for: String,
     ) -> Self {
         let ts = now_millis();
-        let coinbase_txid = sha3_256_hex(
-            format!("{}|{}|{}", index, mined_for, ts).as_bytes(),
-        );
+        let coinbase_txid =
+            sha3_256_hex(format!("{}|{}|{}", index, mined_for, ts).as_bytes());
         let mut b = Block {
             index,
             timestamp: ts,
@@ -46,6 +49,7 @@ impl Block {
             previous_hash,
             hash: String::new(),
             nonce: 0,
+            nbits,
             reward,
             coinbase_txid,
             transactions,
@@ -65,6 +69,7 @@ impl Block {
             previous_hash: "0".repeat(64),
             hash: String::new(),
             nonce: 0,
+            nbits: pow::NBITS_ONE,
             reward: blockchain::initial_reward(),
             coinbase_txid,
             transactions: vec![
@@ -78,13 +83,14 @@ impl Block {
 
     pub fn calculate_hash(&self) -> String {
         let mut payload = format!(
-            "{}{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}{}",
             self.index,
             self.timestamp,
             self.mined_at,
             self.mined_for,
             self.previous_hash,
             self.nonce,
+            self.nbits,
             self.reward,
             self.coinbase_txid
         );
