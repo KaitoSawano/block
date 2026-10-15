@@ -12,6 +12,7 @@ pub struct Wallet {
 
 impl Wallet {
     pub fn new() -> Self {
+        println!("[wallet] new: membuat wallet ZENAC dengan secret acak 32 byte.");
         let mut secret_bytes = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut secret_bytes);
         let secret = hex::encode(secret_bytes);
@@ -29,12 +30,14 @@ impl Wallet {
     }
 
     pub fn save(&self, path: &str) -> std::io::Result<()> {
+        println!("[wallet] save: menulis wallet ke berkas JSON.");
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         std::fs::write(path, json)
     }
 
     pub fn load(path: &str) -> std::io::Result<Self> {
+        println!("[wallet] load: membaca wallet dari berkas JSON.");
         let data = std::fs::read_to_string(path)?;
         let w: Wallet = serde_json::from_str(&data)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
