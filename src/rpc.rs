@@ -8,10 +8,12 @@ use crate::utils::now_millis;
 use crate::wallet::Wallet;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 
 pub const RPC_ADDR: &str = "127.0.0.1:8332";
+pub const COINBASE_MATURITY: u64 = 100;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RpcRequest {
@@ -28,28 +30,16 @@ pub struct RpcResponse {
 
 impl RpcResponse {
     pub fn ok(result: Value) -> Self {
-        RpcResponse {
-            ok: true,
-            result,
-            error: String::new(),
-        }
+        RpcResponse { ok: true, result, error: String::new() }
     }
-
     pub fn err(msg: &str) -> Self {
-        RpcResponse {
-            ok: false,
-            result: Value::Null,
-            error: msg.to_string(),
-        }
+        RpcResponse { ok: false, result: Value::Null, error: msg.to_string() }
     }
 }
 
 pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     let mut stream = TcpStream::connect(RPC_ADDR)?;
-    let req = RpcRequest {
-        method: method.to_string(),
-        params,
-    };
+    let req = RpcRequest { method: method.to_string(), params };
     let line = serde_json::to_string(&req).unwrap();
     stream.write_all(line.as_bytes())?;
     stream.write_all(b"\n")?;
@@ -87,9 +77,7 @@ impl RpcServer {
 
         for incoming in listener.incoming() {
             match incoming {
-                Ok(stream) => {
-                    let _ = self.handle(stream);
-                }
+                Ok(stream) => { let _ = self.handle(stream); }
                 Err(e) => println!("[rpc] koneksi gagal: {}", e),
             }
         }
@@ -215,41 +203,66 @@ impl RpcServer {
     fn m_getbalance(&self, req: &RpcRequest) -> RpcResponse {
         let addr = match req.params.first().and_then(|v| v.as_str()) {
             Some(a) => a.to_string(),
-            None => {
-                let w = Wallet::load_default().ok();
-                match w {
-                    Some(w) => w.address,
-                    None => return RpcResponse::err("wallet tidak ada"),
-                }
-            }
+            None => match Wallet::load_default() {
+                Ok(w) => w.address,
+                Err(_) => return RpcResponse::err("wallet tidak ada"),
+            },
         };
 
-        let mut received: u64 = 0;
-        let mut sent: u64 = 0;
+        // 1. Kumpulkan semua output yang sudah dibelanjakan
+        let mut spent: HashSet<String> = HashSet::new();
         for block in &self.chain.chain {
             for tx in &block.transactions {
+                for input in &tx.inputs {
+                    spent.insert(input.clone());
+                }
+            }
+        }
+
+        let current_height = self.chain.height();
+
+        // 2. Jumlahkan UTXO milik addr + reward blok yang matang
+        let mut mature: u64 = 0;
+        let mut immature: u64 = 0;
+        let mut received: u64 = 0;
+
+        for block in &self.chain.chain {
+            // UTXO transaksi biasa
+            for tx in &block.transactions {
                 if tx.to == addr {
-                    received += tx.amount;
+                    let outpoint = format!("{}:0", tx.txid);
+                    if !spent.contains(&outpoint) {
+                        received += tx.amount;
+                        if tx.from == "COINBASE"
+                            || tx.from == "NETWORK"
+                            || tx.from == "GENESIS"
+                        {
+                            mature += tx.amount;
+                        } else {
+                            mature += tx.amount;
+                        }
+                    }
                 }
-                if tx.from == addr {
-                    sent += tx.amount + tx.fee;
+            }
+
+            // Reward blok (coinbase) untuk alamat mined_for
+            if block.mined_for == addr && block.reward > 0 {
+                if block.index + COINBASE_MATURITY <= current_height {
+                    mature += block.reward;
+                } else {
+                    immature += block.reward;
                 }
             }
         }
-        for tx in &self.chain.mempool {
-            if tx.to == addr {
-                received += tx.amount;
-            }
-            if tx.from == addr {
-                sent += tx.amount + tx.fee;
-            }
-        }
-        let balance = received.saturating_sub(sent);
+
+        let balance = mature;
         RpcResponse::ok(json!({
             "address": addr,
             "received": received,
-            "sent": sent,
             "balance": balance,
+            "mature": mature,
+            "immature": immature,
+            "spent_outputs": spent.len(),
         }))
     }
 
@@ -281,13 +294,14 @@ impl RpcServer {
                 crate::blockchain::satoshi() / 100,
                 0,
             ));
-            txs.push(Transaction {
-                from: "MEMPOOL".into(),
-                to: "CreateNewBlock".into(),
-                amount: 0,
-                fee: 0,
-                note: format!("height={} target={}", next_index, addr),
-            });
+            txs.push(Transaction::new_with_inputs(
+                "MEMPOOL",
+                "CreateNewBlock",
+                0,
+                0,
+                Vec::new(),
+                format!("height={} target={}", next_index, addr),
+            ));
 
             let mut block =
                 crate::block::Block::new_for(next_index, prev.hash.clone(), reward, txs, addr.clone());
@@ -377,11 +391,7 @@ fn m_getnewwallet() -> RpcResponse {
 fn m_getaddtowallet() -> RpcResponse {
     let w = match Wallet::load_default() {
         Ok(w) => w,
-        Err(_) => {
-            return RpcResponse::err(
-                "wallet tidak ditemukan, jalankan getnewwallet atau dumpprivkey",
-            )
-        }
+        Err(_) => return RpcResponse::err("wallet tidak ditemukan"),
     };
     let cfg = Config {
         mining_address: w.address.clone(),
