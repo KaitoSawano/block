@@ -1,4 +1,3 @@
-use serde_json::json;
 use zenachain::block::Block;
 use zenachain::rpc;
 use zenachain::transaction::Transaction;
@@ -30,12 +29,18 @@ fn main() {
         let mempool: Vec<Transaction> = serde_json::from_value(template["mempool"].clone())
             .unwrap_or_default();
 
-        println!("[miner] template height={} difficulty={} reward={}", height, difficulty, reward);
+        println!(
+            "[miner] template height={} difficulty={} reward={}",
+            height, difficulty, reward
+        );
 
         let mut block = Block::new(height, previous_hash, reward, mempool);
         zenachain::pow::mine(&mut block, difficulty);
 
-        println!("[miner] blok ditambang nonce={} hash={}", block.nonce, block.hash);
+        println!(
+            "[miner] blok ditambang nonce={} hash={}",
+            block.nonce, block.hash
+        );
 
         let block_json = serde_json::to_value(&block).unwrap();
         match rpc::call("submitblock", vec![block_json]) {
