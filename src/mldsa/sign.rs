@@ -1,5 +1,4 @@
-use dcrypt::api::Signature;
-use dcrypt::sign::Dilithium3;
+use ml_dsa::{MlDsa65, Signer, SigningKey};
 
 use super::SIGNATURE_SIZE;
 
@@ -13,15 +12,18 @@ pub fn sign(secret_key: &[u8], message: &[u8]) -> Result<Vec<u8>, String> {
         ));
     }
 
-    let signature = Dilithium3::sign(message, secret_key)
-        .map_err(|e| format!("sign gagal: {:?}", e))?;
+    let sk = SigningKey::<MlDsa65>::decode(secret_key)
+        .map_err(|e| format!("secret key tidak valid: {:?}", e))?;
 
-    if signature.len() != SIGNATURE_SIZE {
+    let signature = sk.sign(message);
+    let sig_bytes = signature.encode().to_vec();
+
+    if sig_bytes.len() != SIGNATURE_SIZE {
         return Err(format!(
             "signature size tidak sesuai: {}",
-            signature.len()
+            sig_bytes.len()
         ));
     }
 
-    Ok(signature)
+    Ok(sig_bytes)
 }
