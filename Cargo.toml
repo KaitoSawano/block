@@ -2,7 +2,7 @@
 name = "zenachain"
 version = "0.1.0"
 edition = "2021"
-description = "ZenaChain (ZENAC) node and CLI"
+description = "ZenaChain (ZENAC) node, CLI, and miner"
 license = "MIT"
 
 [lib]
@@ -16,6 +16,10 @@ path = "src/main.rs"
 [[bin]]
 name = "zenachaind"
 path = "src/bin/zenachaind.rs"
+
+[[bin]]
+name = "zenachain-miner"
+path = "src/bin/zenachain-miner.rs"
 
 [dependencies]
 sha3 = "0.10"
