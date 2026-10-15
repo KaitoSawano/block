@@ -1,31 +1,110 @@
+use crate::block::Block;
 use crate::blockchain::Blockchain;
-use crate::wallet::Wallet;
+use crate::datadir;
+use crate::mempool::Mempool;
 use std::io::{Error, ErrorKind};
 
-pub const CHAIN_FILE: &str = "chain.json";
-pub const WALLET_FILE: &str = "wallet.json";
+pub const BLOCKS_PER_FILE: usize = 1000;
 
-pub fn save_chain(chain: &Blockchain, path: &str) -> std::io::Result<()> {
-    println!("[storage] save_chain: menyimpan chain ke berkas JSON.");
-    let json = serde_json::to_string_pretty(chain)
+pub fn save_chain(chain: &Blockchain) -> std::io::Result<()> {
+    println!("[storage] save_chain: menyimpan chain ke .chain/blocks dan .chain/chainstate.");
+    datadir::ensure_dirs()?;
+    save_blocks(chain)?;
+    save_chainstate(chain)?;
+    save_mempool(&chain.mempool)?;
+    Ok(())
+}
+
+pub fn load_chain() -> std::io::Result<Blockchain> {
+    println!("[storage] load_chain: memuat chain dari .chain/blocks dan .chain/chainstate.");
+    if !datadir::chainstate_file().exists() {
+        return Ok(Blockchain::new());
+    }
+    let state = load_chainstate()?;
+    let blocks = load_blocks(state.total_blocks)?;
+    if blocks.is_empty() {
+        return Ok(Blockchain::new());
+    }
+    let mempool = load_mempool().unwrap_or_default();
+    Ok(Blockchain {
+        chain: blocks,
+        difficulty: state.difficulty,
+        mempool,
+    })
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct ChainState {
+    pub total_blocks: u64,
+    pub difficulty: usize,
+    pub updated_at: u128,
+}
+
+pub fn save_chainstate(chain: &Blockchain) -> std::io::Result<()> {
+    let state = ChainState {
+        total_blocks: chain.chain.len() as u64,
+        difficulty: chain.difficulty,
+        updated_at: crate::utils::now_millis(),
+    };
+    let json = serde_json::to_string_pretty(&state)
         .map_err(|e| Error::new(ErrorKind::Other, e))?;
-    std::fs::write(path, json)
+    std::fs::write(datadir::chainstate_file(), json)
 }
 
-pub fn load_chain(path: &str) -> std::io::Result<Blockchain> {
-    println!("[storage] load_chain: memuat chain dari berkas JSON.");
-    let data = std::fs::read_to_string(path)?;
-    let chain: Blockchain = serde_json::from_str(&data)
+pub fn load_chainstate() -> std::io::Result<ChainState> {
+    let data = std::fs::read_to_string(datadir::chainstate_file())?;
+    let s: ChainState = serde_json::from_str(&data)
         .map_err(|e| Error::new(ErrorKind::Other, e))?;
-    Ok(chain)
+    Ok(s)
 }
 
-pub fn save_wallet(wallet: &Wallet, path: &str) -> std::io::Result<()> {
-    println!("[storage] save_wallet: menyimpan wallet ke berkas JSON.");
-    wallet.save(path)
+pub fn save_blocks(chain: &Blockchain) -> std::io::Result<()> {
+    let total = chain.chain.len();
+    let mut file_index = 0u32;
+    let mut written = 0usize;
+    while written < total {
+        let end = (written + BLOCKS_PER_FILE).min(total);
+        let slice = &chain.chain[written..end];
+        let path = datadir::block_file(file_index);
+        let json = serde_json::to_string_pretty(slice)
+            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+        std::fs::write(path, json)?;
+        written = end;
+        file_index += 1;
+    }
+    Ok(())
 }
 
-pub fn load_wallet(path: &str) -> std::io::Result<Wallet> {
-    println!("[storage] load_wallet: memuat wallet dari berkas JSON.");
-    Wallet::load(path)
+pub fn load_blocks(_total_blocks: u64) -> std::io::Result<Vec<Block>> {
+    let mut all: Vec<Block> = Vec::new();
+    let mut i = 0u32;
+    loop {
+        let path = datadir::block_file(i);
+        if !path.exists() {
+            break;
+        }
+        let data = std::fs::read_to_string(&path)?;
+        let mut chunk: Vec<Block> = serde_json::from_str(&data)
+            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+        all.append(&mut chunk);
+        i += 1;
+    }
+    Ok(all)
+}
+
+pub fn save_mempool(mempool: &[crate::transaction::Transaction]) -> std::io::Result<()> {
+    let json = serde_json::to_string_pretty(mempool)
+        .map_err(|e| Error::new(ErrorKind::Other, e))?;
+    std::fs::write(datadir::mempool_path(), json)
+}
+
+pub fn load_mempool() -> std::io::Result<Vec<crate::transaction::Transaction>> {
+    let data = std::fs::read_to_string(datadir::mempool_path())?;
+    let v: Vec<crate::transaction::Transaction> = serde_json::from_str(&data)
+        .map_err(|e| Error::new(ErrorKind::Other, e))?;
+    Ok(v)
+}
+
+pub fn save_mempool_struct(mempool: &Mempool) -> std::io::Result<()> {
+    save_mempool(&mempool.txs)
 }
