@@ -1,4 +1,4 @@
-use crate::blockchain::Blockchain;
+use crate::blockchain::{self, Blockchain};
 use crate::config::Config;
 use crate::datadir;
 use crate::pow;
@@ -111,6 +111,7 @@ impl RpcServer {
         println!("[rpc] dispatch: method={}", req.method);
         match req.method.as_str() {
             "getinfo" => self.m_getinfo(),
+            "getcheckpoints" => m_getcheckpoints(),
             "getblocktemplate" => self.m_getblocktemplate(),
             "submitblock" => self.m_submitblock(req),
             "getbalance" => self.m_getbalance(req),
@@ -128,12 +129,12 @@ impl RpcServer {
     fn m_getinfo(&self) -> RpcResponse {
         let c = &self.chain;
         let circulating = c.circulating_supply();
-        let max_supply = crate::blockchain::max_supply();
+        let max_supply = blockchain::max_supply();
         RpcResponse::ok(json!({
-            "coin_name": crate::blockchain::coin_name(),
-            "symbol": crate::blockchain::symbol(),
-            "protocol_version": crate::blockchain::protocol_version(),
-            "hash_algo": crate::blockchain::hash_algo(),
+            "coin_name": blockchain::coin_name(),
+            "symbol": blockchain::symbol(),
+            "protocol_version": blockchain::protocol_version(),
+            "hash_algo": blockchain::hash_algo(),
             "height": c.height(),
             "chain_len": c.chain.len(),
             "difficulty": c.difficulty,
@@ -143,6 +144,7 @@ impl RpcServer {
             "until_halving": c.blocks_until_halving(),
             "mempool_len": c.mempool.len(),
             "valid": c.is_valid(),
+            "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
             "datadir": datadir::as_str(&datadir::datadir()),
         }))
     }
@@ -185,6 +187,10 @@ impl RpcServer {
 
         if block.reward != Blockchain::calculate_reward(block.index) {
             return RpcResponse::err("reward tidak sesuai era halving");
+        }
+
+        if !blockchain::checkpoint::verify(block.index, &block.hash) {
+            return RpcResponse::err("blok melanggar checkpoint");
         }
 
         self.chain.chain.push(block.clone());
@@ -282,7 +288,7 @@ impl RpcServer {
             let reward = Blockchain::calculate_reward(next_index);
 
             if self.chain.circulating_supply().saturating_add(reward)
-                > crate::blockchain::max_supply()
+                > blockchain::max_supply()
             {
                 return RpcResponse::err("max supply reached");
             }
@@ -291,7 +297,7 @@ impl RpcServer {
             txs.push(Transaction::new(
                 "NETWORK",
                 &addr,
-                crate::blockchain::satoshi() / 100,
+                blockchain::satoshi() / 100,
                 0,
             ));
             txs.push(Transaction::new_with_inputs(
@@ -329,6 +335,19 @@ impl RpcServer {
 
         RpcResponse::ok(json!(hashes))
     }
+}
+
+fn m_getcheckpoints() -> RpcResponse {
+    let items: Vec<Value> = blockchain::checkpoint::CHECKPOINTS
+        .iter()
+        .map(|c| {
+            json!({
+                "height": c.height,
+                "hash": c.hash,
+            })
+        })
+        .collect();
+    RpcResponse::ok(json!(items))
 }
 
 fn m_getwallet() -> RpcResponse {
@@ -398,7 +417,7 @@ fn m_getaddtowallet() -> RpcResponse {
     let cfg = Config {
         mining_address: w.address.clone(),
         created_at: now_millis(),
-        protocol_version: crate::blockchain::protocol_version(),
+        protocol_version: blockchain::protocol_version(),
         network: "main".to_string(),
     };
     match cfg.save_default() {
@@ -418,7 +437,7 @@ fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
     let cfg = Config {
         mining_address: addr.clone(),
         created_at: now_millis(),
-        protocol_version: crate::blockchain::protocol_version(),
+        protocol_version: blockchain::protocol_version(),
         network: "main".to_string(),
     };
     match cfg.save_default() {
