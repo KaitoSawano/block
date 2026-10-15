@@ -24,6 +24,20 @@ fn main() {
             }
             rpc::call_and_print("getaddtoaddress", vec![json!(args[2])]);
         }
+        "generatetoaddress" => {
+            if args.len() < 4 {
+                println!("pemakaian: zenachain generatetoaddress <jumlah> \"<alamat>\"");
+                return;
+            }
+            let n: u64 = match args[2].parse() {
+                Ok(v) => v,
+                Err(_) => {
+                    println!("jumlah blok tidak valid");
+                    return;
+                }
+            };
+            rpc::call_and_print("generatetoaddress", vec![json!(n), json!(args[3])]);
+        }
         "getbalance" => {
             let params = if args.len() >= 3 {
                 vec![json!(args[2])]
@@ -56,6 +70,7 @@ fn print_help() {
     println!("  zenachain getnewwallet                  buat dompet baru (timpa yang lama)");
     println!("  zenachain getaddtowallet                pakai alamat wallet sebagai tujuan mining");
     println!("  zenachain getaddtoaddress \"<alamat>\"    set alamat mining manual");
+    println!("  zenachain generatetoaddress <n> \"<alamat>\"  mining n blok langsung ke alamat");
     println!("  zenachain getprivkey                    tampilkan private key wallet");
     println!("  zenachain dumpprivkey \"<privkey>\"       pulihkan dompet dari private key");
     println!("  zenachain getbalance [address]          hitung saldo wallet");
