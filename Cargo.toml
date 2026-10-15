@@ -2,8 +2,18 @@
 name = "zenachain"
 version = "0.1.0"
 edition = "2021"
-authors = ["ZenaChain Team"]
-description = "ZenaChain (ZENAC) - PoW cryptocurrency with SHA3-256"
+
+[lib]
+name = "zenachain"
+path = "src/lib.rs"
+
+[[bin]]
+name = "zenachain"
+path = "src/main.rs"
+
+[[bin]]
+name = "zenachaind"
+path = "src/bin/zenachaind.rs"
 
 [dependencies]
 sha3 = "0.10"
