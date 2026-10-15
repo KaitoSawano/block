@@ -99,16 +99,31 @@ pub fn max_tx_per_block() -> usize { validation::MAX_TX_PER_BLOCK }
 pub fn pow_limit() -> &'static str { pow::POW_LIMIT }
 pub fn genesis_nbits() -> u32 { pow::GENESIS_NBITS }
 
-/// Fingerprint konsensus. Mencakup SEMUA parameter yang dipakai
-/// di genesis block. Kalau ada satu saja yang diubah, fingerprint
-/// berubah, genesis hash berubah, dan seluruh chain jadi tidak valid.
+/// Fingerprint konsensus.
+///
+/// HANYA mencakup parameter yang mengubah aturan validasi chain.
+/// TIDAK mencakup nama coin, simbol, versi software, fee default,
+/// atau nilai tampilan lain.
+///
+/// Kalau ada parameter di sini yang diubah, genesis hash berubah,
+/// dan seluruh chain lama menjadi tidak valid. Node harus mengunduh
+/// binary baru, lalu menambang genesis baru.
 pub fn consensus_fingerprint() -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-        spec::COIN_NAME,
-        spec::SYMBOL,
-        spec::VERSION,
-        spec::PROTOCOL_VERSION,
+        // Algoritma dan satuan
+        "{}|{}|{}|{}|{}|{}",
+        spec::HASH_ALGO,
+        spec::SIGNATURE_ALGO,
+        spec::DECIMALS,
+        spec::SATOSHI,
+        spec::MAX_SUPPLY_ZENAC,
+        spec::MAX_SUPPLY,
+        // Reward dan halving
+        // (INITIAL_REWARD_ZENAC, INITIAL_REWARD, SUBSIDY_HALVING_INTERVAL, MAX_HALVINGS)
+        // sudah termasuk di bawah
+    );
+    let payload = format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
         spec::DECIMALS,
@@ -130,10 +145,19 @@ pub fn consensus_fingerprint() -> String {
         pow::GENESIS_NBITS,
         crate::block::BLOCK_VERSION,
     );
+    let payload = format!(
+        "{}|{}|{}|{}|{}|{}",
+        payload,
+        validation::COINBASE_MATURITY,
+        validation::ADDRESS_PREFIX,
+        validation::ADDRESS_HEX_LEN,
+        validation::MAX_TX_PER_BLOCK,
+        validation::MAX_INPUTS_PER_TX,
+        validation::MAX_NOTE_LEN,
+    );
     sha3_256_hex(payload.as_bytes())
 }
 
-/// Txid genesis coinbase. Dihitung dari fingerprint dan timestamp.
 pub fn genesis_coinbase_txid() -> String {
     let fp = consensus_fingerprint();
     let payload = format!(
