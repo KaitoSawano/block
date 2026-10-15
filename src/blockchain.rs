@@ -31,6 +31,15 @@ mod spec {
     pub const GENESIS_MESSAGE: &str = "ZenaChain Genesis - 2026";
     pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
     pub const GENESIS_TIMESTAMP: u128 = 1_792_012_800_000;
+
+    /// Finality: reorganisasi lebih dalam dari N blok ditolak.
+    pub const FINALITY_DEPTH: u64 = 100;
+
+    /// Batas maksimum ukuran blok (jumlah transaksi).
+    pub const MAX_TX_PER_BLOCK: usize = 10_000;
+
+    /// Batas maksimum timestamp blok di masa depan (detik).
+    pub const MAX_FUTURE_DRIFT_SECS: u64 = 7200;
 }
 
 pub mod checkpoint {
@@ -44,7 +53,7 @@ pub mod checkpoint {
             height: 0,
             hash: "0000000000000000000000000000000000000000000000000000000000000000",
         },
-        // Tambahkan entri berikut setiap chain mencapai height penting.
+        // Tambah checkpoint di height penting setelah chain stabil.
         // Gaya Bitcoin: hash 64 hex tanpa prefix.
         //
         // Checkpoint {
@@ -64,12 +73,16 @@ pub mod checkpoint {
         CHECKPOINTS.iter().any(|c| c.height == height)
     }
 
-    /// Return true bila tidak ada checkpoint di height itu, atau bila cocok.
     pub fn verify(height: u64, hash: &str) -> bool {
         match find(height) {
             Some(expected) => expected == hash,
             None => true,
         }
+    }
+
+    /// Height checkpoint tertinggi yang terdaftar.
+    pub fn highest() -> u64 {
+        CHECKPOINTS.iter().map(|c| c.height).max().unwrap_or(0)
     }
 }
 
@@ -94,6 +107,8 @@ pub fn max_difficulty() -> usize { spec::MAX_DIFFICULTY }
 pub fn genesis_message() -> &'static str { spec::GENESIS_MESSAGE }
 pub fn genesis_secret() -> &'static str { spec::GENESIS_SECRET }
 pub fn genesis_timestamp() -> u128 { spec::GENESIS_TIMESTAMP }
+pub fn finality_depth() -> u64 { spec::FINALITY_DEPTH }
+pub fn max_tx_per_block() -> usize { spec::MAX_TX_PER_BLOCK }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blockchain {
@@ -139,12 +154,38 @@ impl Blockchain {
     }
 
     pub fn add_transaction(&mut self, tx: Transaction) -> bool {
-        if tx.is_valid() {
-            self.mempool.push(tx);
-            true
-        } else {
-            false
+        if !tx.is_valid() {
+            return false;
         }
+        if self.mempool.len() >= spec::MAX_TX_PER_BLOCK {
+            return false;
+        }
+        self.mempool.push(tx);
+        true
+    }
+
+    /// Cek apakah height tertentu sudah final (terkunci).
+    pub fn is_finalized(&self, height: u64) -> bool {
+        let tip = self.height();
+        if tip < spec::FINALITY_DEPTH {
+            // Belum cukup dalam, anggap belum final kecuali di bawah checkpoint tertinggi.
+            height <= checkpoint::highest()
+        } else {
+            height <= tip.saturating_sub(spec::FINALITY_DEPTH)
+                || height <= checkpoint::highest()
+        }
+    }
+
+    /// Cek apakah reorganisasi ke height tertentu masih diizinkan.
+    pub fn allow_reorg_to(&self, fork_height: u64) -> bool {
+        if fork_height <= checkpoint::highest() {
+            return false;
+        }
+        let tip = self.height();
+        if tip.saturating_sub(fork_height) >= spec::FINALITY_DEPTH {
+            return false;
+        }
+        true
     }
 
     pub fn mine_pending(&mut self) -> Result<u64, String> {
@@ -196,31 +237,77 @@ impl Blockchain {
         }
     }
 
+    /// Validasi ketat seluruh chain.
     pub fn is_valid(&self) -> bool {
+        if self.chain.is_empty() {
+            return false;
+        }
+
+        // Genesis wajib index 0 dan previous_hash nol.
+        let genesis = &self.chain[0];
+        if genesis.index != 0 {
+            return false;
+        }
+        if genesis.previous_hash != "0".repeat(64) {
+            return false;
+        }
+
         for i in 1..self.chain.len() {
             let cur = &self.chain[i];
             let prev = &self.chain[i - 1];
 
+            // Urutan index harus rapat: cur.index = prev.index + 1.
+            if cur.index != prev.index + 1 {
+                return false;
+            }
+
+            // Hash harus konsisten dengan isi blok.
             if cur.hash != cur.calculate_hash() {
                 return false;
             }
+
+            // Link ke blok sebelumnya.
             if cur.previous_hash != prev.hash {
                 return false;
             }
+
+            // Reward harus sesuai era halving.
             if cur.reward != Self::calculate_reward(cur.index) {
                 return false;
             }
+
+            // PoW harus memenuhi target.
             if !pow::hash_meets_target(&cur.hash, self.difficulty) {
                 return false;
             }
+
+            // Checkpoint tidak boleh dilanggar.
             if !checkpoint::verify(cur.index, &cur.hash) {
                 return false;
             }
+
+            // Ukuran blok dibatasi.
+            if cur.transactions.len() > spec::MAX_TX_PER_BLOCK {
+                return false;
+            }
+
+            // Timestamp tidak boleh mundur.
+            if cur.timestamp < prev.timestamp {
+                return false;
+            }
+
+            // Timestamp tidak boleh terlalu jauh di masa depan.
+            let now_ms = crate::utils::now_millis() as u64;
+            let drift_ms = spec::MAX_FUTURE_DRIFT_SECS * 1000;
+            if cur.timestamp > (now_ms as u128).saturating_add(drift_ms as u128) {
+                return false;
+            }
         }
+
         true
     }
 
-    /// Validasi chain eksternal terhadap checkpoint.
+    /// Validasi chain eksternal terhadap checkpoint dan finality.
     pub fn check_against_checkpoints(chain: &[Block]) -> bool {
         for block in chain {
             if !checkpoint::verify(block.index, &block.hash) {
