@@ -11,7 +11,6 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn new(from: &str, to: &str, amount: u64, fee: u64) -> Self {
-        println!("[transaction] new: membuat transaksi biasa antar dua alamat.");
         Transaction {
             from: from.into(),
             to: to.into(),
@@ -22,7 +21,6 @@ impl Transaction {
     }
 
     pub fn coinbase(note: String) -> Self {
-        println!("[transaction] coinbase: transaksi khusus penerbitan hadiah blok.");
         Transaction {
             from: "COINBASE".into(),
             to: "MINER".into(),
@@ -33,7 +31,6 @@ impl Transaction {
     }
 
     pub fn secret(note: String) -> Self {
-        println!("[transaction] secret: transaksi khusus penyimpanan pesan genesis.");
         Transaction {
             from: "GENESIS".into(),
             to: "ZENAC".into(),
@@ -44,7 +41,6 @@ impl Transaction {
     }
 
     pub fn is_valid(&self) -> bool {
-        println!("[transaction] is_valid: memeriksa kelengkapan field transaksi.");
         !self.to.is_empty() && !self.from.is_empty()
     }
 }
