@@ -11,6 +11,7 @@ fn main() {
 
     match args[1].as_str() {
         "help" => print_help(),
+        "stop" => rpc::call_and_print("stop", vec![]),
         "getinfo" => rpc::call_and_print("getinfo", vec![]),
         "getblockchaininfo" => rpc::call_and_print("getblockchaininfo", vec![]),
         "getcheckpoints" => rpc::call_and_print("getcheckpoints", vec![]),
@@ -98,6 +99,7 @@ fn print_help() {
     println!("ZenaChain CLI");
     println!("pemakaian:");
     println!("  zenachain help                                tampilkan bantuan ini");
+    println!("  zenachain stop                                simpan chain dan hentikan node");
     println!("  zenachain getinfo                             informasi jaringan");
     println!("  zenachain getblockchaininfo                   informasi blockchain");
     println!("  zenachain getcheckpoints                      daftar checkpoint aktif");
