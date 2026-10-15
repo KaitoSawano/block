@@ -14,7 +14,7 @@ use std::net::{TcpListener, TcpStream};
 
 pub const RPC_ADDR: &str = "127.0.0.1:8332";
 pub const COINBASE_MATURITY: u64 = 100;
-pub const DEFAULT_FEE_SATOSHI: u64 = 1_000_000; // 0.01 ZENAC
+pub const DEFAULT_FEE_SATOSHI: u64 = 100_000; // 0.001 ZENAC
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RpcRequest {
@@ -446,7 +446,6 @@ impl RpcServer {
 
     /// Kirim koin dari wallet ke alamat tujuan.
     fn m_sendtoaddress(&mut self, req: &RpcRequest) -> RpcResponse {
-        // Params: jumlah (string atau number, dalam ZENAC), alamat tujuan
         if req.params.len() < 2 {
             return RpcResponse::err("sendtoaddress butuh jumlah dan alamat");
         }
@@ -486,7 +485,6 @@ impl RpcServer {
             return RpcResponse::err("alamat tujuan sama dengan alamat pengirim");
         }
 
-        // Bangun transaksi
         let mut tx = Transaction::new(
             &wallet.address,
             &to,
@@ -498,12 +496,10 @@ impl RpcServer {
             return RpcResponse::err(&format!("gagal tanda tangan: {}", e));
         }
 
-        // Validasi
         if !tx.is_valid() {
             return RpcResponse::err("transaksi tidak valid");
         }
 
-        // Cek saldo
         let sender_balance = self.balance_for(&wallet.address);
         let need = amount_sat.saturating_add(DEFAULT_FEE_SATOSHI);
         if sender_balance < need {
@@ -532,7 +528,6 @@ impl RpcServer {
         }))
     }
 
-    /// Hitung saldo matang untuk sebuah alamat.
     fn balance_for(&self, addr: &str) -> u64 {
         let mut spent: HashSet<String> = HashSet::new();
         for block in &self.chain.chain {
