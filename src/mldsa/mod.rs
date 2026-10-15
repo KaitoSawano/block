@@ -1,7 +1,7 @@
 //! Modul ML-DSA-65 (Dilithium3) untuk ZenaChain.
 //!
-//! Menggunakan crate `dcrypt`, implementasi pure Rust FIPS 204
-//! dengan zero unsafe code dan constant-time execution.
+//! Menggunakan crate `ml-dsa` dari RustCrypto.
+//! Implementasi pure Rust FIPS 204 (final).
 //!
 //! Parameter: ML-DSA-65, NIST Security Level 3.
 
