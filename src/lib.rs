@@ -3,6 +3,7 @@ pub mod blockchain;
 pub mod config;
 pub mod datadir;
 pub mod mempool;
+pub mod mldsa;
 pub mod node;
 pub mod pow;
 pub mod rpc;
