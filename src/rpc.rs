@@ -4,7 +4,7 @@ use crate::datadir;
 use crate::pow;
 use crate::storage;
 use crate::transaction::Transaction;
-use crate::utils::now_millis;
+use crate::utils::{now_millis, zenac_to_satoshi};
 use crate::wallet::Wallet;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -14,6 +14,7 @@ use std::net::{TcpListener, TcpStream};
 
 pub const RPC_ADDR: &str = "127.0.0.1:8332";
 pub const COINBASE_MATURITY: u64 = 100;
+pub const DEFAULT_FEE_SATOSHI: u64 = 1_000_000; // 0.01 ZENAC
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RpcRequest {
@@ -125,6 +126,7 @@ impl RpcServer {
             "getaddtowallet" => m_getaddtowallet(),
             "getaddtoaddress" => m_getaddtoaddress(req),
             "generatetoaddress" => self.m_generatetoaddress(req),
+            "sendtoaddress" => self.m_sendtoaddress(req),
             _ => RpcResponse::err("method tidak dikenal"),
         }
     }
@@ -440,6 +442,128 @@ impl RpcServer {
         }
 
         RpcResponse::ok(json!(hashes))
+    }
+
+    /// Kirim koin dari wallet ke alamat tujuan.
+    fn m_sendtoaddress(&mut self, req: &RpcRequest) -> RpcResponse {
+        // Params: jumlah (string atau number, dalam ZENAC), alamat tujuan
+        if req.params.len() < 2 {
+            return RpcResponse::err("sendtoaddress butuh jumlah dan alamat");
+        }
+
+        let amount_zenac: f64 = match req.params[0].as_f64() {
+            Some(v) => v,
+            None => match req.params[0].as_str().and_then(|s| s.parse().ok()) {
+                Some(v) => v,
+                None => return RpcResponse::err("jumlah tidak valid"),
+            },
+        };
+
+        if amount_zenac <= 0.0 {
+            return RpcResponse::err("jumlah harus lebih dari nol");
+        }
+
+        let to = match req.params[1].as_str() {
+            Some(a) => a.to_string(),
+            None => return RpcResponse::err("alamat tujuan tidak valid"),
+        };
+
+        if to.is_empty() {
+            return RpcResponse::err("alamat tujuan kosong");
+        }
+
+        let wallet = match Wallet::load_default() {
+            Ok(w) => w,
+            Err(_) => return RpcResponse::err("wallet tidak ditemukan"),
+        };
+
+        let amount_sat = zenac_to_satoshi(amount_zenac);
+        if amount_sat == 0 {
+            return RpcResponse::err("jumlah terlalu kecil");
+        }
+
+        if to == wallet.address {
+            return RpcResponse::err("alamat tujuan sama dengan alamat pengirim");
+        }
+
+        // Bangun transaksi
+        let mut tx = Transaction::new(
+            &wallet.address,
+            &to,
+            amount_sat,
+            DEFAULT_FEE_SATOSHI,
+        );
+
+        if let Err(e) = tx.sign(&wallet.secret) {
+            return RpcResponse::err(&format!("gagal tanda tangan: {}", e));
+        }
+
+        // Validasi
+        if !tx.is_valid() {
+            return RpcResponse::err("transaksi tidak valid");
+        }
+
+        // Cek saldo
+        let sender_balance = self.balance_for(&wallet.address);
+        let need = amount_sat.saturating_add(DEFAULT_FEE_SATOSHI);
+        if sender_balance < need {
+            return RpcResponse::err(&format!(
+                "saldo tidak cukup: butuh {} sat, tersedia {} sat",
+                need, sender_balance
+            ));
+        }
+
+        let txid = tx.txid.clone();
+        self.chain.mempool.push(tx);
+
+        if let Err(e) = storage::save_chain(&self.chain) {
+            return RpcResponse::err(&format!("gagal simpan chain: {}", e));
+        }
+
+        RpcResponse::ok(json!({
+            "txid": txid,
+            "from": wallet.address,
+            "to": to,
+            "amount_satoshi": amount_sat,
+            "amount_zenac": to_coin(amount_sat),
+            "fee_satoshi": DEFAULT_FEE_SATOSHI,
+            "fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
+            "mempool_len": self.chain.mempool.len(),
+        }))
+    }
+
+    /// Hitung saldo matang untuk sebuah alamat.
+    fn balance_for(&self, addr: &str) -> u64 {
+        let mut spent: HashSet<String> = HashSet::new();
+        for block in &self.chain.chain {
+            for tx in &block.transactions {
+                for input in &tx.inputs {
+                    spent.insert(input.clone());
+                }
+            }
+        }
+
+        let current_height = self.chain.height();
+        let mut mature: u64 = 0;
+
+        for block in &self.chain.chain {
+            for tx in &block.transactions {
+                if tx.to == addr {
+                    let outpoint = format!("{}:0", tx.txid);
+                    if !spent.contains(&outpoint) {
+                        mature = mature.saturating_add(tx.amount);
+                    }
+                }
+            }
+            if block.mined_for == addr && block.reward > 0 {
+                let mature_at = block.index.saturating_add(COINBASE_MATURITY);
+                if mature_at <= current_height {
+                    mature = mature.saturating_add(block.reward);
+                }
+            }
+        }
+
+        mature
     }
 }
 
