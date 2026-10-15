@@ -13,6 +13,7 @@ pub struct Wallet {
 
 impl Wallet {
     pub fn new() -> Self {
+        println!("[wallet] new: membuat wallet ZENAC dengan secret acak 32 byte.");
         let mut secret_bytes = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut secret_bytes);
         let secret = hex::encode(secret_bytes);
@@ -31,10 +32,12 @@ impl Wallet {
 
     pub fn save_default(&self) -> std::io::Result<()> {
         datadir::ensure_dirs()?;
+        println!("[wallet] save_default: menyimpan wallet ke .chain/wallet.dat.");
         self.save(&datadir::as_str(&datadir::wallet_path()))
     }
 
     pub fn load_default() -> std::io::Result<Self> {
+        println!("[wallet] load_default: memuat wallet dari .chain/wallet.dat.");
         Self::load(&datadir::as_str(&datadir::wallet_path()))
     }
 
