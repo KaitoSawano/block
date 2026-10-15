@@ -10,7 +10,6 @@ pub struct Node {
 
 impl Node {
     pub fn new() -> Self {
-        println!("[node] new: inisialisasi node dari .chain.");
         let _ = datadir::ensure_dirs();
         let config = Config::load_or_default();
         let chain = storage::load_chain().unwrap_or_else(|_| Blockchain::new());
