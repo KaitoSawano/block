@@ -21,6 +21,7 @@ impl Block {
         reward: u64,
         transactions: Vec<Transaction>,
     ) -> Self {
+        println!("[block] new: membuat blok baru pada height {}.", index);
         let mut b = Block {
             index,
             timestamp: now_millis(),
@@ -35,6 +36,7 @@ impl Block {
     }
 
     pub fn genesis() -> Self {
+        println!("[block] genesis: membuat genesis block dengan pesan publik dan rahasia.");
         let mut b = Block {
             index: 0,
             timestamp: blockchain::genesis_timestamp(),
@@ -66,6 +68,7 @@ impl Block {
     }
 
     pub fn reward_at(height: u64) -> u64 {
+        println!("[block] reward_at: hadiah blok pada height {}.", height);
         Blockchain::calculate_reward(height)
     }
 }
