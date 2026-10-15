@@ -21,11 +21,16 @@ pub fn run(args: &[String]) {
         "save" => cmd_save(),
         "load" => cmd_load(),
         "verify" => cmd_verify(),
-        _ => print_help(),
+        "help" => print_help(),
+        _ => {
+            println!("perintah tidak dikenal: {}", args[1]);
+            print_help();
+        }
     }
 }
 
 fn cmd_params() {
+    println!("params: menampilkan seluruh parameter resmi ZenaChain.");
     let out = json!({
         "coin_name": blockchain::coin_name(),
         "symbol": blockchain::symbol(),
@@ -53,6 +58,7 @@ fn cmd_params() {
 }
 
 fn cmd_info() {
+    println!("info: menampilkan status chain saat ini (height, era, supply, difficulty).");
     let chain = load_or_new();
     let out = json!({
         "height": chain.height(),
@@ -72,6 +78,7 @@ fn cmd_info() {
 }
 
 fn cmd_genesis() {
+    println!("genesis: menampilkan isi genesis block, termasuk pesan yang tertanam.");
     let chain = Blockchain::new();
     let g = &chain.chain[0];
     let txs: Vec<_> = g
@@ -101,6 +108,7 @@ fn cmd_genesis() {
 }
 
 fn cmd_mine(args: &[String]) {
+    println!("mine <n>: menambang n blok secara berurutan. Default n=1.");
     let n: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1);
     let mut chain = load_or_new();
 
@@ -136,6 +144,7 @@ fn cmd_mine(args: &[String]) {
 }
 
 fn cmd_send(args: &[String]) {
+    println!("send <from> <to> <amount_zenac>: memasukkan transaksi ke mempool.");
     if args.len() < 5 {
         let out = json!({ "error": "usage: send <from> <to> <amount_zenac>" });
         println!("{}", serde_json::to_string(&out).unwrap());
@@ -168,6 +177,7 @@ fn cmd_send(args: &[String]) {
 }
 
 fn cmd_wallet(args: &[String]) {
+    println!("wallet <new|show>: membuat wallet baru atau menampilkan wallet tersimpan.");
     if args.len() < 3 {
         let out = json!({ "error": "usage: wallet <new|show>" });
         println!("{}", serde_json::to_string(&out).unwrap());
@@ -208,6 +218,7 @@ fn cmd_wallet(args: &[String]) {
 }
 
 fn cmd_save() {
+    println!("save: menyimpan chain ke disk (chain.json).");
     let chain = load_or_new();
     match storage::save_chain(&chain, storage::CHAIN_FILE) {
         Ok(_) => {
@@ -222,6 +233,7 @@ fn cmd_save() {
 }
 
 fn cmd_load() {
+    println!("load: memuat chain dari disk (chain.json).");
     match storage::load_chain(storage::CHAIN_FILE) {
         Ok(chain) => {
             let out = json!({
@@ -240,6 +252,7 @@ fn cmd_load() {
 }
 
 fn cmd_verify() {
+    println!("verify: memeriksa integritas chain (hash, prev_hash, reward, PoW).");
     let chain = load_or_new();
     let out = json!({
         "valid": chain.is_valid(),
@@ -254,18 +267,15 @@ fn load_or_new() -> Blockchain {
 }
 
 fn print_help() {
-    let help = json!({
-        "commands": [
-            "params",
-            "info",
-            "genesis",
-            "mine <n>",
-            "send <from> <to> <amount_zenac>",
-            "wallet <new|show>",
-            "save",
-            "load",
-            "verify"
-        ]
-    });
-    println!("{}", serde_json::to_string_pretty(&help).unwrap());
+    println!("ZenaChain CLI - daftar perintah:");
+    println!("  params                              tampilkan parameter resmi");
+    println!("  info                                status chain saat ini");
+    println!("  genesis                             isi genesis block");
+    println!("  mine <n>                            tambang n blok (default 1)");
+    println!("  send <from> <to> <amount_zenac>     kirim transaksi ke mempool");
+    println!("  wallet <new|show>                   buat / lihat wallet");
+    println!("  save                                simpan chain ke chain.json");
+    println!("  load                                muat chain dari chain.json");
+    println!("  verify                              verifikasi integritas chain");
+    println!("  help                                tampilkan bantuan ini");
 }
