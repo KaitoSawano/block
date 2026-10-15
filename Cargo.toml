@@ -1,0 +1,17 @@
+[package]
+name = "zenachain"
+version = "0.1.0"
+edition = "2021"
+authors = ["ZenaChain Team"]
+description = "ZenaChain (ZENAC) - PoW cryptocurrency"
+
+[dependencies]
+sha2 = "0.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"
+rand = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
