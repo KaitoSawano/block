@@ -59,9 +59,12 @@ impl Block {
         b
     }
 
+    /// Genesis block. coinbase_txid dihitung dari consensus fingerprint,
+    /// sehingga setiap perubahan parameter konsensus menghasilkan genesis
+    /// yang berbeda.
     pub fn genesis() -> Self {
         let ts = blockchain::genesis_timestamp();
-        let coinbase_txid = sha3_256_hex(format!("genesis|{}", ts).as_bytes());
+        let coinbase_txid = blockchain::genesis_coinbase_txid();
         let mut b = Block {
             index: 0,
             timestamp: ts,
