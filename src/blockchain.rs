@@ -14,27 +14,31 @@ mod spec {
 
     pub const SATOSHI: u64 = 100_000_000;
 
-    pub const MAX_SUPPLY_ZENAC: u64 = 284_000_000;
+    // Supply maksimum: 28.000.000.000 ZENAC
+    pub const MAX_SUPPLY_ZENAC: u64 = 28_000_000_000;
     pub const MAX_SUPPLY: u64 = MAX_SUPPLY_ZENAC * SATOSHI;
 
+    // Reward awal: 50 ZENAC
     pub const INITIAL_REWARD_ZENAC: u64 = 50;
     pub const INITIAL_REWARD: u64 = INITIAL_REWARD_ZENAC * SATOSHI;
 
-    // Halving: 840.000 blok, sama dengan Litecoin.
-    pub const SUBSIDY_HALVING_INTERVAL: u64 = 840_000;
+    // Halving: setiap 280.000.000 blok.
+    // Dengan blok 30 detik, 280.000.000 blok = ~266 tahun.
+    // Total supply = 2 × 280.000.000 × 50 = 28.000.000.000 ZENAC.
+    pub const SUBSIDY_HALVING_INTERVAL: u64 = 280_000_000;
     pub const MAX_HALVINGS: u32 = 64;
 
-    // Target spacing: 2,5 menit, sama dengan Litecoin.
-    pub const POW_TARGET_SPACING_SECS: u64 = 150;
+    // Target spacing: 30 detik, transaksi super cepat.
+    pub const POW_TARGET_SPACING_SECS: u64 = 30;
 
-    // Target timespan: 3,5 hari, sama dengan Litecoin.
-    pub const POW_TARGET_TIMESPAN_SECS: u64 = 302_400;
+    // Target timespan: 3 hari.
+    pub const POW_TARGET_TIMESPAN_SECS: u64 = 259_200;
 
-    // Miner confirmation window: 8064 blok, sama dengan Litecoin.
-    pub const MINER_CONFIRMATION_WINDOW: u64 = 8_064;
+    // Miner confirmation window: 259200 / 30 * 4 = 34.560 blok.
+    pub const MINER_CONFIRMATION_WINDOW: u64 = 34_560;
 
     // Interval penyesuaian nBits: sama dengan confirmation window.
-    pub const DIFFICULTY_ADJUST_INTERVAL: u64 = 8_064;
+    pub const DIFFICULTY_ADJUST_INTERVAL: u64 = 34_560;
 
     pub const GENESIS_MESSAGE: &str = "ZenaChain Genesis - 2026";
     pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
@@ -178,8 +182,6 @@ impl Blockchain {
         Ok(nonce)
     }
 
-    /// Sesuaikan nbits setiap DIFFICULTY_ADJUST_INTERVAL blok.
-    /// Mengikuti aturan Litecoin: 3,5 hari per adjustment.
     pub fn adjust_difficulty(&mut self) {
         let height = self.height();
         if height == 0 || height % spec::DIFFICULTY_ADJUST_INTERVAL != 0 {
@@ -199,7 +201,6 @@ impl Blockchain {
         }
 
         let current_target = pow::nbits_to_target(self.nbits);
-        // Skala target secara proporsional.
         let scale = (expected_time_secs as u128) * 256 / (actual_time_secs as u128);
         let new_target = scale_target(&current_target, scale);
         let new_nbits = target_to_nbits(&new_target);
@@ -283,7 +284,6 @@ impl Default for Blockchain {
     }
 }
 
-/// Skala target 256-bit dengan faktor pembilang/256.
 fn scale_target(target: &[u8; 32], scale_256: u128) -> [u8; 32] {
     let mut result = [0u8; 32];
     let mut carry: u128 = 0;
@@ -296,7 +296,6 @@ fn scale_target(target: &[u8; 32], scale_256: u128) -> [u8; 32] {
     result
 }
 
-/// Ubah target 256-bit menjadi nbits format compact.
 fn target_to_nbits(target: &[u8; 32]) -> u32 {
     let mut i = 0;
     while i < 32 && target[i] == 0 {
