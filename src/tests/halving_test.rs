@@ -1,25 +1,25 @@
-use zenachain::blockchain::*;
+use zenachain::blockchain::{self, Blockchain};
 
 #[test]
-fn test_reward_era_0() {
-    assert_eq!(Blockchain::calculate_reward(0), INITIAL_REWARD);
-    assert_eq!(Blockchain::calculate_reward(1_000_000), INITIAL_REWARD);
+fn reward_era_0() {
+    let r = Blockchain::calculate_reward(0);
+    assert_eq!(r, blockchain::initial_reward());
 }
 
 #[test]
-fn test_reward_era_1() {
-    let r = Blockchain::calculate_reward(HALVING_INTERVAL_BLOCKS);
-    assert_eq!(r, INITIAL_REWARD / 2);
+fn reward_era_1() {
+    let r = Blockchain::calculate_reward(blockchain::halving_interval_blocks());
+    assert_eq!(r, blockchain::initial_reward() / 2);
 }
 
 #[test]
-fn test_reward_era_2() {
-    let r = Blockchain::calculate_reward(HALVING_INTERVAL_BLOCKS * 2);
-    assert_eq!(r, INITIAL_REWARD / 4);
+fn reward_era_2() {
+    let r = Blockchain::calculate_reward(blockchain::halving_interval_blocks() * 2);
+    assert_eq!(r, blockchain::initial_reward() / 4);
 }
 
 #[test]
-fn test_reward_maks_halving() {
-    let r = Blockchain::calculate_reward(HALVING_INTERVAL_BLOCKS * 100);
+fn reward_batas_halving() {
+    let r = Blockchain::calculate_reward(blockchain::halving_interval_blocks() * 100);
     assert_eq!(r, 0);
 }
