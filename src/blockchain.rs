@@ -75,8 +75,11 @@ impl Blockchain {
         self.chain.last().unwrap().index
     }
 
+    /// Jumlahkan reward semua blok dengan saturating_add, aman dari overflow.
     pub fn circulating_supply(&self) -> u64 {
-        self.chain.iter().map(|b| b.reward).sum()
+        self.chain
+            .iter()
+            .fold(0u64, |acc, b| acc.saturating_add(b.reward))
     }
 
     pub fn calculate_reward(height: u64) -> u64 {
@@ -110,13 +113,15 @@ impl Blockchain {
         let next_index = prev.index + 1;
         let reward = Self::calculate_reward(next_index);
 
-        if self.circulating_supply() + reward > spec::MAX_SUPPLY {
+        if self.circulating_supply().saturating_add(reward) > spec::MAX_SUPPLY {
             return Err("max supply reached".into());
         }
 
         let txs = std::mem::take(&mut self.mempool);
         let mut new_block = Block::new(next_index, prev.hash.clone(), reward, txs);
-        pow::mine(&mut new_block, self.difficulty);
+        if !pow::mine(&mut new_block, self.difficulty) {
+            return Err("mining gagal: nonce habis".into());
+        }
         let nonce = new_block.nonce;
         self.chain.push(new_block);
         Ok(nonce)
@@ -153,7 +158,6 @@ impl Blockchain {
     }
 
     pub fn is_valid(&self) -> bool {
-        println!("[blockchain] is_valid: memverifikasi {} blok.", self.chain.len());
         for i in 1..self.chain.len() {
             let cur = &self.chain[i];
             let prev = &self.chain[i - 1];
