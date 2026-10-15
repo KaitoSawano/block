@@ -69,7 +69,7 @@ impl Block {
             previous_hash: "0".repeat(64),
             hash: String::new(),
             nonce: 0,
-            nbits: pow::NBITS_ONE,
+            nbits: pow::GENESIS_NBITS,
             reward: blockchain::initial_reward(),
             coinbase_txid,
             transactions: vec![
