@@ -1,12 +1,14 @@
 use crate::blockchain::{self, Blockchain};
 use crate::transaction::Transaction;
-use crate::utils::{now_millis, sha3_256_hex};
+use crate::utils::{format_datetime, now_millis, sha3_256_hex};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     pub index: u64,
     pub timestamp: u128,
+    pub mined_at: String,
+    pub mined_for: String,
     pub previous_hash: String,
     pub hash: String,
     pub nonce: u64,
@@ -21,10 +23,22 @@ impl Block {
         reward: u64,
         transactions: Vec<Transaction>,
     ) -> Self {
-        println!("[block] new: membuat blok baru pada height {}.", index);
+        Self::new_for(index, previous_hash, reward, transactions, String::new())
+    }
+
+    pub fn new_for(
+        index: u64,
+        previous_hash: String,
+        reward: u64,
+        transactions: Vec<Transaction>,
+        mined_for: String,
+    ) -> Self {
+        let ts = now_millis();
         let mut b = Block {
             index,
-            timestamp: now_millis(),
+            timestamp: ts,
+            mined_at: format_datetime(ts),
+            mined_for,
             previous_hash,
             hash: String::new(),
             nonce: 0,
@@ -36,10 +50,12 @@ impl Block {
     }
 
     pub fn genesis() -> Self {
-        println!("[block] genesis: membuat genesis block dengan pesan publik dan rahasia.");
+        let ts = blockchain::genesis_timestamp();
         let mut b = Block {
             index: 0,
-            timestamp: blockchain::genesis_timestamp(),
+            timestamp: ts,
+            mined_at: format_datetime(ts),
+            mined_for: "GENESIS".to_string(),
             previous_hash: "0".repeat(64),
             hash: String::new(),
             nonce: 0,
@@ -55,8 +71,14 @@ impl Block {
 
     pub fn calculate_hash(&self) -> String {
         let mut payload = format!(
-            "{}{}{}{}{}",
-            self.index, self.timestamp, self.previous_hash, self.nonce, self.reward
+            "{}{}{}{}{}{}{}",
+            self.index,
+            self.timestamp,
+            self.mined_at,
+            self.mined_for,
+            self.previous_hash,
+            self.nonce,
+            self.reward
         );
         for tx in &self.transactions {
             payload.push_str(&format!(
@@ -68,7 +90,6 @@ impl Block {
     }
 
     pub fn reward_at(height: u64) -> u64 {
-        println!("[block] reward_at: hadiah blok pada height {}.", height);
         Blockchain::calculate_reward(height)
     }
 }
