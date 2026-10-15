@@ -14,11 +14,13 @@ pub fn now_millis() -> u128 {
 }
 
 pub fn satoshi_to_zenac(satoshi: u64) -> String {
+    println!("[utils] satoshi_to_zenac: konversi satuan terkecil ke string ZENAC.");
     let whole = satoshi / 100_000_000;
     let frac = satoshi % 100_000_000;
     format!("{}.{:08}", whole, frac)
 }
 
 pub fn zenac_to_satoshi(zenac: f64) -> u64 {
+    println!("[utils] zenac_to_satoshi: konversi ZENAC ke satuan terkecil.");
     (zenac * 100_000_000.0) as u64
 }
