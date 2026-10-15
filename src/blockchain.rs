@@ -23,7 +23,6 @@ mod spec {
     pub const INITIAL_REWARD: u64 = INITIAL_REWARD_ZENAC * SATOSHI;
 
     // Halving: setiap 280.000.000 blok.
-    // Dengan blok 15 detik, 280.000.000 blok = ~133 tahun per era.
     // Total supply = 2 × 280.000.000 × 50 = 28.000.000.000 ZENAC.
     pub const SUBSIDY_HALVING_INTERVAL: u64 = 280_000_000;
     pub const MAX_HALVINGS: u32 = 64;
