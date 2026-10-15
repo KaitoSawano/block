@@ -64,7 +64,6 @@ impl Block {
             sha3_256_hex(format!("{}|{}|{}", index, mined_for, ts).as_bytes());
         let merkle_root = Self::compute_merkle_root(&transactions);
 
-        // Perkiraan ukuran payload blok.
         let size = (previous_hash.len()
             + merkle_root.len()
             + coinbase_txid.len()
@@ -94,11 +93,15 @@ impl Block {
         b
     }
 
-    /// Genesis block. Semua field terikat ke fingerprint konsensus.
+    /// Genesis block. WAJIB DITAMBANG sampai hash memenuhi target nbits.
+    /// Nonce awal 0, lalu ditambang. Kalau parameter konsensus diubah,
+    /// coinbase_txid berubah, hash berubah, dan nonce lama tidak akan
+    /// memenuhi target. Genesis baru harus ditambang ulang.
     pub fn genesis() -> Self {
         let ts = blockchain::genesis_timestamp();
         let coinbase_txid = blockchain::genesis_coinbase_txid();
         let genesis_output_script = blockchain::genesis_output_script();
+        let nbits = pow::GENESIS_NBITS;
 
         let transactions = vec![
             Transaction::coinbase(blockchain::genesis_message().into()),
@@ -122,7 +125,7 @@ impl Block {
             merkle_root,
             hash: String::new(),
             nonce: 0,
-            nbits: pow::GENESIS_NBITS,
+            nbits,
             reward: blockchain::initial_reward(),
             coinbase_txid,
             blockchain_size: size,
@@ -131,13 +134,15 @@ impl Block {
             miner_signature: String::new(),
             transactions,
         };
-        b.hash = b.calculate_hash();
+
+        // Tambang genesis. Nonce dicari sampai hash memenuhi target.
+        if !pow::mine(&mut b, nbits) {
+            panic!("genesis mining gagal: nonce habis");
+        }
+
         b
     }
 
-    /// Hash blok. Memasukkan semua field, termasuk semua field transaksi
-    /// (from, to, amount, fee, note, inputs, public_key, signature).
-    /// Perubahan sekecil apa pun di field ini akan mengubah hash.
     pub fn calculate_hash(&self) -> String {
         let mut payload = format!(
             "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
