@@ -1,11 +1,11 @@
 use crate::block::Block;
 
-/// Nilai nBits genesis ZenaChain. Sama dengan Litecoin: 0x1e0ffff0.
-pub const GENESIS_NBITS: u32 = 0x1e0ffff0;
+/// Nilai nBits genesis ZenaChain. Sama dengan Bitcoin: 0x1d00ffff.
+pub const GENESIS_NBITS: u32 = 0x1d00ffff;
 
-/// powLimit ZenaChain. Sama dengan Litecoin:
-/// 00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-pub const POW_LIMIT: &str = "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+/// powLimit ZenaChain. Sama dengan Bitcoin:
+/// 00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+pub const POW_LIMIT: &str = "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 
 /// Ubah nBits format compact menjadi target 256-bit big-endian.
 /// Implementasi persis seperti Bitcoin/Litecoin `SetCompact`.
@@ -17,7 +17,6 @@ pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
     let mut target = [0u8; 32];
 
     if negative {
-        // Tidak boleh negatif, kembalikan nol.
         return target;
     }
 
@@ -32,7 +31,6 @@ pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
 
     let shift = 32 - exponent;
     if shift + 3 > 32 {
-        // Overflow, kembalikan nol.
         return target;
     }
     let be = mantissa.to_be_bytes();
@@ -69,7 +67,10 @@ pub fn hash_meets_nbits(hash_hex: &str, nbits: u32) -> bool {
 
 /// Mining blok. Loop sampai hash memenuhi target nbits.
 pub fn mine(block: &mut Block, nbits: u32) -> bool {
-    println!("[pow] mine: mencari nonce sampai hash memenuhi target nbits={:#010x}.", nbits);
+    println!(
+        "[pow] mine: mencari nonce sampai hash memenuhi target nbits={:#010x}.",
+        nbits
+    );
     let target = nbits_to_target(nbits);
     loop {
         block.hash = block.calculate_hash();
