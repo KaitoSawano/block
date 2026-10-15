@@ -30,6 +30,20 @@ impl Wallet {
         }
     }
 
+    pub fn from_secret(secret: &str) -> Self {
+        println!("[wallet] from_secret: membangun wallet dari private key yang diberikan.");
+        let public_key = sha3_256_hex(format!("{}pub", secret).as_bytes());
+        let addr_hash = sha3_256_hex(format!("{}addr", public_key).as_bytes());
+        let address = format!("ZENA{}", &addr_hash[..40]);
+
+        Wallet {
+            address,
+            public_key,
+            secret: secret.to_string(),
+            created_at: now_millis(),
+        }
+    }
+
     pub fn save_default(&self) -> std::io::Result<()> {
         datadir::ensure_dirs()?;
         println!("[wallet] save_default: menyimpan wallet ke .chain/wallet.dat.");
