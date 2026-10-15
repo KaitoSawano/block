@@ -1,7 +1,10 @@
 //! Modul validasi konsensus ZenaChain.
+//!
+//! Fungsi validasi. Konstanta konsensus diambil dari `crate::consensus::rules`.
 
 use crate::block::Block;
 use crate::blockchain::Blockchain;
+use crate::consensus::rules;
 use crate::pow;
 use crate::secp256k1::{address, verify};
 use crate::transaction::Transaction;
@@ -9,15 +12,15 @@ use crate::wallet::Wallet;
 use std::collections::HashSet;
 use std::fmt;
 
-pub const COINBASE_MATURITY: u64 = 100;
-pub const ADDRESS_PREFIX: &str = "ZENA";
-pub const ADDRESS_HEX_LEN: usize = 40;
-pub const MAX_TX_PER_BLOCK: usize = 10_000;
-pub const MAX_INPUTS_PER_TX: usize = 1_000;
-pub const MAX_OUTPUTS_PER_TX: usize = 1_000;
-pub const MAX_NOTE_LEN: usize = 256;
-pub const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-pub const BLOCK_VERSION: u32 = 1;
+pub use rules::COINBASE_MATURITY;
+pub use rules::ADDRESS_PREFIX;
+pub use rules::ADDRESS_HEX_LEN;
+pub use rules::MAX_TX_PER_BLOCK;
+pub use rules::MAX_INPUTS_PER_TX;
+pub use rules::MAX_OUTPUTS_PER_TX;
+pub use rules::MAX_NOTE_LEN;
+pub use rules::ZERO_HASH;
+pub use rules::BLOCK_VERSION;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationError {
@@ -39,10 +42,6 @@ impl fmt::Display for ValidationError {
         write!(f, "[{}] {}", self.code, self.message)
     }
 }
-
-// ============================================================
-// ATURAN FORMAT
-// ============================================================
 
 pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
     if !addr.starts_with(ADDRESS_PREFIX) {
@@ -100,10 +99,6 @@ pub fn rule_input_count(tx: &Transaction) -> Result<(), ValidationError> {
     }
     Ok(())
 }
-
-// ============================================================
-// ATURAN SIGNATURE
-// ============================================================
 
 pub fn rule_signature(tx: &Transaction) -> Result<(), ValidationError> {
     if is_special_tx(tx) {
@@ -164,10 +159,6 @@ pub fn rule_txid_consistent(tx: &Transaction) -> Result<(), ValidationError> {
     }
     Ok(())
 }
-
-// ============================================================
-// ATURAN UTXO DAN SALDO
-// ============================================================
 
 pub fn spent_inputs(chain: &Blockchain) -> HashSet<String> {
     let mut spent = HashSet::new();
@@ -269,10 +260,6 @@ pub fn rule_sufficient_balance(
     }
     Ok(())
 }
-
-// ============================================================
-// ATURAN BLOK
-// ============================================================
 
 pub fn rule_block_version(block: &Block) -> Result<(), ValidationError> {
     if block.nversion != BLOCK_VERSION {
@@ -469,10 +456,6 @@ pub fn rule_genesis_pow(block: &Block) -> Result<(), ValidationError> {
     }
     Ok(())
 }
-
-// ============================================================
-// PUNGGUNG VALIDASI
-// ============================================================
 
 pub fn is_special_tx(tx: &Transaction) -> bool {
     tx.from == "COINBASE"
