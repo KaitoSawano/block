@@ -4,7 +4,7 @@ use crate::datadir;
 use crate::pow;
 use crate::storage;
 use crate::transaction::Transaction;
-use crate::utils::now_millis;
+use crate::utils::{now_millis, satoshi_to_zenac};
 use crate::wallet::Wallet;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -121,6 +121,8 @@ impl RpcServer {
 
     fn m_getinfo(&self) -> RpcResponse {
         let c = &self.chain;
+        let circulating = c.circulating_supply();
+        let max_supply = crate::blockchain::max_supply();
         RpcResponse::ok(json!({
             "coin_name": crate::blockchain::coin_name(),
             "symbol": crate::blockchain::symbol(),
@@ -129,8 +131,10 @@ impl RpcServer {
             "height": c.height(),
             "chain_len": c.chain.len(),
             "difficulty": c.difficulty,
-            "circulating": c.circulating_supply(),
-            "max_supply": crate::blockchain::max_supply(),
+            "circulating_satoshi": circulating,
+            "circulating_zenac": satoshi_to_zenac(circulating),
+            "max_supply_satoshi": max_supply,
+            "max_supply_zenac": satoshi_to_zenac(max_supply),
             "era": c.current_era(),
             "until_halving": c.blocks_until_halving(),
             "mempool_len": c.mempool.len(),
@@ -148,7 +152,8 @@ impl RpcServer {
             "height": next_height,
             "previous_hash": prev_hash,
             "difficulty": c.difficulty,
-            "reward": reward,
+            "reward_satoshi": reward,
+            "reward_zenac": satoshi_to_zenac(reward),
             "mempool": c.mempool,
         }))
     }
@@ -209,7 +214,6 @@ impl RpcServer {
             },
         };
 
-        // 1. Kumpulkan semua output yang sudah dibelanjakan
         let mut spent: HashSet<String> = HashSet::new();
         for block in &self.chain.chain {
             for tx in &block.transactions {
@@ -221,31 +225,21 @@ impl RpcServer {
 
         let current_height = self.chain.height();
 
-        // 2. Jumlahkan UTXO milik addr + reward blok yang matang
         let mut mature: u64 = 0;
         let mut immature: u64 = 0;
         let mut received: u64 = 0;
 
         for block in &self.chain.chain {
-            // UTXO transaksi biasa
             for tx in &block.transactions {
                 if tx.to == addr {
                     let outpoint = format!("{}:0", tx.txid);
                     if !spent.contains(&outpoint) {
                         received += tx.amount;
-                        if tx.from == "COINBASE"
-                            || tx.from == "NETWORK"
-                            || tx.from == "GENESIS"
-                        {
-                            mature += tx.amount;
-                        } else {
-                            mature += tx.amount;
-                        }
+                        mature += tx.amount;
                     }
                 }
             }
 
-            // Reward blok (coinbase) untuk alamat mined_for
             if block.mined_for == addr && block.reward > 0 {
                 if block.index + COINBASE_MATURITY <= current_height {
                     mature += block.reward;
@@ -258,10 +252,14 @@ impl RpcServer {
         let balance = mature;
         RpcResponse::ok(json!({
             "address": addr,
-            "received": received,
-            "balance": balance,
-            "mature": mature,
-            "immature": immature,
+            "balance_satoshi": balance,
+            "balance_zenac": satoshi_to_zenac(balance),
+            "mature_satoshi": mature,
+            "mature_zenac": satoshi_to_zenac(mature),
+            "immature_satoshi": immature,
+            "immature_zenac": satoshi_to_zenac(immature),
+            "received_satoshi": received,
+            "received_zenac": satoshi_to_zenac(received),
             "spent_outputs": spent.len(),
         }))
     }
