@@ -147,6 +147,7 @@ impl RpcServer {
             "mempool_len": c.mempool.len(),
             "valid": c.is_valid(),
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
+            "checkpoints_highest": blockchain::checkpoint::highest(),
             "datadir": datadir::as_str(&datadir::datadir()),
         }))
     }
