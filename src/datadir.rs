@@ -52,7 +52,6 @@ pub fn chainstate_file() -> PathBuf {
 }
 
 pub fn ensure_dirs() -> std::io::Result<()> {
-    println!("[datadir] ensure_dirs: memastikan folder .chain dan subfolder tersedia.");
     std::fs::create_dir_all(datadir())?;
     std::fs::create_dir_all(blocks_dir())?;
     std::fs::create_dir_all(chainstate_dir())?;
