@@ -136,6 +136,8 @@ impl RpcServer {
             "getblockcount" => self.m_getblockcount(),
             "getbestblockhash" => self.m_getbestblockhash(),
             "verifychain" => self.m_verifychain(),
+            "getgenesishash" => self.m_getgenesishash(),
+            "getgenesis" => self.m_getgenesis(),
             "getwallet" => m_getwallet(),
             "getprivkey" => m_getprivkey(req),
             "dumpprivkey" => m_dumpprivkey(req),
@@ -346,6 +348,36 @@ impl RpcServer {
 
     fn m_getbestblockhash(&self) -> RpcResponse {
         RpcResponse::ok(json!(self.chain.chain.last().unwrap().hash))
+    }
+
+    fn m_getgenesishash(&self) -> RpcResponse {
+        match self.chain.chain.first() {
+            Some(g) => RpcResponse::ok(json!(g.hash)),
+            None => RpcResponse::err("chain kosong"),
+        }
+    }
+
+    fn m_getgenesis(&self) -> RpcResponse {
+        match self.chain.chain.first() {
+            Some(g) => RpcResponse::ok(json!({
+                "nversion": g.nversion,
+                "hash": g.hash,
+                "index": g.index,
+                "timestamp": g.timestamp,
+                "mined_at": g.mined_at,
+                "previous_hash": g.previous_hash,
+                "merkle_root": g.merkle_root,
+                "nonce": g.nonce,
+                "nbits": format!("{:#010x}", g.nbits),
+                "reward": to_coin(g.reward),
+                "coinbase_txid": g.coinbase_txid,
+                "blockchain_size": g.blockchain_size,
+                "genesis_output_script": g.genesis_output_script,
+                "consensus_fingerprint": blockchain::consensus_fingerprint(),
+                "transactions": g.transactions,
+            })),
+            None => RpcResponse::err("chain kosong"),
+        }
     }
 
     fn m_verifychain(&self) -> RpcResponse {
