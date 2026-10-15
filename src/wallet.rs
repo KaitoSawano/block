@@ -1,6 +1,6 @@
 use crate::datadir;
-use crate::utils::{now_millis, sha3_256_hex};
-use rand::RngCore;
+use crate::secp256k1::{address, keypair::KeyPair};
+use crate::utils::now_millis;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,35 +13,35 @@ pub struct Wallet {
 
 impl Wallet {
     pub fn new() -> Self {
-        println!("[wallet] new: membuat wallet ZENAC dengan secret acak 32 byte.");
-        let mut secret_bytes = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut secret_bytes);
-        let secret = hex::encode(secret_bytes);
-
-        let public_key = sha3_256_hex(format!("{}pub", secret).as_bytes());
-        let addr_hash = sha3_256_hex(format!("{}addr", public_key).as_bytes());
-        let address = format!("ZENA{}", &addr_hash[..40]);
+        println!("[wallet] new: membuat wallet ZENAC dengan secp256k1.");
+        let kp = KeyPair::generate().expect("generate keypair");
+        let addr = address::address_from_public_key(&kp.public_key).expect("address");
 
         Wallet {
-            address,
-            public_key,
-            secret,
+            address: addr,
+            public_key: kp.public_key_hex(),
+            secret: kp.secret_key_hex(),
             created_at: now_millis(),
         }
     }
 
-    pub fn from_secret(secret: &str) -> Self {
-        println!("[wallet] from_secret: membangun wallet dari private key yang diberikan.");
-        let public_key = sha3_256_hex(format!("{}pub", secret).as_bytes());
-        let addr_hash = sha3_256_hex(format!("{}addr", public_key).as_bytes());
-        let address = format!("ZENA{}", &addr_hash[..40]);
+    pub fn from_secret(secret_hex: &str) -> Result<Self, String> {
+        println!("[wallet] from_secret: membangun wallet dari private key secp256k1.");
+        let bytes = hex::decode(secret_hex).map_err(|e| e.to_string())?;
+        let kp = KeyPair::from_secret(&bytes)?;
+        let addr = address::address_from_public_key(&kp.public_key)?;
 
-        Wallet {
-            address,
-            public_key,
-            secret: secret.to_string(),
+        Ok(Wallet {
+            address: addr,
+            public_key: kp.public_key_hex(),
+            secret: kp.secret_key_hex(),
             created_at: now_millis(),
-        }
+        })
+    }
+
+    pub fn keypair(&self) -> Result<KeyPair, String> {
+        let sk = hex::decode(&self.secret).map_err(|e| e.to_string())?;
+        KeyPair::from_secret(&sk)
     }
 
     pub fn save_default(&self) -> std::io::Result<()> {
