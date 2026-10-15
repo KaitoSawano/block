@@ -13,6 +13,11 @@ pub fn now_millis() -> u128 {
         .as_millis()
 }
 
+/// Konversi satoshi ke string ZENAC dengan 8 desimal.
+/// 1 ZENAC = 100.000.000 satoshi.
+/// Contoh: 1 -> "0.00000001"
+///         100000000 -> "1.00000000"
+///         10102000000 -> "101.02000000"
 pub fn satoshi_to_zenac(satoshi: u64) -> String {
     let whole = satoshi / 100_000_000;
     let frac = satoshi % 100_000_000;
@@ -33,8 +38,6 @@ pub fn format_datetime(millis: u128) -> String {
     )
 }
 
-/// Konversi Unix seconds ke (year, month, day, hour, minute, second) UTC.
-/// Algoritma Howard Hinnant.
 fn civil_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     let days = secs.div_euclid(86_400);
     let secs_of_day = secs.rem_euclid(86_400);
