@@ -82,4 +82,226 @@ pub fn satoshi() -> u64 { spec::SATOSHI }
 pub fn max_supply_zenac() -> u64 { spec::MAX_SUPPLY_ZENAC }
 pub fn max_supply() -> u64 { spec::MAX_SUPPLY }
 pub fn initial_reward_zenac() -> u64 { spec::INITIAL_REWARD_ZENAC }
-pub
+pub fn initial_reward() -> u64 { spec::INITIAL_REWARD }
+pub fn subsidy_halving_interval() -> u64 { spec::SUBSIDY_HALVING_INTERVAL }
+pub fn max_halvings() -> u32 { spec::MAX_HALVINGS }
+pub fn pow_target_spacing_secs() -> u64 { spec::POW_TARGET_SPACING_SECS }
+pub fn pow_target_timespan_secs() -> u64 { spec::POW_TARGET_TIMESPAN_SECS }
+pub fn miner_confirmation_window() -> u64 { spec::MINER_CONFIRMATION_WINDOW }
+pub fn difficulty_adjust_interval() -> u64 { spec::DIFFICULTY_ADJUST_INTERVAL }
+pub fn genesis_message() -> &'static str { spec::GENESIS_MESSAGE }
+pub fn genesis_secret() -> &'static str { spec::GENESIS_SECRET }
+pub fn genesis_timestamp() -> u128 { spec::GENESIS_TIMESTAMP }
+pub fn max_tx_per_block() -> usize { spec::MAX_TX_PER_BLOCK }
+pub fn pow_limit() -> &'static str { pow::POW_LIMIT }
+pub fn genesis_nbits() -> u32 { pow::GENESIS_NBITS }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Blockchain {
+    pub chain: Vec<Block>,
+    pub nbits: u32,
+    pub mempool: Vec<Transaction>,
+}
+
+impl Blockchain {
+    pub fn new() -> Self {
+        Blockchain {
+            chain: vec![Block::genesis()],
+            nbits: pow::GENESIS_NBITS,
+            mempool: Vec::new(),
+        }
+    }
+
+    pub fn height(&self) -> u64 {
+        self.chain.last().unwrap().index
+    }
+
+    pub fn circulating_supply(&self) -> u64 {
+        self.chain
+            .iter()
+            .fold(0u64, |acc, b| acc.saturating_add(b.reward))
+    }
+
+    pub fn calculate_reward(height: u64) -> u64 {
+        let halvings = (height / spec::SUBSIDY_HALVING_INTERVAL) as u32;
+        if halvings >= spec::MAX_HALVINGS {
+            return 0;
+        }
+        spec::INITIAL_REWARD >> halvings
+    }
+
+    pub fn current_era(&self) -> u64 {
+        self.height() / spec::SUBSIDY_HALVING_INTERVAL
+    }
+
+    pub fn blocks_until_halving(&self) -> u64 {
+        let next = (self.current_era() + 1) * spec::SUBSIDY_HALVING_INTERVAL;
+        next.saturating_sub(self.height())
+    }
+
+    pub fn add_transaction(&mut self, tx: Transaction) -> bool {
+        if !tx.is_valid() {
+            return false;
+        }
+        if self.mempool.len() >= spec::MAX_TX_PER_BLOCK {
+            return false;
+        }
+        self.mempool.push(tx);
+        true
+    }
+
+    pub fn mine_pending(&mut self) -> Result<u64, String> {
+        let prev = self.chain.last().unwrap().clone();
+        let next_index = prev.index + 1;
+        let reward = Self::calculate_reward(next_index);
+
+        if self.circulating_supply().saturating_add(reward) > spec::MAX_SUPPLY {
+            return Err("max supply reached".into());
+        }
+
+        let txs = std::mem::take(&mut self.mempool);
+        let mut new_block =
+            Block::new(next_index, prev.hash.clone(), reward, self.nbits, txs);
+        if !pow::mine(&mut new_block, self.nbits) {
+            return Err("mining gagal: nonce habis".into());
+        }
+        let nonce = new_block.nonce;
+        self.chain.push(new_block);
+        Ok(nonce)
+    }
+
+    pub fn adjust_difficulty(&mut self) {
+        let height = self.height();
+        if height == 0 || height % spec::DIFFICULTY_ADJUST_INTERVAL != 0 {
+            return;
+        }
+
+        let interval = spec::DIFFICULTY_ADJUST_INTERVAL as usize;
+        let last = &self.chain[height as usize];
+        let first = &self.chain[height as usize - interval];
+
+        let actual_time_ms = last.timestamp.saturating_sub(first.timestamp) as u64;
+        let actual_time_secs = actual_time_ms / 1000;
+        let expected_time_secs = spec::POW_TARGET_TIMESPAN_SECS;
+
+        if actual_time_secs == 0 {
+            return;
+        }
+
+        let current_target = pow::nbits_to_target(self.nbits);
+        let scale = (expected_time_secs as u128) * 256 / (actual_time_secs as u128);
+        let new_target = scale_target(&current_target, scale);
+        let new_nbits = target_to_nbits(&new_target);
+
+        if new_nbits != self.nbits {
+            self.nbits = new_nbits;
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        if self.chain.is_empty() {
+            return false;
+        }
+
+        let genesis = &self.chain[0];
+        if genesis.index != 0 {
+            return false;
+        }
+        if genesis.previous_hash != "0".repeat(64) {
+            return false;
+        }
+        if !pow::hash_meets_nbits(&genesis.hash, genesis.nbits) {
+            return false;
+        }
+
+        for i in 1..self.chain.len() {
+            let cur = &self.chain[i];
+            let prev = &self.chain[i - 1];
+
+            if cur.index != prev.index + 1 {
+                return false;
+            }
+            if cur.hash != cur.calculate_hash() {
+                return false;
+            }
+            if cur.previous_hash != prev.hash {
+                return false;
+            }
+            if cur.reward != Self::calculate_reward(cur.index) {
+                return false;
+            }
+            if !pow::hash_meets_nbits(&cur.hash, cur.nbits) {
+                return false;
+            }
+            if cur.transactions.len() > spec::MAX_TX_PER_BLOCK {
+                return false;
+            }
+            if cur.timestamp < prev.timestamp {
+                return false;
+            }
+            if !checkpoint::verify(cur.index, &cur.hash) {
+                return false;
+            }
+            for tx in &cur.transactions {
+                if !tx.verify_signature() {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    pub fn check_against_checkpoints(chain: &[Block]) -> bool {
+        for block in chain {
+            if !checkpoint::verify(block.index, &block.hash) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+impl Default for Blockchain {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn scale_target(target: &[u8; 32], scale_256: u128) -> [u8; 32] {
+    let mut result = [0u8; 32];
+    let mut carry: u128 = 0;
+
+    for i in (0..32).rev() {
+        let v = (target[i] as u128) * scale_256 + carry;
+        result[i] = (v & 0xff) as u8;
+        carry = v >> 8;
+    }
+    result
+}
+
+fn target_to_nbits(target: &[u8; 32]) -> u32 {
+    let mut i = 0;
+    while i < 32 && target[i] == 0 {
+        i += 1;
+    }
+    if i == 32 {
+        return pow::GENESIS_NBITS;
+    }
+
+    let size = 32 - i;
+    let mut mantissa: u32 = (target[i] as u32) << 16;
+    if i + 1 < 32 {
+        mantissa |= (target[i + 1] as u32) << 8;
+    }
+    if i + 2 < 32 {
+        mantissa |= target[i + 2] as u32;
+    }
+
+    if mantissa & 0x00800000 == 0 {
+        mantissa <<= 8;
+        return (((size - 1) as u32) << 24) | (mantissa & 0x00ffffff);
+    }
+
+    ((size as u32) << 24) | (mantissa & 0x00ffffff)
+}
