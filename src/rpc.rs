@@ -1,4 +1,5 @@
 use crate::blockchain::Blockchain;
+use crate::config::Config;
 use crate::datadir;
 use crate::storage;
 use crate::transaction::Transaction;
@@ -42,7 +43,6 @@ impl RpcResponse {
     }
 }
 
-/// Client: kirim satu request ke node, terima satu response.
 pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     let mut stream = TcpStream::connect(RPC_ADDR)?;
     let req = RpcRequest {
@@ -63,7 +63,6 @@ pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     Ok(resp)
 }
 
-/// Server: node mendengarkan RPC dan memproses request.
 pub struct RpcServer {
     chain: Blockchain,
 }
@@ -123,6 +122,9 @@ impl RpcServer {
             "getwallet" => m_getwallet(),
             "getprivkey" => m_getprivkey(),
             "dumpprivkey" => m_dumpprivkey(req),
+            "getnewwallet" => m_getnewwallet(),
+            "addtowallet" => m_addtowallet(),
+            "addtoaddress" => m_addtoaddress(req),
             _ => RpcResponse::err("method tidak dikenal"),
         }
     }
@@ -291,6 +293,62 @@ fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
     }
 }
 
+fn m_getnewwallet() -> RpcResponse {
+    if let Err(e) = datadir::ensure_dirs() {
+        return RpcResponse::err(&format!("gagal siapkan .chain: {}", e));
+    }
+    let w = Wallet::new();
+    match w.save_default() {
+        Ok(_) => RpcResponse::ok(json!({
+            "address": w.address,
+            "public_key": w.public_key,
+            "secret": w.secret,
+            "created_at": w.created_at,
+        })),
+        Err(e) => RpcResponse::err(&format!("gagal simpan wallet: {}", e)),
+    }
+}
+
+fn m_addtowallet() -> RpcResponse {
+    let w = match Wallet::load_default() {
+        Ok(w) => w,
+        Err(_) => return RpcResponse::err("wallet tidak ditemukan, jalankan getnewwallet atau dumpprivkey"),
+    };
+    let cfg = Config {
+        mining_address: w.address.clone(),
+        created_at: now_millis(),
+        protocol_version: crate::blockchain::protocol_version(),
+        network: "main".to_string(),
+    };
+    match cfg.save_default() {
+        Ok(_) => RpcResponse::ok(json!({
+            "mining_address": w.address,
+            "config_file": datadir::as_str(&datadir::config_path()),
+        })),
+        Err(e) => RpcResponse::err(&format!("gagal simpan config: {}", e)),
+    }
+}
+
+fn m_addtoaddress(req: &RpcRequest) -> RpcResponse {
+    let addr = match req.params.first().and_then(|v| v.as_str()) {
+        Some(a) => a.to_string(),
+        None => return RpcResponse::err("addtoaddress butuh alamat"),
+    };
+    let cfg = Config {
+        mining_address: addr.clone(),
+        created_at: now_millis(),
+        protocol_version: crate::blockchain::protocol_version(),
+        network: "main".to_string(),
+    };
+    match cfg.save_default() {
+        Ok(_) => RpcResponse::ok(json!({
+            "mining_address": addr,
+            "config_file": datadir::as_str(&datadir::config_path()),
+        })),
+        Err(e) => RpcResponse::err(&format!("gagal simpan config: {}", e)),
+    }
+}
+
 fn write_response(mut stream: TcpStream, resp: &RpcResponse) -> std::io::Result<()> {
     let line = serde_json::to_string(resp).unwrap();
     stream.write_all(line.as_bytes())?;
@@ -298,7 +356,6 @@ fn write_response(mut stream: TcpStream, resp: &RpcResponse) -> std::io::Result<
     stream.flush()
 }
 
-/// Helper client: cetak hasil atau error, keluar bila gagal.
 pub fn call_and_print(method: &str, params: Vec<Value>) {
     match call(method, params) {
         Ok(resp) => {
@@ -313,11 +370,6 @@ pub fn call_and_print(method: &str, params: Vec<Value>) {
             println!("[rpc] jalankan zenachaind terlebih dahulu.");
         }
     }
-}
-
-#[allow(dead_code)]
-pub fn _unused() -> u128 {
-    now_millis()
 }
 
 #[allow(dead_code)]
