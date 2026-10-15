@@ -1,4 +1,3 @@
-use crate::secp256k1::{address, keypair::KeyPair, sign, verify};
 use crate::utils::sha3_256_hex;
 use serde::{Deserialize, Serialize};
 
@@ -88,7 +87,11 @@ impl Transaction {
         sha3_256_hex(payload.as_bytes())
     }
 
+    /// Hanya menghitung txid. Validasi signature dilakukan di
+    /// `crate::validation::rule_signature`.
     pub fn sign(&mut self, secret_hex: &str) -> Result<(), String> {
+        use crate::secp256k1::{keypair::KeyPair, sign};
+
         let sk = hex::decode(secret_hex).map_err(|e| e.to_string())?;
         let kp = KeyPair::from_secret(&sk)?;
 
@@ -102,55 +105,33 @@ impl Transaction {
         Ok(())
     }
 
+    /// Shortcut ke validasi signature.
+    /// Semua logika ada di `crate::validation::rule_signature`.
     pub fn verify_signature(&self) -> bool {
-        if self.from == "COINBASE"
-            || self.from == "GENESIS"
-            || self.from == "NETWORK"
-            || self.from == "MEMPOOL"
-        {
-            return true;
-        }
-
-        if self.public_key.is_empty() || self.signature.is_empty() {
-            return false;
-        }
-
-        let pk = match hex::decode(&self.public_key) {
-            Ok(b) => b,
-            Err(_) => return false,
-        };
-        let sig = match hex::decode(&self.signature) {
-            Ok(b) => b,
-            Err(_) => return false,
-        };
-        let msg = match hex::decode(&self.txid) {
-            Ok(b) => b,
-            Err(_) => return false,
-        };
-
-        verify::verify(&pk, &msg, &sig)
+        crate::validation::rule_signature(self).is_ok()
     }
 
+    /// Shortcut ke validasi alamat.
+    /// Semua logika ada di `crate::validation::rule_address_matches_pubkey`.
     pub fn expected_address(&self) -> Option<String> {
         if self.public_key.is_empty() {
             return None;
         }
         let pk = hex::decode(&self.public_key).ok()?;
-        address::address_from_public_key(&pk).ok()
+        crate::secp256k1::address::address_from_public_key(&pk).ok()
     }
 
+    /// Shortcut ke validasi lengkap.
+    /// Butuh chain, karena ada aturan double-spend dan saldo.
     pub fn is_valid(&self) -> bool {
-        if self.to.is_empty() || self.from.is_empty() {
-            return false;
-        }
-        if !self.verify_signature() {
-            return false;
-        }
-        if let Some(expected) = self.expected_address() {
-            if expected != self.from {
-                return false;
-            }
-        }
-        true
+        crate::validation::rule_txid_consistent(self).is_ok()
+            && crate::validation::rule_address_format(&self.from).is_ok()
+            && crate::validation::rule_address_format(&self.to).is_ok()
+            && crate::validation::rule_self_send(self).is_ok()
+            && crate::validation::rule_amount_nonzero(self).is_ok()
+            && crate::validation::rule_note_length(self).is_ok()
+            && crate::validation::rule_input_count(self).is_ok()
+            && crate::validation::rule_signature(self).is_ok()
+            && crate::validation::rule_address_matches_pubkey(self).is_ok()
     }
 }
