@@ -16,11 +16,12 @@ fn main() {
     match args[1].as_str() {
         "help" => print_help(),
         "addtoaddress" => cmd_add_to_address(&args),
-        "createwallet" => cmd_create_wallet(),
-        "showwallet" => cmd_show_wallet(),
+        "getwallet" => cmd_get_wallet(),
+        "createwallet" => cmd_get_wallet(),
+        "showwallet" => cmd_get_wallet(),
+        "getwalletinfo" => cmd_get_wallet(),
         "initdatadir" => cmd_init_datadir(),
         "info" => cmd_info(),
-        "getwalletinfo" => cmd_get_wallet_info(),
         "getinfo" => cmd_get_info(),
         "getbalance" => cmd_get_balance(),
         "dumpprivkey" => cmd_dump_privkey(&args),
@@ -54,53 +55,32 @@ fn cmd_add_to_address(args: &[String]) {
     }
 }
 
-fn cmd_create_wallet() {
+fn cmd_get_wallet() {
+    println!("getwallet: membuka dompet. Jika belum ada, dompet baru dibuat.");
     if Wallet::exists_default() {
-        println!(
-            "[main] wallet sudah ada di {}",
-            datadir::as_str(&datadir::wallet_path())
-        );
-        println!("[main] hapus file tersebut bila ingin membuat wallet baru.");
+        match Wallet::load_default() {
+            Ok(w) => print_wallet(&w),
+            Err(e) => println!("[main] wallet tidak dapat dimuat: {}", e),
+        }
         return;
     }
+
     let w = Wallet::new();
     match w.save_default() {
         Ok(_) => {
-            println!("[main] wallet dibuat.");
-            println!("[main] address: {}", w.address);
-            println!(
-                "[main] lokasi: {}",
-                datadir::as_str(&datadir::wallet_path())
-            );
+            println!("[main] dompet baru dibuat.");
+            print_wallet(&w);
         }
         Err(e) => println!("[main] gagal menyimpan wallet: {}", e),
     }
 }
 
-fn cmd_show_wallet() {
-    match Wallet::load_default() {
-        Ok(w) => {
-            println!("address: {}", w.address);
-            println!("public_key: {}", w.public_key);
-            println!("created_at: {}", w.created_at);
-            println!("lokasi: {}", datadir::as_str(&datadir::wallet_path()));
-        }
-        Err(e) => println!("[main] wallet tidak dapat dimuat: {}", e),
-    }
-}
-
-fn cmd_get_wallet_info() {
-    println!("getwalletinfo: menampilkan seluruh isi dompet.");
-    match Wallet::load_default() {
-        Ok(w) => {
-            println!("address      : {}", w.address);
-            println!("public_key   : {}", w.public_key);
-            println!("secret       : {}", w.secret);
-            println!("created_at   : {}", w.created_at);
-            println!("lokasi       : {}", datadir::as_str(&datadir::wallet_path()));
-        }
-        Err(e) => println!("[main] wallet tidak dapat dimuat: {}", e),
-    }
+fn print_wallet(w: &Wallet) {
+    println!("address    : {}", w.address);
+    println!("public_key : {}", w.public_key);
+    println!("secret     : {}", w.secret);
+    println!("created_at : {}", w.created_at);
+    println!("lokasi     : {}", datadir::as_str(&datadir::wallet_path()));
 }
 
 fn cmd_get_info() {
@@ -178,8 +158,7 @@ fn cmd_dump_privkey(args: &[String]) {
     match w.save_default() {
         Ok(_) => {
             println!("[main] wallet dari private key disimpan.");
-            println!("address : {}", w.address);
-            println!("lokasi  : {}", datadir::as_str(&datadir::wallet_path()));
+            print_wallet(&w);
         }
         Err(e) => println!("[main] gagal menyimpan wallet: {}", e),
     }
@@ -255,9 +234,7 @@ fn print_help() {
     println!("pemakaian:");
     println!("  zenachain help                          tampilkan bantuan ini");
     println!("  zenachain initdatadir                   siapkan struktur .chain");
-    println!("  zenachain createwallet                  buat wallet baru di .chain/wallet.dat");
-    println!("  zenachain showwallet                    tampilkan ringkasan wallet");
-    println!("  zenachain getwalletinfo                 tampilkan seluruh isi dompet");
+    println!("  zenachain getwallet                     buka atau buat dompet baru");
     println!("  zenachain getprivkey                    tampilkan private key wallet");
     println!("  zenachain dumpprivkey \"<privkey>\"       login dompet memakai private key");
     println!("  zenachain getbalance                    hitung saldo wallet dari chain");
