@@ -1,8 +1,10 @@
 pub mod block;
 pub mod blockchain;
-pub mod transaction;
+pub mod cli;
+pub mod mempool;
+pub mod params;
 pub mod pow;
 pub mod storage;
+pub mod transaction;
 pub mod utils;
 pub mod wallet;
-pub mod mempool;
