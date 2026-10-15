@@ -19,7 +19,14 @@ fn main() {
         "getbestblockhash" => rpc::call_and_print("getbestblockhash", vec![]),
         "verifychain" => rpc::call_and_print("verifychain", vec![]),
         "getwallet" => rpc::call_and_print("getwallet", vec![]),
-        "getprivkey" => rpc::call_and_print("getprivkey", vec![]),
+        "getprivkey" => {
+            if args.len() < 3 {
+                println!("wajib memasukkan \"alamat tujuan\"");
+                println!("pemakaian: zenachain getprivkey \"<alamat>\"");
+                return;
+            }
+            rpc::call_and_print("getprivkey", vec![json!(args[2])]);
+        }
         "getnewwallet" => rpc::call_and_print("getnewwallet", vec![]),
         "getaddtowallet" => rpc::call_and_print("getaddtowallet", vec![]),
         "getaddtoaddress" => {
@@ -104,7 +111,7 @@ fn print_help() {
     println!("  zenachain getaddtowallet                pakai alamat wallet sebagai tujuan mining");
     println!("  zenachain getaddtoaddress \"<alamat>\"    set alamat mining manual");
     println!("  zenachain generatetoaddress <n> \"<alamat>\"  mining n blok langsung ke alamat");
-    println!("  zenachain getprivkey                    tampilkan private key wallet");
+    println!("  zenachain getprivkey \"<alamat>\"         tampilkan private key untuk alamat itu");
     println!("  zenachain dumpprivkey \"<privkey>\"       pulihkan dompet dari private key");
     println!("  zenachain getbalance [address]          hitung saldo wallet");
     println!();
