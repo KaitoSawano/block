@@ -54,13 +54,6 @@ pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     Ok(resp)
 }
 
-/// Konversi satoshi ke string desimal 8 digit, gaya Bitcoin.
-/// 1 ZENAC = 100.000.000 satoshi.
-/// 0           -> "0.00000000"
-/// 1           -> "0.00000001"
-/// 102000000   -> "1.02000000"
-/// 10102000000 -> "101.02000000"
-/// 500000000000 -> "5000.00000000"
 fn to_coin(satoshi: u64) -> String {
     let whole = satoshi / 100_000_000;
     let frac = satoshi % 100_000_000;
@@ -244,17 +237,18 @@ impl RpcServer {
                 if tx.to == addr {
                     let outpoint = format!("{}:0", tx.txid);
                     if !spent.contains(&outpoint) {
-                        received += tx.amount;
-                        mature += tx.amount;
+                        received = received.saturating_add(tx.amount);
+                        mature = mature.saturating_add(tx.amount);
                     }
                 }
             }
 
             if block.mined_for == addr && block.reward > 0 {
-                if block.index + COINBASE_MATURITY <= current_height {
-                    mature += block.reward;
+                let mature_at = block.index.saturating_add(COINBASE_MATURITY);
+                if mature_at <= current_height {
+                    mature = mature.saturating_add(block.reward);
                 } else {
-                    immature += block.reward;
+                    immature = immature.saturating_add(block.reward);
                 }
             }
         }
@@ -287,7 +281,9 @@ impl RpcServer {
             let next_index = prev.index + 1;
             let reward = Blockchain::calculate_reward(next_index);
 
-            if self.chain.circulating_supply() + reward > crate::blockchain::max_supply() {
+            if self.chain.circulating_supply().saturating_add(reward)
+                > crate::blockchain::max_supply()
+            {
                 return RpcResponse::err("max supply reached");
             }
 
@@ -309,7 +305,9 @@ impl RpcServer {
 
             let mut block =
                 crate::block::Block::new_for(next_index, prev.hash.clone(), reward, txs, addr.clone());
-            pow::mine(&mut block, self.chain.difficulty);
+            if !pow::mine(&mut block, self.chain.difficulty) {
+                return RpcResponse::err("mining gagal: nonce habis");
+            }
 
             let hash = block.hash.clone();
             let height = block.index;
