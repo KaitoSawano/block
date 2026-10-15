@@ -20,6 +20,8 @@ fn main() {
         "getbestblockhash" => rpc::call_and_print("getbestblockhash", vec![]),
         "verifychain" => rpc::call_and_print("verifychain", vec![]),
         "validatemempool" => rpc::call_and_print("validatemempool", vec![]),
+        "getgenesishash" => rpc::call_and_print("getgenesishash", vec![]),
+        "getgenesis" => rpc::call_and_print("getgenesis", vec![]),
         "getwallet" => rpc::call_and_print("getwallet", vec![]),
         "getprivkey" => {
             if args.len() < 3 {
@@ -121,6 +123,8 @@ fn print_help() {
     println!("  zenachain getbestblockhash                    hash blok terakhir");
     println!("  zenachain verifychain                         verifikasi integritas seluruh chain");
     println!("  zenachain validatemempool                     validasi seluruh isi mempool");
+    println!("  zenachain getgenesishash                      hash genesis");
+    println!("  zenachain getgenesis                          detail genesis");
     println!("  zenachain getblockhash <height>               hash blok pada height tertentu");
     println!("  zenachain getblock \"<hash>\"                   detail blok berdasarkan hash");
     println!("  zenachain getrawtransaction \"<txid>\"          detail transaksi berdasarkan txid");
