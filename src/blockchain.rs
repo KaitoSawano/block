@@ -32,13 +32,12 @@ mod spec {
     pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
     pub const GENESIS_TIMESTAMP: u128 = 1_792_012_800_000;
 
-    /// Batas ukuran blok (jumlah transaksi).
     pub const MAX_TX_PER_BLOCK: usize = 10_000;
 }
 
-/// Tabel checkpoint.
-/// Sifatnya informatif, sama seperti `defaultAssumeValid` di Bitcoin:
-/// tidak dipakai untuk menolak blok, hanya referensi publik.
+/// Checkpoint ZenaChain, gaya Bitcoin era awal.
+/// Hash di height tertentu mengunci blok. Fork yang bercabang
+/// sebelum checkpoint ditolak oleh `is_valid` dan `submitblock`.
 pub mod checkpoint {
     pub struct Checkpoint {
         pub height: u64,
@@ -50,7 +49,7 @@ pub mod checkpoint {
             height: 0,
             hash: "0000000000000000000000000000000000000000000000000000000000000000",
         },
-        // Tambahkan entri referensi di height penting.
+        // Tambahkan checkpoint setelah chain stabil.
         //
         // Checkpoint {
         //     height: 100_000,
@@ -71,6 +70,14 @@ pub mod checkpoint {
 
     pub fn highest() -> u64 {
         CHECKPOINTS.iter().map(|c| c.height).max().unwrap_or(0)
+    }
+
+    /// Return true bila tidak ada checkpoint di height itu, atau bila cocok.
+    pub fn verify(height: u64, hash: &str) -> bool {
+        match find(height) {
+            Some(expected) => expected == hash,
+            None => true,
+        }
     }
 }
 
@@ -200,8 +207,7 @@ impl Blockchain {
         }
     }
 
-    /// Validasi chain mengikuti aturan inti Bitcoin.
-    /// Tidak ada checkpoint, tidak ada finality.
+    /// Validasi chain dengan checkpoint aktif.
     pub fn is_valid(&self) -> bool {
         if self.chain.is_empty() {
             return false;
@@ -246,8 +252,23 @@ impl Blockchain {
             if cur.timestamp < prev.timestamp {
                 return false;
             }
+
+            // Checkpoint: hash di height tertentu tidak boleh berbeda.
+            if !checkpoint::verify(cur.index, &cur.hash) {
+                return false;
+            }
         }
 
+        true
+    }
+
+    /// Validasi chain eksternal terhadap checkpoint.
+    pub fn check_against_checkpoints(chain: &[Block]) -> bool {
+        for block in chain {
+            if !checkpoint::verify(block.index, &block.hash) {
+                return false;
+            }
+        }
         true
     }
 }
