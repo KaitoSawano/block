@@ -12,8 +12,12 @@ fn main() {
     match args[1].as_str() {
         "help" => print_help(),
         "getinfo" => rpc::call_and_print("getinfo", vec![]),
+        "getblockchaininfo" => rpc::call_and_print("getblockchaininfo", vec![]),
         "getcheckpoints" => rpc::call_and_print("getcheckpoints", vec![]),
         "getblocktemplate" => rpc::call_and_print("getblocktemplate", vec![]),
+        "getblockcount" => rpc::call_and_print("getblockcount", vec![]),
+        "getbestblockhash" => rpc::call_and_print("getbestblockhash", vec![]),
+        "verifychain" => rpc::call_and_print("verifychain", vec![]),
         "getwallet" => rpc::call_and_print("getwallet", vec![]),
         "getprivkey" => rpc::call_and_print("getprivkey", vec![]),
         "getnewwallet" => rpc::call_and_print("getnewwallet", vec![]),
@@ -86,9 +90,13 @@ fn print_help() {
     println!("ZenaChain CLI");
     println!("pemakaian:");
     println!("  zenachain help                          tampilkan bantuan ini");
-    println!("  zenachain getinfo                       informasi jaringan");
+    println!("  zenachain getinfo                       informasi node");
+    println!("  zenachain getblockchaininfo             informasi blockchain gaya Bitcoin");
     println!("  zenachain getcheckpoints                daftar checkpoint aktif");
     println!("  zenachain getblocktemplate              template blok untuk miner");
+    println!("  zenachain getblockcount                 jumlah blok di chain");
+    println!("  zenachain getbestblockhash              hash blok terakhir");
+    println!("  zenachain verifychain                   verifikasi integritas seluruh chain");
     println!("  zenachain getblockhash <height>         hash blok pada height tertentu");
     println!("  zenachain getblock \"<hash>\"             detail blok berdasarkan hash");
     println!("  zenachain getwallet                     buka dompet tersimpan");
