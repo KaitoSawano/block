@@ -128,6 +128,11 @@ impl Blockchain {
             return;
         }
 
+        println!(
+            "[blockchain] adjust_difficulty: menyesuaikan difficulty pada height {}.",
+            height
+        );
+
         let interval = spec::DIFFICULTY_ADJUST_INTERVAL as usize;
         let last = &self.chain[height as usize];
         let first = &self.chain[height as usize - interval];
@@ -148,6 +153,7 @@ impl Blockchain {
     }
 
     pub fn is_valid(&self) -> bool {
+        println!("[blockchain] is_valid: memverifikasi {} blok.", self.chain.len());
         for i in 1..self.chain.len() {
             let cur = &self.chain[i];
             let prev = &self.chain[i - 1];
