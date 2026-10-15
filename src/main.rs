@@ -12,6 +12,7 @@ fn main() {
     match args[1].as_str() {
         "help" => print_help(),
         "getinfo" => rpc::call_and_print("getinfo", vec![]),
+        "getcheckpoints" => rpc::call_and_print("getcheckpoints", vec![]),
         "getblocktemplate" => rpc::call_and_print("getblocktemplate", vec![]),
         "getwallet" => rpc::call_and_print("getwallet", vec![]),
         "getprivkey" => rpc::call_and_print("getprivkey", vec![]),
@@ -23,6 +24,27 @@ fn main() {
                 return;
             }
             rpc::call_and_print("getaddtoaddress", vec![json!(args[2])]);
+        }
+        "getblockhash" => {
+            if args.len() < 3 {
+                println!("pemakaian: zenachain getblockhash <height>");
+                return;
+            }
+            let h: u64 = match args[2].parse() {
+                Ok(v) => v,
+                Err(_) => {
+                    println!("height tidak valid");
+                    return;
+                }
+            };
+            rpc::call_and_print("getblockhash", vec![json!(h)]);
+        }
+        "getblock" => {
+            if args.len() < 3 {
+                println!("pemakaian: zenachain getblock \"<hash>\"");
+                return;
+            }
+            rpc::call_and_print("getblock", vec![json!(args[2])]);
         }
         "generatetoaddress" => {
             if args.len() < 4 {
@@ -65,7 +87,10 @@ fn print_help() {
     println!("pemakaian:");
     println!("  zenachain help                          tampilkan bantuan ini");
     println!("  zenachain getinfo                       informasi jaringan");
+    println!("  zenachain getcheckpoints                daftar checkpoint aktif");
     println!("  zenachain getblocktemplate              template blok untuk miner");
+    println!("  zenachain getblockhash <height>         hash blok pada height tertentu");
+    println!("  zenachain getblock \"<hash>\"             detail blok berdasarkan hash");
     println!("  zenachain getwallet                     buka dompet tersimpan");
     println!("  zenachain getnewwallet                  buat dompet baru (timpa yang lama)");
     println!("  zenachain getaddtowallet                pakai alamat wallet sebagai tujuan mining");
