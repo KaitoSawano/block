@@ -1,6 +1,7 @@
 use crate::block::Block;
 use crate::pow;
 use crate::transaction::Transaction;
+use crate::validation;
 use serde::{Deserialize, Serialize};
 
 mod spec {
@@ -31,8 +32,6 @@ mod spec {
     pub const GENESIS_MESSAGE: &str = "ZenaChain Genesis - 2026";
     pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
     pub const GENESIS_TIMESTAMP: u128 = 1_792_012_800_000;
-
-    pub const MAX_TX_PER_BLOCK: usize = 10_000;
 }
 
 pub mod checkpoint {
@@ -92,7 +91,7 @@ pub fn difficulty_adjust_interval() -> u64 { spec::DIFFICULTY_ADJUST_INTERVAL }
 pub fn genesis_message() -> &'static str { spec::GENESIS_MESSAGE }
 pub fn genesis_secret() -> &'static str { spec::GENESIS_SECRET }
 pub fn genesis_timestamp() -> u128 { spec::GENESIS_TIMESTAMP }
-pub fn max_tx_per_block() -> usize { spec::MAX_TX_PER_BLOCK }
+pub fn max_tx_per_block() -> usize { validation::MAX_TX_PER_BLOCK }
 pub fn pow_limit() -> &'static str { pow::POW_LIMIT }
 pub fn genesis_nbits() -> u32 { pow::GENESIS_NBITS }
 
@@ -139,11 +138,13 @@ impl Blockchain {
         next.saturating_sub(self.height())
     }
 
+    /// Tambah transaksi ke mempool.
+    /// Validasi lengkap ada di `crate::validation::validate_transaction`.
     pub fn add_transaction(&mut self, tx: Transaction) -> bool {
-        if !tx.is_valid() {
+        if validation::validate_transaction(self, &tx).is_err() {
             return false;
         }
-        if self.mempool.len() >= spec::MAX_TX_PER_BLOCK {
+        if self.mempool.len() >= validation::MAX_TX_PER_BLOCK {
             return false;
         }
         self.mempool.push(tx);
@@ -198,67 +199,9 @@ impl Blockchain {
         }
     }
 
+    /// Validasi chain. Logika ada di `crate::validation::validate_chain`.
     pub fn is_valid(&self) -> bool {
-        if self.chain.is_empty() {
-            return false;
-        }
-
-        let genesis = &self.chain[0];
-        if genesis.index != 0 {
-            return false;
-        }
-        if genesis.previous_hash != "0".repeat(64) {
-            return false;
-        }
-        if !pow::hash_meets_nbits(&genesis.hash, genesis.nbits) {
-            return false;
-        }
-
-        for i in 1..self.chain.len() {
-            let cur = &self.chain[i];
-            let prev = &self.chain[i - 1];
-
-            if cur.index != prev.index + 1 {
-                return false;
-            }
-            if cur.hash != cur.calculate_hash() {
-                return false;
-            }
-            if cur.previous_hash != prev.hash {
-                return false;
-            }
-            if cur.reward != Self::calculate_reward(cur.index) {
-                return false;
-            }
-            if !pow::hash_meets_nbits(&cur.hash, cur.nbits) {
-                return false;
-            }
-            if cur.transactions.len() > spec::MAX_TX_PER_BLOCK {
-                return false;
-            }
-            if cur.timestamp < prev.timestamp {
-                return false;
-            }
-            if !checkpoint::verify(cur.index, &cur.hash) {
-                return false;
-            }
-            for tx in &cur.transactions {
-                if !tx.verify_signature() {
-                    return false;
-                }
-            }
-        }
-
-        true
-    }
-
-    pub fn check_against_checkpoints(chain: &[Block]) -> bool {
-        for block in chain {
-            if !checkpoint::verify(block.index, &block.hash) {
-                return false;
-            }
-        }
-        true
+        validation::validate_chain(self).is_ok()
     }
 }
 
