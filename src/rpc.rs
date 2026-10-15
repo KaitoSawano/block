@@ -66,17 +66,15 @@ pub struct RpcServer {
 
 impl RpcServer {
     pub fn new() -> Self {
-        println!("[rpc] new: memuat chain untuk server RPC.");
         let chain = storage::load_chain().unwrap_or_else(|_| Blockchain::new());
         RpcServer { chain }
     }
 
     pub fn listen(&mut self) {
-        println!("[rpc] listen: server RPC di {}.", RPC_ADDR);
         let listener = match TcpListener::bind(RPC_ADDR) {
             Ok(l) => l,
             Err(e) => {
-                println!("[rpc] gagal bind {}: {}", RPC_ADDR, e);
+                eprintln!("[rpc] gagal bind {}: {}", RPC_ADDR, e);
                 return;
             }
         };
@@ -84,7 +82,7 @@ impl RpcServer {
         for incoming in listener.incoming() {
             match incoming {
                 Ok(stream) => { let _ = self.handle(stream); }
-                Err(e) => println!("[rpc] koneksi gagal: {}", e),
+                Err(e) => eprintln!("[rpc] koneksi gagal: {}", e),
             }
         }
     }
@@ -108,7 +106,6 @@ impl RpcServer {
     }
 
     fn dispatch(&mut self, req: &RpcRequest) -> RpcResponse {
-        println!("[rpc] dispatch: method={}", req.method);
         match req.method.as_str() {
             "getinfo" => self.m_getinfo(),
             "getblockchaininfo" => self.m_getblockchaininfo(),
@@ -245,7 +242,6 @@ impl RpcServer {
             }
         }
 
-        // Siarkan ke mempool chain lalu log AddToWallet.
         self.chain.chain.push(block.clone());
         self.chain.mempool.clear();
 
