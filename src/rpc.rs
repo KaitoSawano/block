@@ -11,6 +11,9 @@ use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
 pub const RPC_ADDR: &str = "127.0.0.1:8332";
 pub const COINBASE_MATURITY: u64 = 100;
@@ -63,12 +66,16 @@ fn to_coin(satoshi: u64) -> String {
 
 pub struct RpcServer {
     chain: Blockchain,
+    shutdown: Arc<AtomicBool>,
 }
 
 impl RpcServer {
     pub fn new() -> Self {
         let chain = storage::load_chain().unwrap_or_else(|_| Blockchain::new());
-        RpcServer { chain }
+        RpcServer {
+            chain,
+            shutdown: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     pub fn listen(&mut self) {
@@ -80,9 +87,23 @@ impl RpcServer {
             }
         };
 
-        for incoming in listener.incoming() {
-            match incoming {
-                Ok(stream) => { let _ = self.handle(stream); }
+        let _ = listener.set_nonblocking(true);
+
+        loop {
+            if self.shutdown.load(Ordering::SeqCst) {
+                // Simpan chain sebelum keluar.
+                let _ = storage::save_chain(&self.chain);
+                eprintln!("[rpc] node berhenti.");
+                break;
+            }
+
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    let _ = self.handle(stream);
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
                 Err(e) => eprintln!("[rpc] koneksi gagal: {}", e),
             }
         }
@@ -127,8 +148,25 @@ impl RpcServer {
             "getaddtoaddress" => m_getaddtoaddress(req),
             "generatetoaddress" => self.m_generatetoaddress(req),
             "sendtoaddress" => self.m_sendtoaddress(req),
+            "stop" => self.m_stop(),
             _ => RpcResponse::err("method tidak dikenal"),
         }
+    }
+
+    fn m_stop(&mut self) -> RpcResponse {
+        // Simpan chain sebelum shutdown.
+        if let Err(e) = storage::save_chain(&self.chain) {
+            return RpcResponse::err(&format!("gagal simpan chain: {}", e));
+        }
+
+        self.shutdown.store(true, Ordering::SeqCst);
+
+        RpcResponse::ok(json!({
+            "stopping": true,
+            "height": self.chain.height(),
+            "chain_len": self.chain.chain.len(),
+            "saved": true,
+        }))
     }
 
     fn m_getinfo(&self) -> RpcResponse {
@@ -444,7 +482,6 @@ impl RpcServer {
         RpcResponse::ok(json!(hashes))
     }
 
-    /// Kirim koin dari wallet ke alamat tujuan.
     fn m_sendtoaddress(&mut self, req: &RpcRequest) -> RpcResponse {
         if req.params.len() < 2 {
             return RpcResponse::err("sendtoaddress butuh jumlah dan alamat");
