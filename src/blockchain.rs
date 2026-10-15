@@ -23,22 +23,22 @@ mod spec {
     pub const INITIAL_REWARD: u64 = INITIAL_REWARD_ZENAC * SATOSHI;
 
     // Halving: setiap 280.000.000 blok.
-    // Dengan blok 30 detik, 280.000.000 blok = ~266 tahun.
+    // Dengan blok 15 detik, 280.000.000 blok = ~133 tahun per era.
     // Total supply = 2 × 280.000.000 × 50 = 28.000.000.000 ZENAC.
     pub const SUBSIDY_HALVING_INTERVAL: u64 = 280_000_000;
     pub const MAX_HALVINGS: u32 = 64;
 
-    // Target spacing: 30 detik, transaksi super cepat.
-    pub const POW_TARGET_SPACING_SECS: u64 = 30;
+    // Target spacing: 15 detik.
+    pub const POW_TARGET_SPACING_SECS: u64 = 15;
 
     // Target timespan: 3 hari.
     pub const POW_TARGET_TIMESPAN_SECS: u64 = 259_200;
 
-    // Miner confirmation window: 259200 / 30 * 4 = 34.560 blok.
-    pub const MINER_CONFIRMATION_WINDOW: u64 = 34_560;
+    // Miner confirmation window: 259200 / 15 * 4 = 69.120 blok.
+    pub const MINER_CONFIRMATION_WINDOW: u64 = 69_120;
 
     // Interval penyesuaian nBits: sama dengan confirmation window.
-    pub const DIFFICULTY_ADJUST_INTERVAL: u64 = 34_560;
+    pub const DIFFICULTY_ADJUST_INTERVAL: u64 = 69_120;
 
     pub const GENESIS_MESSAGE: &str = "ZenaChain Genesis - 2026";
     pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
