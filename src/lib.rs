@@ -5,6 +5,7 @@ pub mod datadir;
 pub mod mempool;
 pub mod node;
 pub mod pow;
+pub mod rpc;
 pub mod storage;
 pub mod transaction;
 pub mod utils;
