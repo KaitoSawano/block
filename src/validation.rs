@@ -54,9 +54,6 @@ impl fmt::Display for ValidationError {
 // ATURAN FORMAT
 // ============================================================
 
-/// E001: alamat harus diawali "ZENA".
-/// E002: bagian setelah prefix harus 40 karakter.
-/// E003: bagian setelah prefix harus hex.
 pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
     if !addr.starts_with(ADDRESS_PREFIX) {
         return Err(ValidationError::new(
@@ -88,7 +85,6 @@ pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// E004: transaksi tidak boleh mengirim ke alamat sendiri.
 pub fn rule_self_send(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.from == tx.to {
         return Err(ValidationError::new(
@@ -99,7 +95,6 @@ pub fn rule_self_send(tx: &Transaction) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// E005: amount harus lebih dari nol.
 pub fn rule_amount_nonzero(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.amount == 0 {
         return Err(ValidationError::new(
@@ -110,7 +105,6 @@ pub fn rule_amount_nonzero(tx: &Transaction) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// E006: note tidak boleh melebihi MAX_NOTE_LEN byte.
 pub fn rule_note_length(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.note.len() > MAX_NOTE_LEN {
         return Err(ValidationError::new(
@@ -121,7 +115,6 @@ pub fn rule_note_length(tx: &Transaction) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// E007: jumlah input tidak boleh melebihi MAX_INPUTS_PER_TX.
 pub fn rule_input_count(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.inputs.len() > MAX_INPUTS_PER_TX {
         return Err(ValidationError::new(
@@ -136,7 +129,6 @@ pub fn rule_input_count(tx: &Transaction) -> Result<(), ValidationError> {
 // ATURAN SIGNATURE
 // ============================================================
 
-/// E010: signature harus valid.
 pub fn rule_signature(tx: &Transaction) -> Result<(), ValidationError> {
     if is_special_tx(tx) {
         return Ok(());
@@ -187,7 +179,6 @@ pub fn rule_signature(tx: &Transaction) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// E011: alamat harus cocok dengan public key.
 pub fn rule_address_matches_pubkey(tx: &Transaction) -> Result<(), ValidationError> {
     if is_special_tx(tx) {
         return Ok(());
@@ -230,7 +221,6 @@ pub fn rule_address_matches_pubkey(tx: &Transaction) -> Result<(), ValidationErr
     Ok(())
 }
 
-/// E012: txid harus konsisten dengan isi transaksi.
 pub fn rule_txid_consistent(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.txid != tx.compute_txid() {
         return Err(ValidationError::new(
@@ -267,7 +257,6 @@ pub fn mempool_inputs(chain: &Blockchain) -> HashSet<String> {
     used
 }
 
-/// E020: input tidak boleh sudah dipakai di chain atau mempool.
 pub fn rule_no_double_spend(
     chain: &Blockchain,
     tx: &Transaction,
@@ -334,7 +323,6 @@ pub fn immature_balance(chain: &Blockchain, addr: &str) -> u64 {
     immature
 }
 
-/// E021: saldo pengirim harus cukup untuk amount + fee.
 pub fn rule_sufficient_balance(
     chain: &Blockchain,
     tx: &Transaction,
@@ -361,7 +349,6 @@ pub fn rule_sufficient_balance(
 // ATURAN BLOK
 // ============================================================
 
-/// E030: blok tidak boleh punya lebih dari MAX_TX_PER_BLOCK transaksi.
 pub fn rule_block_tx_count(block: &Block) -> Result<(), ValidationError> {
     if block.transactions.len() > MAX_TX_PER_BLOCK {
         return Err(ValidationError::new(
@@ -376,7 +363,6 @@ pub fn rule_block_tx_count(block: &Block) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// E031: coinbase reward harus sesuai era halving.
 pub fn rule_block_reward(block: &Block) -> Result<(), ValidationError> {
     let expected = Blockchain::calculate_reward(block.index);
     if block.reward != expected {
@@ -391,7 +377,6 @@ pub fn rule_block_reward(block: &Block) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// E032: timestamp blok tidak boleh mundur dari blok sebelumnya.
 pub fn rule_block_timestamp_monotonic(
     prev: &Block,
     cur: &Block,
@@ -408,7 +393,6 @@ pub fn rule_block_timestamp_monotonic(
     Ok(())
 }
 
-/// E033: nBits blok harus sama dengan nBits chain saat ini.
 pub fn rule_block_nbits(chain: &Blockchain, block: &Block) -> Result<(), ValidationError> {
     if block.nbits != chain.nbits {
         return Err(ValidationError::new(
@@ -422,7 +406,6 @@ pub fn rule_block_nbits(chain: &Blockchain, block: &Block) -> Result<(), Validat
     Ok(())
 }
 
-/// E034: hash blok harus konsisten dengan isi.
 pub fn rule_block_hash_consistent(block: &Block) -> Result<(), ValidationError> {
     if block.hash != block.calculate_hash() {
         return Err(ValidationError::new(
@@ -433,7 +416,6 @@ pub fn rule_block_hash_consistent(block: &Block) -> Result<(), ValidationError> 
     Ok(())
 }
 
-/// E035: previous_hash blok harus cocok dengan hash blok sebelumnya.
 pub fn rule_block_previous_hash(
     prev: &Block,
     cur: &Block,
@@ -450,7 +432,6 @@ pub fn rule_block_previous_hash(
     Ok(())
 }
 
-/// E036: index blok harus prev.index + 1.
 pub fn rule_block_index_sequential(
     prev: &Block,
     cur: &Block,
@@ -467,7 +448,6 @@ pub fn rule_block_index_sequential(
     Ok(())
 }
 
-/// E037: PoW blok harus memenuhi target nbits.
 pub fn rule_block_pow(block: &Block) -> Result<(), ValidationError> {
     if !pow::hash_meets_nbits(&block.hash, block.nbits) {
         return Err(ValidationError::new(
@@ -481,7 +461,6 @@ pub fn rule_block_pow(block: &Block) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// E038: blok tidak boleh melanggar checkpoint.
 pub fn rule_block_checkpoint(block: &Block) -> Result<(), ValidationError> {
     if !crate::blockchain::checkpoint::verify(block.index, &block.hash) {
         return Err(ValidationError::new(
@@ -492,7 +471,6 @@ pub fn rule_block_checkpoint(block: &Block) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// E039: genesis block harus index 0 dan previous_hash nol.
 pub fn rule_genesis(block: &Block) -> Result<(), ValidationError> {
     if block.index != 0 {
         return Err(ValidationError::new(
@@ -504,6 +482,39 @@ pub fn rule_genesis(block: &Block) -> Result<(), ValidationError> {
         return Err(ValidationError::new(
             "E039",
             "genesis previous_hash harus nol",
+        ));
+    }
+    Ok(())
+}
+
+/// E041: total supply tidak boleh melebihi MAX_SUPPLY.
+pub fn rule_total_supply(chain: &Blockchain) -> Result<(), ValidationError> {
+    let total = chain.circulating_supply();
+    let max = crate::blockchain::max_supply();
+    if total > max {
+        return Err(ValidationError::new(
+            "E041",
+            format!(
+                "total supply {} sat melebihi max {} sat",
+                total, max
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// E042: genesis hash harus cocok dengan consensus fingerprint.
+/// Kalau ada parameter konsensus yang berubah, genesis hash berubah,
+/// dan chain lama akan ditolak.
+pub fn rule_genesis_fingerprint(block: &Block) -> Result<(), ValidationError> {
+    let expected_txid = crate::blockchain::genesis_coinbase_txid();
+    if block.coinbase_txid != expected_txid {
+        return Err(ValidationError::new(
+            "E042",
+            format!(
+                "genesis coinbase_txid tidak cocok dengan fingerprint konsensus: dapat {}, seharusnya {}",
+                block.coinbase_txid, expected_txid
+            ),
         ));
     }
     Ok(())
@@ -524,7 +535,6 @@ pub fn is_valid_address(addr: &str) -> bool {
     rule_address_format(addr).is_ok()
 }
 
-/// Validasi lengkap satu transaksi biasa.
 pub fn validate_transaction(
     chain: &Blockchain,
     tx: &Transaction,
@@ -548,7 +558,6 @@ pub fn validate_transaction(
     Ok(())
 }
 
-/// Validasi semua transaksi di dalam blok.
 pub fn validate_block_transactions(
     chain: &Blockchain,
     transactions: &[Transaction],
@@ -559,7 +568,6 @@ pub fn validate_block_transactions(
     Ok(())
 }
 
-/// Validasi satu blok penuh terhadap blok sebelumnya.
 pub fn validate_block(
     chain: &Blockchain,
     prev: &Block,
@@ -579,19 +587,21 @@ pub fn validate_block(
 }
 
 /// Validasi seluruh chain.
+/// Ini yang mengikat parameter konsensus. Kalau MAX_SUPPLY atau
+/// parameter lain diubah, E041 atau E042 akan menolak chain.
 pub fn validate_chain(chain: &Blockchain) -> Result<(), ValidationError> {
     if chain.chain.is_empty() {
         return Err(ValidationError::new("E040", "chain kosong"));
     }
 
     rule_genesis(&chain.chain[0])?;
+    rule_genesis_fingerprint(&chain.chain[0])?;
+    rule_total_supply(chain)?;
 
     for i in 1..chain.chain.len() {
         let prev = &chain.chain[i - 1];
         let cur = &chain.chain[i];
 
-        // Untuk validasi chain, chain yang dipakai adalah chain yang
-        // sedang diperiksa minus blok setelah cur.
         rule_block_index_sequential(prev, cur)?;
         rule_block_hash_consistent(cur)?;
         rule_block_previous_hash(prev, cur)?;
@@ -605,7 +615,6 @@ pub fn validate_chain(chain: &Blockchain) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Validasi seluruh isi mempool.
 pub fn validate_mempool(chain: &Blockchain) -> Vec<ValidationError> {
     let mut errors = Vec::new();
     for tx in &chain.mempool {
