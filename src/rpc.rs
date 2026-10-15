@@ -139,8 +139,10 @@ impl RpcServer {
         RpcResponse::ok(json!({
             "coin_name": blockchain::coin_name(),
             "symbol": blockchain::symbol(),
+            "version": blockchain::version(),
             "protocol_version": blockchain::protocol_version(),
             "hash_algo": blockchain::hash_algo(),
+            "signature_algo": blockchain::signature_algo(),
             "height": c.height(),
             "chain_len": c.chain.len(),
             "difficulty": c.difficulty,
@@ -169,7 +171,6 @@ impl RpcServer {
             "verificationprogress": 1.0,
             "initialblockdownload": false,
             "chainwork": format!("{:x}", c.chain.len() * c.difficulty),
-            "size_on_disk": 0,
             "pruned": false,
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
             "checkpoints_highest": blockchain::checkpoint::highest(),
@@ -226,6 +227,12 @@ impl RpcServer {
             return RpcResponse::err("blok melanggar checkpoint");
         }
 
+        for tx in &block.transactions {
+            if !tx.verify_signature() {
+                return RpcResponse::err("ada transaksi dengan signature tidak valid");
+            }
+        }
+
         self.chain.chain.push(block.clone());
         self.chain.mempool.clear();
 
@@ -266,7 +273,6 @@ impl RpcServer {
         }
 
         let current_height = self.chain.height();
-
         let mut mature: u64 = 0;
         let mut immature: u64 = 0;
         let mut received: u64 = 0;
@@ -281,7 +287,6 @@ impl RpcServer {
                     }
                 }
             }
-
             if block.mined_for == addr && block.reward > 0 {
                 let mature_at = block.index.saturating_add(COINBASE_MATURITY);
                 if mature_at <= current_height {
@@ -308,16 +313,13 @@ impl RpcServer {
             Some(h) => h,
             None => return RpcResponse::err("getblockhash butuh height"),
         };
-
         if height as usize >= self.chain.chain.len() {
             return RpcResponse::err("height di luar rentang chain");
         }
-
         let block = &self.chain.chain[height as usize];
         if block.index != height {
             return RpcResponse::err("index blok tidak cocok dengan height");
         }
-
         RpcResponse::ok(json!(block.hash))
     }
 
@@ -326,12 +328,10 @@ impl RpcServer {
             Some(h) => h,
             None => return RpcResponse::err("getblock butuh hash"),
         };
-
         let block = match self.chain.chain.iter().find(|b| b.hash == hash) {
             Some(b) => b,
             None => return RpcResponse::err("blok tidak ditemukan"),
         };
-
         RpcResponse::ok(json!({
             "hash": block.hash,
             "height": block.index,
@@ -346,22 +346,20 @@ impl RpcServer {
     }
 
     fn m_getblockcount(&self) -> RpcResponse {
-        let count = self.chain.chain.len() as u64;
-        RpcResponse::ok(json!(count))
+        RpcResponse::ok(json!(self.chain.chain.len() as u64))
     }
 
     fn m_getbestblockhash(&self) -> RpcResponse {
-        let tip = self.chain.chain.last().unwrap();
-        RpcResponse::ok(json!(tip.hash))
+        RpcResponse::ok(json!(self.chain.chain.last().unwrap().hash))
     }
 
     fn m_verifychain(&self) -> RpcResponse {
-        let valid = self.chain.is_valid();
         RpcResponse::ok(json!({
-            "valid": valid,
+            "valid": self.chain.is_valid(),
             "blocks_checked": self.chain.chain.len(),
             "height": self.chain.height(),
             "difficulty": self.chain.difficulty,
+            "signature_algo": blockchain::signature_algo(),
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
         }))
     }
@@ -436,12 +434,7 @@ impl RpcServer {
 fn m_getcheckpoints() -> RpcResponse {
     let items: Vec<Value> = blockchain::checkpoint::CHECKPOINTS
         .iter()
-        .map(|c| {
-            json!({
-                "height": c.height,
-                "hash": c.hash,
-            })
-        })
+        .map(|c| json!({"height": c.height, "hash": c.hash}))
         .collect();
     RpcResponse::ok(json!(items))
 }
@@ -458,13 +451,10 @@ fn m_getwallet() -> RpcResponse {
     }
 }
 
-/// getprivkey wajib disertai alamat tujuan.
 fn m_getprivkey(req: &RpcRequest) -> RpcResponse {
     let target = match req.params.first().and_then(|v| v.as_str()) {
         Some(a) => a.to_string(),
-        None => {
-            return RpcResponse::err("wajib memasukkan \"alamat tujuan\"");
-        }
+        None => return RpcResponse::err("wajib memasukkan \"alamat tujuan\""),
     };
 
     let w = match Wallet::load_default() {
@@ -494,7 +484,11 @@ fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
         return RpcResponse::err("private key harus 64 karakter hex");
     }
 
-    let w = Wallet::from_secret(&secret);
+    let w = match Wallet::from_secret(&secret) {
+        Ok(w) => w,
+        Err(e) => return RpcResponse::err(&format!("private key tidak valid: {}", e)),
+    };
+
     match w.save_default() {
         Ok(_) => RpcResponse::ok(json!({
             "address": w.address,
