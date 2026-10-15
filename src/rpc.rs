@@ -1,5 +1,6 @@
 use crate::blockchain::{self, Blockchain};
 use crate::config::Config;
+use crate::consensus;
 use crate::datadir;
 use crate::pow;
 use crate::storage;
@@ -171,30 +172,30 @@ impl RpcServer {
     fn m_getinfo(&self) -> RpcResponse {
         let c = &self.chain;
         RpcResponse::ok(json!({
-            "coin_name": blockchain::coin_name(),
-            "symbol": blockchain::symbol(),
-            "version": blockchain::version(),
-            "protocol_version": blockchain::protocol_version(),
-            "hash_algo": blockchain::hash_algo(),
-            "signature_algo": blockchain::signature_algo(),
+            "coin_name": consensus::coin_name(),
+            "symbol": consensus::symbol(),
+            "version": consensus::version(),
+            "protocol_version": consensus::protocol_version(),
+            "hash_algo": consensus::hash_algo(),
+            "signature_algo": consensus::signature_algo(),
             "height": c.height(),
             "chain_len": c.chain.len(),
             "nbits": format!("{:#010x}", c.nbits),
-            "pow_limit": blockchain::pow_limit(),
+            "pow_limit": consensus::pow_limit(),
             "circulating": to_coin(c.circulating_supply()),
-            "max_supply": to_coin(blockchain::max_supply()),
+            "max_supply": to_coin(consensus::max_supply()),
             "era": c.current_era(),
-            "subsidy_halving_interval": blockchain::subsidy_halving_interval(),
+            "subsidy_halving_interval": consensus::subsidy_halving_interval(),
             "blocks_until_halving": c.blocks_until_halving(),
-            "pow_target_spacing_secs": blockchain::pow_target_spacing_secs(),
-            "pow_target_timespan_secs": blockchain::pow_target_timespan_secs(),
-            "miner_confirmation_window": blockchain::miner_confirmation_window(),
-            "difficulty_adjust_interval": blockchain::difficulty_adjust_interval(),
+            "pow_target_spacing_secs": consensus::pow_target_spacing_secs(),
+            "pow_target_timespan_secs": consensus::pow_target_timespan_secs(),
+            "miner_confirmation_window": consensus::miner_confirmation_window(),
+            "difficulty_adjust_interval": consensus::difficulty_adjust_interval(),
             "mempool_len": c.mempool.len(),
             "valid": c.is_valid(),
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
             "checkpoints_highest": blockchain::checkpoint::highest(),
-            "consensus_fingerprint": blockchain::consensus_fingerprint(),
+            "consensus_fingerprint": consensus::consensus_fingerprint(),
             "datadir": datadir::as_str(&datadir::datadir()),
         }))
     }
@@ -208,7 +209,7 @@ impl RpcServer {
             "headers": c.height(),
             "bestblockhash": tip.hash,
             "nbits": format!("{:#010x}", c.nbits),
-            "pow_limit": blockchain::pow_limit(),
+            "pow_limit": consensus::pow_limit(),
             "mediantime": tip.timestamp,
             "verificationprogress": 1.0,
             "initialblockdownload": false,
@@ -217,12 +218,12 @@ impl RpcServer {
             "checkpoints_highest": blockchain::checkpoint::highest(),
             "mempool_len": c.mempool.len(),
             "circulating": to_coin(c.circulating_supply()),
-            "max_supply": to_coin(blockchain::max_supply()),
+            "max_supply": to_coin(consensus::max_supply()),
             "era": c.current_era(),
-            "subsidy_halving_interval": blockchain::subsidy_halving_interval(),
+            "subsidy_halving_interval": consensus::subsidy_halving_interval(),
             "blocks_until_halving": c.blocks_until_halving(),
-            "difficulty_adjust_interval": blockchain::difficulty_adjust_interval(),
-            "consensus_fingerprint": blockchain::consensus_fingerprint(),
+            "difficulty_adjust_interval": consensus::difficulty_adjust_interval(),
+            "consensus_fingerprint": consensus::consensus_fingerprint(),
             "datadir": datadir::as_str(&datadir::datadir()),
         }))
     }
@@ -373,7 +374,7 @@ impl RpcServer {
                 "coinbase_txid": g.coinbase_txid,
                 "blockchain_size": g.blockchain_size,
                 "genesis_output_script": g.genesis_output_script,
-                "consensus_fingerprint": blockchain::consensus_fingerprint(),
+                "consensus_fingerprint": consensus::consensus_fingerprint(),
                 "transactions": g.transactions,
             })),
             None => RpcResponse::err("chain kosong"),
@@ -387,10 +388,10 @@ impl RpcServer {
                 "blocks_checked": self.chain.chain.len(),
                 "height": self.chain.height(),
                 "nbits": format!("{:#010x}", self.chain.nbits),
-                "pow_limit": blockchain::pow_limit(),
-                "signature_algo": blockchain::signature_algo(),
+                "pow_limit": consensus::pow_limit(),
+                "signature_algo": consensus::signature_algo(),
                 "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
-                "consensus_fingerprint": blockchain::consensus_fingerprint(),
+                "consensus_fingerprint": consensus::consensus_fingerprint(),
             })),
             Err(e) => RpcResponse::ok(json!({
                 "valid": false,
@@ -596,13 +597,13 @@ impl RpcServer {
             let reward = Blockchain::calculate_reward(next_index);
 
             if self.chain.circulating_supply().saturating_add(reward)
-                > blockchain::max_supply()
+                > consensus::max_supply()
             {
                 return RpcResponse::err("max supply reached");
             }
 
             let mut txs = std::mem::take(&mut self.chain.mempool);
-            txs.push(Transaction::new("NETWORK", &addr, blockchain::satoshi() / 100, 0));
+            txs.push(Transaction::new("NETWORK", &addr, consensus::satoshi() / 100, 0));
             txs.push(Transaction::new_with_inputs(
                 "MEMPOOL", "CreateNewBlock", 0, 0, Vec::new(),
                 format!("height={} target={}", next_index, addr),
@@ -783,7 +784,7 @@ fn m_getaddtowallet() -> RpcResponse {
     let cfg = Config {
         mining_address: w.address.clone(),
         created_at: now_millis(),
-        protocol_version: blockchain::protocol_version(),
+        protocol_version: consensus::protocol_version(),
         network: "main".to_string(),
     };
     match cfg.save_default() {
@@ -806,7 +807,7 @@ fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
     let cfg = Config {
         mining_address: addr.clone(),
         created_at: now_millis(),
-        protocol_version: blockchain::protocol_version(),
+        protocol_version: consensus::protocol_version(),
         network: "main".to_string(),
     };
     match cfg.save_default() {
