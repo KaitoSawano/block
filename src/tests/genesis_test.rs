@@ -1,36 +1,40 @@
 use zenachain::block::Block;
-use zenachain::blockchain::*;
+use zenachain::blockchain;
 
 #[test]
-fn test_genesis_secret_tertanam() {
+fn genesis_secret_tertanam() {
     let g = Block::genesis();
     let secret_tx = g
         .transactions
         .iter()
         .find(|tx| tx.from == "GENESIS")
-        .expect("Pesan rahasia genesis tidak ditemukan");
+        .expect("secret tx missing");
     assert_eq!(secret_tx.note, "ID Today 15/Oct/2026");
 }
 
 #[test]
-fn test_genesis_hash_mengikat_pesan() {
+fn genesis_hash_mengikat_pesan() {
     let mut g1 = Block::genesis();
     let h1 = g1.calculate_hash();
-
-    g1.transactions[1].note = "DIUBAH".into();
+    g1.transactions[1].note = "CHANGED".into();
     let h2 = g1.calculate_hash();
-
-    assert_ne!(h1, h2, "Hash genesis harus berubah jika pesan diubah");
+    assert_ne!(h1, h2);
 }
 
 #[test]
-fn test_genesis_timestamp() {
+fn genesis_timestamp() {
     let g = Block::genesis();
-    assert_eq!(g.timestamp, GENESIS_TIMESTAMP);
+    assert_eq!(g.timestamp, blockchain::genesis_timestamp());
 }
 
 #[test]
-fn test_genesis_index_nol() {
+fn genesis_index_nol() {
     let g = Block::genesis();
     assert_eq!(g.index, 0);
+}
+
+#[test]
+fn genesis_previous_hash_nol() {
+    let g = Block::genesis();
+    assert_eq!(g.previous_hash, "0".repeat(64));
 }
