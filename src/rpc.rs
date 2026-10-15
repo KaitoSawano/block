@@ -123,8 +123,8 @@ impl RpcServer {
             "getprivkey" => m_getprivkey(),
             "dumpprivkey" => m_dumpprivkey(req),
             "getnewwallet" => m_getnewwallet(),
-            "addtowallet" => m_addtowallet(),
-            "addtoaddress" => m_addtoaddress(req),
+            "getaddtowallet" => m_getaddtowallet(),
+            "getaddtoaddress" => m_getaddtoaddress(req),
             _ => RpcResponse::err("method tidak dikenal"),
         }
     }
@@ -309,10 +309,14 @@ fn m_getnewwallet() -> RpcResponse {
     }
 }
 
-fn m_addtowallet() -> RpcResponse {
+fn m_getaddtowallet() -> RpcResponse {
     let w = match Wallet::load_default() {
         Ok(w) => w,
-        Err(_) => return RpcResponse::err("wallet tidak ditemukan, jalankan getnewwallet atau dumpprivkey"),
+        Err(_) => {
+            return RpcResponse::err(
+                "wallet tidak ditemukan, jalankan getnewwallet atau dumpprivkey",
+            )
+        }
     };
     let cfg = Config {
         mining_address: w.address.clone(),
@@ -329,10 +333,10 @@ fn m_addtowallet() -> RpcResponse {
     }
 }
 
-fn m_addtoaddress(req: &RpcRequest) -> RpcResponse {
+fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
     let addr = match req.params.first().and_then(|v| v.as_str()) {
         Some(a) => a.to_string(),
-        None => return RpcResponse::err("addtoaddress butuh alamat"),
+        None => return RpcResponse::err("getaddtoaddress butuh alamat"),
     };
     let cfg = Config {
         mining_address: addr.clone(),
