@@ -199,14 +199,16 @@ impl RpcServer {
         }
 
         datadir::append_debug_log(&format!(
-            "block accepted height={} hash={}",
-            block.index, block.hash
+            "block accepted height={} hash={} mined_for={} mined_at={}",
+            block.index, block.hash, block.mined_for, block.mined_at
         ));
 
         RpcResponse::ok(json!({
             "accepted": true,
             "height": block.index,
             "hash": block.hash,
+            "mined_for": block.mined_for,
+            "mined_at": block.mined_at,
         }))
     }
 
@@ -279,19 +281,27 @@ impl RpcServer {
                 crate::blockchain::satoshi() / 100,
                 0,
             ));
+            txs.push(Transaction {
+                from: "MEMPOOL".into(),
+                to: "CreateNewBlock".into(),
+                amount: 0,
+                fee: 0,
+                note: format!("height={} target={}", next_index, addr),
+            });
 
             let mut block =
-                crate::block::Block::new(next_index, prev.hash.clone(), reward, txs);
+                crate::block::Block::new_for(next_index, prev.hash.clone(), reward, txs, addr.clone());
             pow::mine(&mut block, self.chain.difficulty);
 
             let hash = block.hash.clone();
             let height = block.index;
+            let mined_at = block.mined_at.clone();
             self.chain.chain.push(block);
             self.chain.adjust_difficulty();
 
             datadir::append_debug_log(&format!(
-                "block mined (generatetoaddress) height={} hash={} address={}",
-                height, hash, addr
+                "block mined (generatetoaddress) height={} hash={} mined_for={} mined_at={}",
+                height, hash, addr, mined_at
             ));
 
             hashes.push(hash);
