@@ -1,6 +1,7 @@
 pub mod block;
 pub mod blockchain;
 pub mod config;
+pub mod consensus;
 pub mod datadir;
 pub mod mempool;
 pub mod node;
