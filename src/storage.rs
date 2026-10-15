@@ -26,7 +26,7 @@ pub fn load_chain() -> std::io::Result<Blockchain> {
     let mempool = load_mempool().unwrap_or_default();
     Ok(Blockchain {
         chain: blocks,
-        difficulty: state.difficulty,
+        nbits: state.nbits,
         mempool,
     })
 }
@@ -34,14 +34,14 @@ pub fn load_chain() -> std::io::Result<Blockchain> {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ChainState {
     pub total_blocks: u64,
-    pub difficulty: usize,
+    pub nbits: u32,
     pub updated_at: u128,
 }
 
 pub fn save_chainstate(chain: &Blockchain) -> std::io::Result<()> {
     let state = ChainState {
         total_blocks: chain.chain.len() as u64,
-        difficulty: chain.difficulty,
+        nbits: chain.nbits,
         updated_at: crate::utils::now_millis(),
     };
     let json = serde_json::to_string_pretty(&state)
