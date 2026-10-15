@@ -33,6 +33,8 @@ mod spec {
     pub const GENESIS_MESSAGE: &str = "ZenaChain Genesis - 2026";
     pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
     pub const GENESIS_TIMESTAMP: u128 = 1_792_012_800_000;
+    pub const GENESIS_OUTPUT_SCRIPT: &str =
+        "OP_DUP OP_HASH160 ZenaChainGenesisOutput OP_EQUALVERIFY OP_CHECKSIG";
 }
 
 pub mod checkpoint {
@@ -92,16 +94,17 @@ pub fn difficulty_adjust_interval() -> u64 { spec::DIFFICULTY_ADJUST_INTERVAL }
 pub fn genesis_message() -> &'static str { spec::GENESIS_MESSAGE }
 pub fn genesis_secret() -> &'static str { spec::GENESIS_SECRET }
 pub fn genesis_timestamp() -> u128 { spec::GENESIS_TIMESTAMP }
+pub fn genesis_output_script() -> String { spec::GENESIS_OUTPUT_SCRIPT.to_string() }
 pub fn max_tx_per_block() -> usize { validation::MAX_TX_PER_BLOCK }
 pub fn pow_limit() -> &'static str { pow::POW_LIMIT }
 pub fn genesis_nbits() -> u32 { pow::GENESIS_NBITS }
 
-/// Hash semua parameter konsensus.
-/// Setiap perubahan parameter akan mengubah fingerprint ini.
-/// Fingerprint dipakai di genesis coinbase_txid.
+/// Hash semua parameter konsensus. Perubahan apa pun akan mengubah
+/// fingerprint ini, dan karena fingerprint dipakai di genesis coinbase
+/// txid, genesis hash akan berubah. Chain lama tidak akan cocok.
 pub fn consensus_fingerprint() -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         spec::COIN_NAME,
         spec::SYMBOL,
         spec::VERSION,
@@ -120,14 +123,21 @@ pub fn consensus_fingerprint() -> String {
         spec::POW_TARGET_TIMESPAN_SECS,
         spec::MINER_CONFIRMATION_WINDOW,
         spec::DIFFICULTY_ADJUST_INTERVAL,
+        spec::GENESIS_MESSAGE,
+        spec::GENESIS_SECRET,
+        spec::GENESIS_OUTPUT_SCRIPT,
     );
     sha3_256_hex(payload.as_bytes())
 }
 
-/// Coinbase txid genesis yang diharapkan, berdasarkan fingerprint.
 pub fn genesis_coinbase_txid() -> String {
     let fp = consensus_fingerprint();
-    let payload = format!("genesis|{}|{}|{}", fp, spec::GENESIS_TIMESTAMP, spec::GENESIS_SECRET);
+    let payload = format!(
+        "genesis|{}|{}|{}",
+        fp,
+        spec::GENESIS_TIMESTAMP,
+        pow::GENESIS_NBITS
+    );
     sha3_256_hex(payload.as_bytes())
 }
 
