@@ -2,4 +2,5 @@
 Cargo.lock
 *.log
 chain.json
-wallet.dat
+wallet.json
+config.json
