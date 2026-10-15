@@ -13,6 +13,7 @@ pub struct Block {
     pub hash: String,
     pub nonce: u64,
     pub reward: u64,
+    pub coinbase_txid: String,
     pub transactions: Vec<Transaction>,
 }
 
@@ -34,6 +35,9 @@ impl Block {
         mined_for: String,
     ) -> Self {
         let ts = now_millis();
+        let coinbase_txid = sha3_256_hex(
+            format!("{}|{}|{}", index, mined_for, ts).as_bytes(),
+        );
         let mut b = Block {
             index,
             timestamp: ts,
@@ -43,6 +47,7 @@ impl Block {
             hash: String::new(),
             nonce: 0,
             reward,
+            coinbase_txid,
             transactions,
         };
         b.hash = b.calculate_hash();
@@ -51,6 +56,7 @@ impl Block {
 
     pub fn genesis() -> Self {
         let ts = blockchain::genesis_timestamp();
+        let coinbase_txid = sha3_256_hex(format!("genesis|{}", ts).as_bytes());
         let mut b = Block {
             index: 0,
             timestamp: ts,
@@ -60,6 +66,7 @@ impl Block {
             hash: String::new(),
             nonce: 0,
             reward: blockchain::initial_reward(),
+            coinbase_txid,
             transactions: vec![
                 Transaction::coinbase(blockchain::genesis_message().into()),
                 Transaction::secret(blockchain::genesis_secret().into()),
@@ -71,20 +78,18 @@ impl Block {
 
     pub fn calculate_hash(&self) -> String {
         let mut payload = format!(
-            "{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}",
             self.index,
             self.timestamp,
             self.mined_at,
             self.mined_for,
             self.previous_hash,
             self.nonce,
-            self.reward
+            self.reward,
+            self.coinbase_txid
         );
         for tx in &self.transactions {
-            payload.push_str(&format!(
-                "|{}|{}|{}|{}|{}",
-                tx.from, tx.to, tx.amount, tx.fee, tx.note
-            ));
+            payload.push_str(&format!("|{}", tx.txid));
         }
         sha3_256_hex(payload.as_bytes())
     }
