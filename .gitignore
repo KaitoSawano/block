@@ -2,3 +2,5 @@
 Cargo.lock
 .chain/
 *.log
+/zenachain
+/zenachaind
