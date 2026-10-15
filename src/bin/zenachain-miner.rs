@@ -32,13 +32,14 @@ fn main() {
         let target_address = std::env::var("ZENAC_MINE_FOR")
             .unwrap_or_else(|_| "UNKNOWN".to_string());
 
-        mempool.push(Transaction {
-            from: "MEMPOOL".into(),
-            to: "CreateNewBlock".into(),
-            amount: 0,
-            fee: 0,
-            note: format!("height={} target={}", height, target_address),
-        });
+        mempool.push(Transaction::new_with_inputs(
+            "MEMPOOL",
+            "CreateNewBlock",
+            0,
+            0,
+            Vec::new(),
+            format!("height={} target={}", height, target_address),
+        ));
 
         println!(
             "[miner] CreateNewBlock height={} difficulty={} reward={} target={}",
