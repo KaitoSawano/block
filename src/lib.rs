@@ -10,4 +10,5 @@ pub mod secp256k1;
 pub mod storage;
 pub mod transaction;
 pub mod utils;
+pub mod validation;
 pub mod wallet;
