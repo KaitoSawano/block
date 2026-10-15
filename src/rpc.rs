@@ -145,7 +145,7 @@ impl RpcServer {
             "signature_algo": blockchain::signature_algo(),
             "height": c.height(),
             "chain_len": c.chain.len(),
-            "difficulty": c.difficulty,
+            "nbits": format!("{:#010x}", c.nbits),
             "circulating": to_coin(circulating),
             "max_supply": to_coin(max_supply),
             "era": c.current_era(),
@@ -166,11 +166,10 @@ impl RpcServer {
             "blocks": c.height(),
             "headers": c.height(),
             "bestblockhash": tip.hash,
-            "difficulty": c.difficulty,
+            "nbits": format!("{:#010x}", c.nbits),
             "mediantime": tip.timestamp,
             "verificationprogress": 1.0,
             "initialblockdownload": false,
-            "chainwork": format!("{:x}", c.chain.len() * c.difficulty),
             "pruned": false,
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
             "checkpoints_highest": blockchain::checkpoint::highest(),
@@ -191,7 +190,7 @@ impl RpcServer {
         RpcResponse::ok(json!({
             "height": next_height,
             "previous_hash": prev_hash,
-            "difficulty": c.difficulty,
+            "nbits": c.nbits,
             "reward": to_coin(reward),
             "mempool": c.mempool,
         }))
@@ -215,8 +214,12 @@ impl RpcServer {
             return RpcResponse::err("previous_hash tidak cocok");
         }
 
-        if !pow::hash_meets_target(&block.hash, self.chain.difficulty) {
-            return RpcResponse::err("pow tidak memenuhi target");
+        if !pow::hash_meets_nbits(&block.hash, block.nbits) {
+            return RpcResponse::err("pow tidak memenuhi target nbits");
+        }
+
+        if block.nbits != self.chain.nbits {
+            return RpcResponse::err("nbits blok tidak sesuai nbits chain");
         }
 
         if block.reward != Blockchain::calculate_reward(block.index) {
@@ -241,14 +244,15 @@ impl RpcServer {
         }
 
         datadir::append_debug_log(&format!(
-            "block accepted height={} hash={} mined_for={} mined_at={}",
-            block.index, block.hash, block.mined_for, block.mined_at
+            "block accepted height={} hash={} nbits={:#010x} mined_for={} mined_at={}",
+            block.index, block.hash, block.nbits, block.mined_for, block.mined_at
         ));
 
         RpcResponse::ok(json!({
             "accepted": true,
             "height": block.index,
             "hash": block.hash,
+            "nbits": format!("{:#010x}", block.nbits),
             "mined_for": block.mined_for,
             "mined_at": block.mined_at,
         }))
@@ -340,6 +344,7 @@ impl RpcServer {
             "mined_at": block.mined_at,
             "mined_for": block.mined_for,
             "nonce": block.nonce,
+            "nbits": format!("{:#010x}", block.nbits),
             "reward": to_coin(block.reward),
             "transactions": block.transactions,
         }))
@@ -358,7 +363,7 @@ impl RpcServer {
             "valid": self.chain.is_valid(),
             "blocks_checked": self.chain.chain.len(),
             "height": self.chain.height(),
-            "difficulty": self.chain.difficulty,
+            "nbits": format!("{:#010x}", self.chain.nbits),
             "signature_algo": blockchain::signature_algo(),
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
         }))
@@ -403,9 +408,15 @@ impl RpcServer {
                 format!("height={} target={}", next_index, addr),
             ));
 
-            let mut block =
-                crate::block::Block::new_for(next_index, prev.hash.clone(), reward, txs, addr.clone());
-            if !pow::mine(&mut block, self.chain.difficulty) {
+            let mut block = crate::block::Block::new_for(
+                next_index,
+                prev.hash.clone(),
+                reward,
+                self.chain.nbits,
+                txs,
+                addr.clone(),
+            );
+            if !pow::mine(&mut block, self.chain.nbits) {
                 return RpcResponse::err("mining gagal: nonce habis");
             }
 
@@ -416,8 +427,8 @@ impl RpcServer {
             self.chain.adjust_difficulty();
 
             datadir::append_debug_log(&format!(
-                "block mined (generatetoaddress) height={} hash={} mined_for={} mined_at={}",
-                height, hash, addr, mined_at
+                "block mined (generatetoaddress) height={} hash={} nbits={:#010x} mined_for={} mined_at={}",
+                height, hash, self.chain.nbits, addr, mined_at
             ));
 
             hashes.push(hash);
