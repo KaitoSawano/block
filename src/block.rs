@@ -1,6 +1,4 @@
-use crate::blockchain::{
-    GENESIS_MESSAGE, GENESIS_SECRET, GENESIS_TIMESTAMP, INITIAL_REWARD,
-};
+use crate::blockchain::{self, Blockchain};
 use crate::transaction::Transaction;
 use crate::utils::{now_millis, sha3_256_hex};
 use serde::{Deserialize, Serialize};
@@ -36,26 +34,23 @@ impl Block {
         b
     }
 
-    /// Genesis ZENAC dengan pesan rahasia "ID Today 15/Oct/2026".
     pub fn genesis() -> Self {
         let mut b = Block {
             index: 0,
-            timestamp: GENESIS_TIMESTAMP,
+            timestamp: blockchain::genesis_timestamp(),
             previous_hash: "0".repeat(64),
             hash: String::new(),
             nonce: 0,
-            reward: INITIAL_REWARD,
+            reward: blockchain::initial_reward(),
             transactions: vec![
-                Transaction::coinbase(GENESIS_MESSAGE.into()),
-                Transaction::secret(GENESIS_SECRET.into()),
+                Transaction::coinbase(blockchain::genesis_message().into()),
+                Transaction::secret(blockchain::genesis_secret().into()),
             ],
         };
         b.hash = b.calculate_hash();
         b
     }
 
-    /// Hitung hash blok dengan SHA3-256.
-    /// Transaksi ikut di-hash sehingga pesan genesis terikat permanen.
     pub fn calculate_hash(&self) -> String {
         let mut payload = format!(
             "{}{}{}{}{}",
@@ -68,5 +63,9 @@ impl Block {
             ));
         }
         sha3_256_hex(payload.as_bytes())
+    }
+
+    pub fn reward_at(height: u64) -> u64 {
+        Blockchain::calculate_reward(height)
     }
 }
