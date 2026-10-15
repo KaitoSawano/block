@@ -1,8 +1,7 @@
 use zenachain::utils::sha3_256_hex;
 
 #[test]
-fn test_sha3_256_known_vector_empty() {
-    // NIST test vector untuk SHA3-256("")
+fn sha3_256_empty() {
     let h = sha3_256_hex(b"");
     assert_eq!(
         h,
@@ -11,8 +10,7 @@ fn test_sha3_256_known_vector_empty() {
 }
 
 #[test]
-fn test_sha3_256_known_vector_abc() {
-    // NIST test vector untuk SHA3-256("abc")
+fn sha3_256_abc() {
     let h = sha3_256_hex(b"abc");
     assert_eq!(
         h,
@@ -21,7 +19,7 @@ fn test_sha3_256_known_vector_abc() {
 }
 
 #[test]
-fn test_sha3_panjang_64_hex() {
+fn sha3_256_panjang() {
     let h = sha3_256_hex(b"ZenaChain");
     assert_eq!(h.len(), 64);
 }
