@@ -129,6 +129,6 @@ impl Transaction {
             && crate::validation::rule_note_length(self).is_ok()
             && crate::validation::rule_input_count(self).is_ok()
             && crate::validation::rule_signature(self).is_ok()
-            && crate::validation::rule_address_match_pubkey(self).is_ok()
+            && crate::validation::rule_address_matches_pubkey(self).is_ok()
     }
 }
