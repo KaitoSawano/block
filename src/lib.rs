@@ -1,7 +1,8 @@
 pub mod block;
 pub mod blockchain;
-pub mod cli;
+pub mod config;
 pub mod mempool;
+pub mod node;
 pub mod pow;
 pub mod storage;
 pub mod transaction;
