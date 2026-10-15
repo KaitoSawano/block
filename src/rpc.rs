@@ -54,10 +54,17 @@ pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     Ok(resp)
 }
 
-/// Konversi satoshi ke f64 ZENAC dengan 8 desimal (gaya Bitcoin).
-/// 1 ZENAC = 100_000_000 satoshi.
-fn to_coin(satoshi: u64) -> f64 {
-    satoshi as f64 / 100_000_000.0
+/// Konversi satoshi ke string desimal 8 digit, gaya Bitcoin.
+/// 1 ZENAC = 100.000.000 satoshi.
+/// 0           -> "0.00000000"
+/// 1           -> "0.00000001"
+/// 102000000   -> "1.02000000"
+/// 10102000000 -> "101.02000000"
+/// 500000000000 -> "5000.00000000"
+fn to_coin(satoshi: u64) -> String {
+    let whole = satoshi / 100_000_000;
+    let frac = satoshi % 100_000_000;
+    format!("{}.{:08}", whole, frac)
 }
 
 pub struct RpcServer {
