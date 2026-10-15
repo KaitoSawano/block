@@ -13,7 +13,6 @@ pub struct Wallet {
 
 impl Wallet {
     pub fn new() -> Self {
-        println!("[wallet] new: membuat wallet ZENAC dengan secp256k1.");
         let kp = KeyPair::generate().expect("generate keypair");
         let addr = address::address_from_public_key(&kp.public_key).expect("address");
 
@@ -26,7 +25,6 @@ impl Wallet {
     }
 
     pub fn from_secret(secret_hex: &str) -> Result<Self, String> {
-        println!("[wallet] from_secret: membangun wallet dari private key secp256k1.");
         let bytes = hex::decode(secret_hex).map_err(|e| e.to_string())?;
         let kp = KeyPair::from_secret(&bytes)?;
         let addr = address::address_from_public_key(&kp.public_key)?;
@@ -46,12 +44,10 @@ impl Wallet {
 
     pub fn save_default(&self) -> std::io::Result<()> {
         datadir::ensure_dirs()?;
-        println!("[wallet] save_default: menyimpan wallet ke .chain/wallet.dat.");
         self.save(&datadir::as_str(&datadir::wallet_path()))
     }
 
     pub fn load_default() -> std::io::Result<Self> {
-        println!("[wallet] load_default: memuat wallet dari .chain/wallet.dat.");
         Self::load(&datadir::as_str(&datadir::wallet_path()))
     }
 
