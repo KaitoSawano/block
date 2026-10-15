@@ -105,8 +105,6 @@ impl Block {
         Blockchain::calculate_reward(height)
     }
 
-    /// Cetak dan simpan log AddToWallet.
-    /// Format: AddToWallet, mined_at, txid, hash.
     pub fn log_add_to_wallet(&self) {
         let entry = format!(
             "AddToWallet\n  mined_at : {}\n  txid     : {}\n  hash     : {}",
