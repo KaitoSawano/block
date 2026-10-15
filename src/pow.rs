@@ -1,11 +1,11 @@
 use crate::block::Block;
 
-/// Nilai nBits genesis ZenaChain. Sama dengan Bitcoin: 0x1d00ffff.
-pub const GENESIS_NBITS: u32 = 0x1d00ffff;
+/// Nilai nBits genesis ZenaChain. Sama dengan Litecoin: 0x1e0ffff0.
+pub const GENESIS_NBITS: u32 = 0x1e0ffff0;
 
-/// powLimit ZenaChain. Sama dengan Bitcoin:
-/// 00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-pub const POW_LIMIT: &str = "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+/// powLimit ZenaChain. Sama dengan Litecoin:
+/// 00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+pub const POW_LIMIT: &str = "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 
 /// Ubah nBits format compact menjadi target 256-bit big-endian.
 /// Implementasi persis seperti Bitcoin/Litecoin `SetCompact`.
