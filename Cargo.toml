@@ -2,6 +2,8 @@
 name = "zenachain"
 version = "0.1.0"
 edition = "2021"
+description = "ZenaChain (ZENAC) node and CLI"
+license = "MIT"
 
 [lib]
 name = "zenachain"
