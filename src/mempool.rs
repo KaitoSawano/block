@@ -1,6 +1,7 @@
 use crate::transaction::Transaction;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Mempool {
     pub txs: Vec<Transaction>,
 }
