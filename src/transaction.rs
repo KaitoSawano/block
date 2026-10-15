@@ -41,6 +41,6 @@ impl Transaction {
     }
 
     pub fn is_valid(&self) -> bool {
-        !self.to.is_empty()
+        !self.to.is_empty() && !self.from.is_empty()
     }
 }
