@@ -1,6 +1,7 @@
 use crate::block::Block;
 use crate::pow;
 use crate::transaction::Transaction;
+use crate::utils::sha3_256_hex;
 use crate::validation;
 use serde::{Deserialize, Serialize};
 
@@ -95,6 +96,41 @@ pub fn max_tx_per_block() -> usize { validation::MAX_TX_PER_BLOCK }
 pub fn pow_limit() -> &'static str { pow::POW_LIMIT }
 pub fn genesis_nbits() -> u32 { pow::GENESIS_NBITS }
 
+/// Hash semua parameter konsensus.
+/// Setiap perubahan parameter akan mengubah fingerprint ini.
+/// Fingerprint dipakai di genesis coinbase_txid.
+pub fn consensus_fingerprint() -> String {
+    let payload = format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        spec::COIN_NAME,
+        spec::SYMBOL,
+        spec::VERSION,
+        spec::PROTOCOL_VERSION,
+        spec::HASH_ALGO,
+        spec::SIGNATURE_ALGO,
+        spec::DECIMALS,
+        spec::SATOSHI,
+        spec::MAX_SUPPLY_ZENAC,
+        spec::MAX_SUPPLY,
+        spec::INITIAL_REWARD_ZENAC,
+        spec::INITIAL_REWARD,
+        spec::SUBSIDY_HALVING_INTERVAL,
+        spec::MAX_HALVINGS,
+        spec::POW_TARGET_SPACING_SECS,
+        spec::POW_TARGET_TIMESPAN_SECS,
+        spec::MINER_CONFIRMATION_WINDOW,
+        spec::DIFFICULTY_ADJUST_INTERVAL,
+    );
+    sha3_256_hex(payload.as_bytes())
+}
+
+/// Coinbase txid genesis yang diharapkan, berdasarkan fingerprint.
+pub fn genesis_coinbase_txid() -> String {
+    let fp = consensus_fingerprint();
+    let payload = format!("genesis|{}|{}|{}", fp, spec::GENESIS_TIMESTAMP, spec::GENESIS_SECRET);
+    sha3_256_hex(payload.as_bytes())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blockchain {
     pub chain: Vec<Block>,
@@ -138,8 +174,6 @@ impl Blockchain {
         next.saturating_sub(self.height())
     }
 
-    /// Tambah transaksi ke mempool.
-    /// Validasi lengkap ada di `crate::validation::validate_transaction`.
     pub fn add_transaction(&mut self, tx: Transaction) -> bool {
         if validation::validate_transaction(self, &tx).is_err() {
             return false;
@@ -199,7 +233,6 @@ impl Blockchain {
         }
     }
 
-    /// Validasi chain. Logika ada di `crate::validation::validate_chain`.
     pub fn is_valid(&self) -> bool {
         validation::validate_chain(self).is_ok()
     }
