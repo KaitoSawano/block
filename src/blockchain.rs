@@ -1,41 +1,9 @@
 use crate::block::Block;
+use crate::consensus::{self, genesis, pow as cpow, rules, spec};
 use crate::pow;
 use crate::transaction::Transaction;
-use crate::utils::sha3_256_hex;
 use crate::validation;
 use serde::{Deserialize, Serialize};
-
-mod spec {
-    pub const COIN_NAME: &str = "ZenaChain";
-    pub const SYMBOL: &str = "ZENAC";
-    pub const VERSION: &str = "0.1.0";
-    pub const PROTOCOL_VERSION: u32 = 1;
-    pub const HASH_ALGO: &str = "SHA3-256";
-    pub const SIGNATURE_ALGO: &str = "secp256k1-ECDSA";
-    pub const DECIMALS: u32 = 8;
-
-    pub const SATOSHI: u64 = 100_000_000;
-
-    pub const MAX_SUPPLY_ZENAC: u64 = 28_000_000_000;
-    pub const MAX_SUPPLY: u64 = MAX_SUPPLY_ZENAC * SATOSHI;
-
-    pub const INITIAL_REWARD_ZENAC: u64 = 50;
-    pub const INITIAL_REWARD: u64 = INITIAL_REWARD_ZENAC * SATOSHI;
-
-    pub const SUBSIDY_HALVING_INTERVAL: u64 = 280_000_000;
-    pub const MAX_HALVINGS: u32 = 64;
-
-    pub const POW_TARGET_SPACING_SECS: u64 = 15;
-    pub const POW_TARGET_TIMESPAN_SECS: u64 = 259_200;
-    pub const MINER_CONFIRMATION_WINDOW: u64 = 69_120;
-    pub const DIFFICULTY_ADJUST_INTERVAL: u64 = 69_120;
-
-    pub const GENESIS_MESSAGE: &str = "ZenaChain Genesis - 2026";
-    pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
-    pub const GENESIS_TIMESTAMP: u128 = 1_792_012_800_000;
-    pub const GENESIS_OUTPUT_SCRIPT: &str =
-        "OP_DUP OP_HASH160 ZenaChainGenesisOutput OP_EQUALVERIFY OP_CHECKSIG";
-}
 
 pub mod checkpoint {
     pub struct Checkpoint {
@@ -73,101 +41,35 @@ pub mod checkpoint {
     }
 }
 
-pub fn coin_name() -> &'static str { spec::COIN_NAME }
-pub fn symbol() -> &'static str { spec::SYMBOL }
-pub fn version() -> &'static str { spec::VERSION }
-pub fn protocol_version() -> u32 { spec::PROTOCOL_VERSION }
-pub fn hash_algo() -> &'static str { spec::HASH_ALGO }
-pub fn signature_algo() -> &'static str { spec::SIGNATURE_ALGO }
-pub fn decimals() -> u32 { spec::DECIMALS }
-pub fn satoshi() -> u64 { spec::SATOSHI }
-pub fn max_supply_zenac() -> u64 { spec::MAX_SUPPLY_ZENAC }
-pub fn max_supply() -> u64 { spec::MAX_SUPPLY }
-pub fn initial_reward_zenac() -> u64 { spec::INITIAL_REWARD_ZENAC }
-pub fn initial_reward() -> u64 { spec::INITIAL_REWARD }
-pub fn subsidy_halving_interval() -> u64 { spec::SUBSIDY_HALVING_INTERVAL }
-pub fn max_halvings() -> u32 { spec::MAX_HALVINGS }
-pub fn pow_target_spacing_secs() -> u64 { spec::POW_TARGET_SPACING_SECS }
-pub fn pow_target_timespan_secs() -> u64 { spec::POW_TARGET_TIMESPAN_SECS }
-pub fn miner_confirmation_window() -> u64 { spec::MINER_CONFIRMATION_WINDOW }
-pub fn difficulty_adjust_interval() -> u64 { spec::DIFFICULTY_ADJUST_INTERVAL }
-pub fn genesis_message() -> &'static str { spec::GENESIS_MESSAGE }
-pub fn genesis_secret() -> &'static str { spec::GENESIS_SECRET }
-pub fn genesis_timestamp() -> u128 { spec::GENESIS_TIMESTAMP }
-pub fn genesis_output_script() -> String { spec::GENESIS_OUTPUT_SCRIPT.to_string() }
-pub fn max_tx_per_block() -> usize { validation::MAX_TX_PER_BLOCK }
-pub fn pow_limit() -> &'static str { pow::POW_LIMIT }
-pub fn genesis_nbits() -> u32 { pow::GENESIS_NBITS }
+// Re-export parameter konsensus supaya pemanggil lama tetap bekerja.
+pub use consensus::consensus_fingerprint;
+pub use consensus::genesis_coinbase_txid;
+pub use genesis::genesis_message;
+pub use genesis::genesis_output_script;
+pub use genesis::genesis_secret;
+pub use genesis::genesis_timestamp;
+pub use spec::coin_name;
+pub use spec::decimals;
+pub use spec::difficulty_adjust_interval;
+pub use spec::hash_algo;
+pub use spec::initial_reward;
+pub use spec::initial_reward_zenac;
+pub use spec::max_halvings;
+pub use spec::max_supply;
+pub use spec::max_supply_zenac;
+pub use spec::miner_confirmation_window;
+pub use spec::pow_target_spacing_secs;
+pub use spec::pow_target_timespan_secs;
+pub use spec::protocol_version;
+pub use spec::satoshi;
+pub use spec::signature_algo;
+pub use spec::subsidy_halving_interval;
+pub use spec::symbol;
+pub use spec::version;
 
-/// Fingerprint konsensus.
-///
-/// HANYA mencakup parameter yang mengubah aturan validasi chain.
-/// TIDAK mencakup nama coin, simbol, versi software, fee default,
-/// atau nilai tampilan lain.
-///
-/// Kalau ada parameter di sini yang diubah, genesis hash berubah,
-/// dan seluruh chain lama menjadi tidak valid. Node harus mengunduh
-/// binary baru, lalu menambang genesis baru.
-pub fn consensus_fingerprint() -> String {
-    let payload = format!(
-        // Algoritma dan satuan
-        "{}|{}|{}|{}|{}|{}",
-        spec::HASH_ALGO,
-        spec::SIGNATURE_ALGO,
-        spec::DECIMALS,
-        spec::SATOSHI,
-        spec::MAX_SUPPLY_ZENAC,
-        spec::MAX_SUPPLY,
-        // Reward dan halving
-        // (INITIAL_REWARD_ZENAC, INITIAL_REWARD, SUBSIDY_HALVING_INTERVAL, MAX_HALVINGS)
-        // sudah termasuk di bawah
-    );
-    let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-        spec::HASH_ALGO,
-        spec::SIGNATURE_ALGO,
-        spec::DECIMALS,
-        spec::SATOSHI,
-        spec::MAX_SUPPLY_ZENAC,
-        spec::MAX_SUPPLY,
-        spec::INITIAL_REWARD_ZENAC,
-        spec::INITIAL_REWARD,
-        spec::SUBSIDY_HALVING_INTERVAL,
-        spec::MAX_HALVINGS,
-        spec::POW_TARGET_SPACING_SECS,
-        spec::POW_TARGET_TIMESPAN_SECS,
-        spec::MINER_CONFIRMATION_WINDOW,
-        spec::DIFFICULTY_ADJUST_INTERVAL,
-        spec::GENESIS_MESSAGE,
-        spec::GENESIS_SECRET,
-        spec::GENESIS_TIMESTAMP,
-        spec::GENESIS_OUTPUT_SCRIPT,
-        pow::GENESIS_NBITS,
-        crate::block::BLOCK_VERSION,
-    );
-    let payload = format!(
-        "{}|{}|{}|{}|{}|{}",
-        payload,
-        validation::COINBASE_MATURITY,
-        validation::ADDRESS_PREFIX,
-        validation::ADDRESS_HEX_LEN,
-        validation::MAX_TX_PER_BLOCK,
-        validation::MAX_INPUTS_PER_TX,
-        validation::MAX_NOTE_LEN,
-    );
-    sha3_256_hex(payload.as_bytes())
-}
-
-pub fn genesis_coinbase_txid() -> String {
-    let fp = consensus_fingerprint();
-    let payload = format!(
-        "genesis|{}|{}|{}",
-        fp,
-        spec::GENESIS_TIMESTAMP,
-        pow::GENESIS_NBITS
-    );
-    sha3_256_hex(payload.as_bytes())
-}
+pub fn max_tx_per_block() -> usize { rules::MAX_TX_PER_BLOCK }
+pub fn pow_limit() -> &'static str { cpow::POW_LIMIT }
+pub fn genesis_nbits() -> u32 { cpow::GENESIS_NBITS }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blockchain {
@@ -180,7 +82,7 @@ impl Blockchain {
     pub fn new() -> Self {
         Blockchain {
             chain: vec![Block::genesis()],
-            nbits: pow::GENESIS_NBITS,
+            nbits: cpow::GENESIS_NBITS,
             mempool: Vec::new(),
         }
     }
@@ -216,7 +118,7 @@ impl Blockchain {
         if validation::validate_transaction(self, &tx).is_err() {
             return false;
         }
-        if self.mempool.len() >= validation::MAX_TX_PER_BLOCK {
+        if self.mempool.len() >= rules::MAX_TX_PER_BLOCK {
             return false;
         }
         self.mempool.push(tx);
@@ -300,7 +202,7 @@ fn target_to_nbits(target: &[u8; 32]) -> u32 {
         i += 1;
     }
     if i == 32 {
-        return pow::GENESIS_NBITS;
+        return cpow::GENESIS_NBITS;
     }
 
     let size = 32 - i;
