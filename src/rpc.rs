@@ -245,25 +245,24 @@ impl RpcServer {
             }
         }
 
+        // Siarkan ke mempool chain lalu log AddToWallet.
         self.chain.chain.push(block.clone());
         self.chain.mempool.clear();
+
+        block.log_add_to_wallet();
 
         if let Err(e) = storage::save_chain(&self.chain) {
             return RpcResponse::err(&format!("gagal simpan chain: {}", e));
         }
 
-        datadir::append_debug_log(&format!(
-            "block accepted height={} hash={} nbits={:#010x} mined_for={} mined_at={}",
-            block.index, block.hash, block.nbits, block.mined_for, block.mined_at
-        ));
-
         RpcResponse::ok(json!({
             "accepted": true,
             "height": block.index,
             "hash": block.hash,
-            "nbits": format!("{:#010x}", block.nbits),
-            "mined_for": block.mined_for,
+            "txid": block.coinbase_txid,
             "mined_at": block.mined_at,
+            "mined_for": block.mined_for,
+            "nbits": format!("{:#010x}", block.nbits),
         }))
     }
 
@@ -355,6 +354,7 @@ impl RpcServer {
             "nonce": block.nonce,
             "nbits": format!("{:#010x}", block.nbits),
             "reward": to_coin(block.reward),
+            "coinbase_txid": block.coinbase_txid,
             "transactions": block.transactions,
         }))
     }
@@ -431,15 +431,10 @@ impl RpcServer {
             }
 
             let hash = block.hash.clone();
-            let height = block.index;
-            let mined_at = block.mined_at.clone();
-            self.chain.chain.push(block);
+            self.chain.chain.push(block.clone());
             self.chain.adjust_difficulty();
 
-            datadir::append_debug_log(&format!(
-                "block mined (generatetoaddress) height={} hash={} nbits={:#010x} mined_for={} mined_at={}",
-                height, hash, self.chain.nbits, addr, mined_at
-            ));
+            block.log_add_to_wallet();
 
             hashes.push(hash);
         }
