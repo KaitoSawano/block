@@ -5,6 +5,7 @@ use crate::pow;
 use crate::storage;
 use crate::transaction::Transaction;
 use crate::utils::{now_millis, zenac_to_satoshi};
+use crate::validation;
 use crate::wallet::Wallet;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -91,16 +92,13 @@ impl RpcServer {
 
         loop {
             if self.shutdown.load(Ordering::SeqCst) {
-                // Simpan chain sebelum keluar.
                 let _ = storage::save_chain(&self.chain);
                 eprintln!("[rpc] node berhenti.");
                 break;
             }
 
             match listener.accept() {
-                Ok((stream, _)) => {
-                    let _ = self.handle(stream);
-                }
+                Ok((stream, _)) => { let _ = self.handle(stream); }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     std::thread::sleep(Duration::from_millis(50));
                 }
@@ -149,12 +147,15 @@ impl RpcServer {
             "generatetoaddress" => self.m_generatetoaddress(req),
             "sendtoaddress" => self.m_sendtoaddress(req),
             "stop" => self.m_stop(),
+            "getrawtransaction" => self.m_getrawtransaction(req),
+            "listunspent" => self.m_listunspent(req),
+            "getmempoolinfo" => self.m_getmempoolinfo(),
+            "validatemempool" => self.m_validatemempool(),
             _ => RpcResponse::err("method tidak dikenal"),
         }
     }
 
     fn m_stop(&mut self) -> RpcResponse {
-        // Simpan chain sebelum shutdown.
         if let Err(e) = storage::save_chain(&self.chain) {
             return RpcResponse::err(&format!("gagal simpan chain: {}", e));
         }
@@ -276,10 +277,9 @@ impl RpcServer {
             return RpcResponse::err("blok melanggar checkpoint");
         }
 
-        for tx in &block.transactions {
-            if !tx.verify_signature() {
-                return RpcResponse::err("ada transaksi dengan signature tidak valid");
-            }
+        // Validasi transaksi di blok.
+        if let Err(e) = validation::validate_block_transactions(&self.chain, &block.transactions) {
+            return RpcResponse::err(&format!("blok ditolak: {}", e));
         }
 
         self.chain.chain.push(block.clone());
@@ -311,48 +311,30 @@ impl RpcServer {
             },
         };
 
-        let mut spent: HashSet<String> = HashSet::new();
-        for block in &self.chain.chain {
-            for tx in &block.transactions {
-                for input in &tx.inputs {
-                    spent.insert(input.clone());
-                }
-            }
+        if !validation::is_valid_address(&addr) {
+            return RpcResponse::err("format alamat tidak valid");
         }
 
-        let current_height = self.chain.height();
-        let mut mature: u64 = 0;
-        let mut immature: u64 = 0;
-        let mut received: u64 = 0;
+        let balance = validation::mature_balance(&self.chain, &addr);
 
+        // Hitung immature terpisah.
+        let current_height = self.chain.height();
+        let mut immature: u64 = 0;
         for block in &self.chain.chain {
-            for tx in &block.transactions {
-                if tx.to == addr {
-                    let outpoint = format!("{}:0", tx.txid);
-                    if !spent.contains(&outpoint) {
-                        received = received.saturating_add(tx.amount);
-                        mature = mature.saturating_add(tx.amount);
-                    }
-                }
-            }
             if block.mined_for == addr && block.reward > 0 {
                 let mature_at = block.index.saturating_add(COINBASE_MATURITY);
-                if mature_at <= current_height {
-                    mature = mature.saturating_add(block.reward);
-                } else {
+                if mature_at > current_height {
                     immature = immature.saturating_add(block.reward);
                 }
             }
         }
 
-        let balance = mature;
         RpcResponse::ok(json!({
             "address": addr,
             "balance": to_coin(balance),
-            "mature": to_coin(mature),
+            "mature": to_coin(balance),
             "immature": to_coin(immature),
-            "received": to_coin(received),
-            "spent_outputs": spent.len(),
+            "spent_outputs": 0,
         }))
     }
 
@@ -415,6 +397,220 @@ impl RpcServer {
         }))
     }
 
+    fn m_getrawtransaction(&self, req: &RpcRequest) -> RpcResponse {
+        let txid = match req.params.first().and_then(|v| v.as_str()) {
+            Some(t) => t.to_string(),
+            None => return RpcResponse::err("getrawtransaction butuh txid"),
+        };
+
+        for block in &self.chain.chain {
+            for tx in &block.transactions {
+                if tx.txid == txid {
+                    return RpcResponse::ok(json!({
+                        "txid": tx.txid,
+                        "from": tx.from,
+                        "to": tx.to,
+                        "amount_satoshi": tx.amount,
+                        "amount_zenac": to_coin(tx.amount),
+                        "fee_satoshi": tx.fee,
+                        "fee_zenac": to_coin(tx.fee),
+                        "note": tx.note,
+                        "inputs": tx.inputs,
+                        "public_key": tx.public_key,
+                        "signature": tx.signature,
+                        "in_mempool": false,
+                        "block_hash": block.hash,
+                        "block_height": block.index,
+                        "block_mined_at": block.mined_at,
+                    }));
+                }
+            }
+
+            if block.coinbase_txid == txid {
+                return RpcResponse::ok(json!({
+                    "txid": block.coinbase_txid,
+                    "from": "COINBASE",
+                    "to": block.mined_for,
+                    "amount_satoshi": block.reward,
+                    "amount_zenac": to_coin(block.reward),
+                    "fee_satoshi": 0,
+                    "fee_zenac": "0.00000000",
+                    "note": "",
+                    "inputs": [],
+                    "public_key": "",
+                    "signature": "",
+                    "in_mempool": false,
+                    "block_hash": block.hash,
+                    "block_height": block.index,
+                    "block_mined_at": block.mined_at,
+                    "is_coinbase": true,
+                }));
+            }
+        }
+
+        for tx in &self.chain.mempool {
+            if tx.txid == txid {
+                return RpcResponse::ok(json!({
+                    "txid": tx.txid,
+                    "from": tx.from,
+                    "to": tx.to,
+                    "amount_satoshi": tx.amount,
+                    "amount_zenac": to_coin(tx.amount),
+                    "fee_satoshi": tx.fee,
+                    "fee_zenac": to_coin(tx.fee),
+                    "note": tx.note,
+                    "inputs": tx.inputs,
+                    "public_key": tx.public_key,
+                    "signature": tx.signature,
+                    "in_mempool": true,
+                }));
+            }
+        }
+
+        RpcResponse::err("transaksi tidak ditemukan")
+    }
+
+    fn m_listunspent(&self, req: &RpcRequest) -> RpcResponse {
+        let addr = match req.params.first().and_then(|v| v.as_str()) {
+            Some(a) => a.to_string(),
+            None => match Wallet::load_default() {
+                Ok(w) => w.address,
+                Err(_) => return RpcResponse::err("wallet tidak ada"),
+            },
+        };
+
+        if !validation::is_valid_address(&addr) {
+            return RpcResponse::err("format alamat tidak valid");
+        }
+
+        let mut spent: HashSet<String> = HashSet::new();
+        for block in &self.chain.chain {
+            for tx in &block.transactions {
+                for input in &tx.inputs {
+                    spent.insert(input.clone());
+                }
+            }
+        }
+
+        let current_height = self.chain.height();
+        let mut entries: Vec<Value> = Vec::new();
+
+        for block in &self.chain.chain {
+            for tx in &block.transactions {
+                if tx.to == addr {
+                    let outpoint = format!("{}:0", tx.txid);
+                    if !spent.contains(&outpoint) {
+                        entries.push(json!({
+                            "txid": tx.txid,
+                            "vout": 0,
+                            "address": addr,
+                            "amount_satoshi": tx.amount,
+                            "amount_zenac": to_coin(tx.amount),
+                            "from": tx.from,
+                            "block_height": block.index,
+                            "block_hash": block.hash,
+                            "mined_at": block.mined_at,
+                            "mature": true,
+                            "source": "tx",
+                        }));
+                    }
+                }
+            }
+
+            if block.mined_for == addr && block.reward > 0 {
+                let mature_at = block.index.saturating_add(COINBASE_MATURITY);
+                let is_mature = mature_at <= current_height;
+                entries.push(json!({
+                    "txid": block.coinbase_txid,
+                    "vout": 0,
+                    "address": addr,
+                    "amount_satoshi": block.reward,
+                    "amount_zenac": to_coin(block.reward),
+                    "from": "COINBASE",
+                    "block_height": block.index,
+                    "block_hash": block.hash,
+                    "mined_at": block.mined_at,
+                    "mature": is_mature,
+                    "mature_at": mature_at,
+                    "source": "coinbase",
+                }));
+            }
+        }
+
+        RpcResponse::ok(json!({
+            "address": addr,
+            "height": current_height,
+            "coinbase_maturity": COINBASE_MATURITY,
+            "count": entries.len(),
+            "utxos": entries,
+        }))
+    }
+
+    fn m_getmempoolinfo(&self) -> RpcResponse {
+        let txs = &self.chain.mempool;
+        let count = txs.len();
+
+        let mut total_amount: u64 = 0;
+        let mut total_fee: u64 = 0;
+        let mut min_fee: u64 = u64::MAX;
+        let mut max_fee: u64 = 0;
+
+        let mut by_from: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+        let mut by_to: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+
+        for tx in txs {
+            total_amount = total_amount.saturating_add(tx.amount);
+            total_fee = total_fee.saturating_add(tx.fee);
+
+            if tx.fee < min_fee {
+                min_fee = tx.fee;
+            }
+            if tx.fee > max_fee {
+                max_fee = tx.fee;
+            }
+
+            *by_from.entry(tx.from.clone()).or_insert(0) += 1;
+            *by_to.entry(tx.to.clone()).or_insert(0) += 1;
+        }
+
+        if count == 0 {
+            min_fee = 0;
+        }
+
+        let avg_fee = if count > 0 {
+            total_fee / count as u64
+        } else {
+            0
+        };
+
+        RpcResponse::ok(json!({
+            "size": count,
+            "total_amount_satoshi": total_amount,
+            "total_amount_zenac": to_coin(total_amount),
+            "total_fee_satoshi": total_fee,
+            "total_fee_zenac": to_coin(total_fee),
+            "min_fee_satoshi": min_fee,
+            "min_fee_zenac": to_coin(min_fee),
+            "max_fee_satoshi": max_fee,
+            "max_fee_zenac": to_coin(max_fee),
+            "avg_fee_satoshi": avg_fee,
+            "avg_fee_zenac": to_coin(avg_fee),
+            "default_fee_satoshi": DEFAULT_FEE_SATOSHI,
+            "default_fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
+            "by_from": by_from,
+            "by_to": by_to,
+        }))
+    }
+
+    fn m_validatemempool(&self) -> RpcResponse {
+        let errors = validation::validate_mempool(&self.chain);
+        RpcResponse::ok(json!({
+            "valid": errors.is_empty(),
+            "mempool_len": self.chain.mempool.len(),
+            "errors": errors,
+        }))
+    }
+
     fn m_generatetoaddress(&mut self, req: &RpcRequest) -> RpcResponse {
         let n = match req.params.first().and_then(|v| v.as_u64()) {
             Some(n) => n,
@@ -424,6 +620,10 @@ impl RpcServer {
             Some(a) => a.to_string(),
             None => return RpcResponse::err("generatetoaddress butuh alamat"),
         };
+
+        if !validation::is_valid_address(&addr) {
+            return RpcResponse::err("format alamat tidak valid");
+        }
 
         let mut hashes: Vec<String> = Vec::new();
 
@@ -504,8 +704,8 @@ impl RpcServer {
             None => return RpcResponse::err("alamat tujuan tidak valid"),
         };
 
-        if to.is_empty() {
-            return RpcResponse::err("alamat tujuan kosong");
+        if !validation::is_valid_address(&to) {
+            return RpcResponse::err("format alamat tujuan tidak valid");
         }
 
         let wallet = match Wallet::load_default() {
@@ -516,10 +716,6 @@ impl RpcServer {
         let amount_sat = zenac_to_satoshi(amount_zenac);
         if amount_sat == 0 {
             return RpcResponse::err("jumlah terlalu kecil");
-        }
-
-        if to == wallet.address {
-            return RpcResponse::err("alamat tujuan sama dengan alamat pengirim");
         }
 
         let mut tx = Transaction::new(
@@ -533,17 +729,8 @@ impl RpcServer {
             return RpcResponse::err(&format!("gagal tanda tangan: {}", e));
         }
 
-        if !tx.is_valid() {
-            return RpcResponse::err("transaksi tidak valid");
-        }
-
-        let sender_balance = self.balance_for(&wallet.address);
-        let need = amount_sat.saturating_add(DEFAULT_FEE_SATOSHI);
-        if sender_balance < need {
-            return RpcResponse::err(&format!(
-                "saldo tidak cukup: butuh {} sat, tersedia {} sat",
-                need, sender_balance
-            ));
+        if let Err(e) = validation::validate_transaction(&self.chain, &tx) {
+            return RpcResponse::err(&format!("transaksi tidak valid: {}", e));
         }
 
         let txid = tx.txid.clone();
@@ -563,39 +750,6 @@ impl RpcServer {
             "fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
             "mempool_len": self.chain.mempool.len(),
         }))
-    }
-
-    fn balance_for(&self, addr: &str) -> u64 {
-        let mut spent: HashSet<String> = HashSet::new();
-        for block in &self.chain.chain {
-            for tx in &block.transactions {
-                for input in &tx.inputs {
-                    spent.insert(input.clone());
-                }
-            }
-        }
-
-        let current_height = self.chain.height();
-        let mut mature: u64 = 0;
-
-        for block in &self.chain.chain {
-            for tx in &block.transactions {
-                if tx.to == addr {
-                    let outpoint = format!("{}:0", tx.txid);
-                    if !spent.contains(&outpoint) {
-                        mature = mature.saturating_add(tx.amount);
-                    }
-                }
-            }
-            if block.mined_for == addr && block.reward > 0 {
-                let mature_at = block.index.saturating_add(COINBASE_MATURITY);
-                if mature_at <= current_height {
-                    mature = mature.saturating_add(block.reward);
-                }
-            }
-        }
-
-        mature
     }
 }
 
@@ -708,6 +862,9 @@ fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
         Some(a) => a.to_string(),
         None => return RpcResponse::err("getaddtoaddress butuh alamat"),
     };
+    if !validation::is_valid_address(&addr) {
+        return RpcResponse::err("format alamat tidak valid");
+    }
     let cfg = Config {
         mining_address: addr.clone(),
         created_at: now_millis(),
