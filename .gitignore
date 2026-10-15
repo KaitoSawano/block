@@ -1,6 +1,4 @@
 /target
 Cargo.lock
+.chain/
 *.log
-chain.json
-wallet.json
-config.json
