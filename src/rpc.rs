@@ -111,12 +111,16 @@ impl RpcServer {
         println!("[rpc] dispatch: method={}", req.method);
         match req.method.as_str() {
             "getinfo" => self.m_getinfo(),
+            "getblockchaininfo" => self.m_getblockchaininfo(),
             "getcheckpoints" => m_getcheckpoints(),
             "getblocktemplate" => self.m_getblocktemplate(),
             "submitblock" => self.m_submitblock(req),
             "getbalance" => self.m_getbalance(req),
             "getblockhash" => self.m_getblockhash(req),
             "getblock" => self.m_getblock(req),
+            "getblockcount" => self.m_getblockcount(),
+            "getbestblockhash" => self.m_getbestblockhash(),
+            "verifychain" => self.m_verifychain(),
             "getwallet" => m_getwallet(),
             "getprivkey" => m_getprivkey(),
             "dumpprivkey" => m_dumpprivkey(req),
@@ -148,6 +152,32 @@ impl RpcServer {
             "valid": c.is_valid(),
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
             "checkpoints_highest": blockchain::checkpoint::highest(),
+            "datadir": datadir::as_str(&datadir::datadir()),
+        }))
+    }
+
+    fn m_getblockchaininfo(&self) -> RpcResponse {
+        let c = &self.chain;
+        let tip = c.chain.last().unwrap();
+        RpcResponse::ok(json!({
+            "chain": "main",
+            "blocks": c.height(),
+            "headers": c.height(),
+            "bestblockhash": tip.hash,
+            "difficulty": c.difficulty,
+            "mediantime": tip.timestamp,
+            "verificationprogress": 1.0,
+            "initialblockdownload": false,
+            "chainwork": format!("{:x}", c.chain.len() * c.difficulty),
+            "size_on_disk": 0,
+            "pruned": false,
+            "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
+            "checkpoints_highest": blockchain::checkpoint::highest(),
+            "mempool_len": c.mempool.len(),
+            "circulating": to_coin(c.circulating_supply()),
+            "max_supply": to_coin(blockchain::max_supply()),
+            "era": c.current_era(),
+            "until_halving": c.blocks_until_halving(),
             "datadir": datadir::as_str(&datadir::datadir()),
         }))
     }
@@ -312,6 +342,27 @@ impl RpcServer {
             "nonce": block.nonce,
             "reward": to_coin(block.reward),
             "transactions": block.transactions,
+        }))
+    }
+
+    fn m_getblockcount(&self) -> RpcResponse {
+        let count = self.chain.chain.len() as u64;
+        RpcResponse::ok(json!(count))
+    }
+
+    fn m_getbestblockhash(&self) -> RpcResponse {
+        let tip = self.chain.chain.last().unwrap();
+        RpcResponse::ok(json!(tip.hash))
+    }
+
+    fn m_verifychain(&self) -> RpcResponse {
+        let valid = self.chain.is_valid();
+        RpcResponse::ok(json!({
+            "valid": valid,
+            "blocks_checked": self.chain.chain.len(),
+            "height": self.chain.height(),
+            "difficulty": self.chain.difficulty,
+            "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
         }))
     }
 
