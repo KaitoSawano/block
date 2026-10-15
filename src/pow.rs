@@ -1,14 +1,9 @@
 use crate::block::Block;
 
-/// Nilai nBits genesis ZenaChain. Sama dengan Litecoin: 0x1e0ffff0.
 pub const GENESIS_NBITS: u32 = 0x1e0ffff0;
 
-/// powLimit ZenaChain. Sama dengan Litecoin:
-/// 00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 pub const POW_LIMIT: &str = "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 
-/// Ubah nBits format compact menjadi target 256-bit big-endian.
-/// Implementasi persis seperti Bitcoin/Litecoin `SetCompact`.
 pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
     let exponent = (nbits >> 24) as usize;
     let mantissa = nbits & 0x007fffff;
@@ -40,8 +35,6 @@ pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
     target
 }
 
-/// Bandingkan hash (hex 64 char) dengan target 256-bit.
-/// Return true bila hash <= target.
 pub fn hash_le_target(hash_hex: &str, target: &[u8; 32]) -> bool {
     let hash_bytes = match hex::decode(hash_hex) {
         Ok(b) if b.len() == 32 => b,
@@ -59,18 +52,12 @@ pub fn hash_le_target(hash_hex: &str, target: &[u8; 32]) -> bool {
     true
 }
 
-/// Cek hash memenuhi target dari nbits.
 pub fn hash_meets_nbits(hash_hex: &str, nbits: u32) -> bool {
     let target = nbits_to_target(nbits);
     hash_le_target(hash_hex, &target)
 }
 
-/// Mining blok. Loop sampai hash memenuhi target nbits.
 pub fn mine(block: &mut Block, nbits: u32) -> bool {
-    println!(
-        "[pow] mine: mencari nonce sampai hash memenuhi target nbits={:#010x}.",
-        nbits
-    );
     let target = nbits_to_target(nbits);
     loop {
         block.hash = block.calculate_hash();
@@ -78,7 +65,6 @@ pub fn mine(block: &mut Block, nbits: u32) -> bool {
             return true;
         }
         if block.nonce == u64::MAX {
-            println!("[pow] nonce habis, mining gagal untuk blok ini.");
             return false;
         }
         block.nonce = block.nonce.wrapping_add(1);
