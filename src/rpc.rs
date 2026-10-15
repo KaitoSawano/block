@@ -4,7 +4,7 @@ use crate::datadir;
 use crate::pow;
 use crate::storage;
 use crate::transaction::Transaction;
-use crate::utils::{now_millis, satoshi_to_zenac};
+use crate::utils::now_millis;
 use crate::wallet::Wallet;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -121,8 +121,6 @@ impl RpcServer {
 
     fn m_getinfo(&self) -> RpcResponse {
         let c = &self.chain;
-        let circulating = c.circulating_supply();
-        let max_supply = crate::blockchain::max_supply();
         RpcResponse::ok(json!({
             "coin_name": crate::blockchain::coin_name(),
             "symbol": crate::blockchain::symbol(),
@@ -131,10 +129,8 @@ impl RpcServer {
             "height": c.height(),
             "chain_len": c.chain.len(),
             "difficulty": c.difficulty,
-            "circulating_satoshi": circulating,
-            "circulating_zenac": satoshi_to_zenac(circulating),
-            "max_supply_satoshi": max_supply,
-            "max_supply_zenac": satoshi_to_zenac(max_supply),
+            "circulating": c.circulating_supply(),
+            "max_supply": crate::blockchain::max_supply(),
             "era": c.current_era(),
             "until_halving": c.blocks_until_halving(),
             "mempool_len": c.mempool.len(),
@@ -152,8 +148,7 @@ impl RpcServer {
             "height": next_height,
             "previous_hash": prev_hash,
             "difficulty": c.difficulty,
-            "reward_satoshi": reward,
-            "reward_zenac": satoshi_to_zenac(reward),
+            "reward": reward,
             "mempool": c.mempool,
         }))
     }
@@ -252,14 +247,10 @@ impl RpcServer {
         let balance = mature;
         RpcResponse::ok(json!({
             "address": addr,
-            "balance_satoshi": balance,
-            "balance_zenac": satoshi_to_zenac(balance),
-            "mature_satoshi": mature,
-            "mature_zenac": satoshi_to_zenac(mature),
-            "immature_satoshi": immature,
-            "immature_zenac": satoshi_to_zenac(immature),
-            "received_satoshi": received,
-            "received_zenac": satoshi_to_zenac(received),
+            "balance": balance,
+            "mature": mature,
+            "immature": immature,
+            "received": received,
             "spent_outputs": spent.len(),
         }))
     }
