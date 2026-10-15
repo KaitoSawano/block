@@ -99,12 +99,12 @@ pub fn max_tx_per_block() -> usize { validation::MAX_TX_PER_BLOCK }
 pub fn pow_limit() -> &'static str { pow::POW_LIMIT }
 pub fn genesis_nbits() -> u32 { pow::GENESIS_NBITS }
 
-/// Hash semua parameter konsensus. Perubahan apa pun akan mengubah
-/// fingerprint ini, dan karena fingerprint dipakai di genesis coinbase
-/// txid, genesis hash akan berubah. Chain lama tidak akan cocok.
+/// Fingerprint konsensus. Mencakup SEMUA parameter yang dipakai
+/// di genesis block. Kalau ada satu saja yang diubah, fingerprint
+/// berubah, genesis hash berubah, dan seluruh chain jadi tidak valid.
 pub fn consensus_fingerprint() -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         spec::COIN_NAME,
         spec::SYMBOL,
         spec::VERSION,
@@ -125,11 +125,15 @@ pub fn consensus_fingerprint() -> String {
         spec::DIFFICULTY_ADJUST_INTERVAL,
         spec::GENESIS_MESSAGE,
         spec::GENESIS_SECRET,
+        spec::GENESIS_TIMESTAMP,
         spec::GENESIS_OUTPUT_SCRIPT,
+        pow::GENESIS_NBITS,
+        crate::block::BLOCK_VERSION,
     );
     sha3_256_hex(payload.as_bytes())
 }
 
+/// Txid genesis coinbase. Dihitung dari fingerprint dan timestamp.
 pub fn genesis_coinbase_txid() -> String {
     let fp = consensus_fingerprint();
     let payload = format!(
