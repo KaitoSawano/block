@@ -1,6 +1,7 @@
 use crate::blockchain::Blockchain;
 use crate::config::Config;
 use crate::datadir;
+use crate::pow;
 use crate::storage;
 use crate::transaction::Transaction;
 use crate::utils::now_millis;
@@ -125,6 +126,7 @@ impl RpcServer {
             "getnewwallet" => m_getnewwallet(),
             "getaddtowallet" => m_getaddtowallet(),
             "getaddtoaddress" => m_getaddtoaddress(req),
+            "generatetoaddress" => self.m_generatetoaddress(req),
             _ => RpcResponse::err("method tidak dikenal"),
         }
     }
@@ -181,7 +183,7 @@ impl RpcServer {
             return RpcResponse::err("previous_hash tidak cocok");
         }
 
-        if !crate::pow::hash_meets_target(&block.hash, self.chain.difficulty) {
+        if !pow::hash_meets_target(&block.hash, self.chain.difficulty) {
             return RpcResponse::err("pow tidak memenuhi target");
         }
 
@@ -247,6 +249,59 @@ impl RpcServer {
             "sent": sent,
             "balance": balance,
         }))
+    }
+
+    fn m_generatetoaddress(&mut self, req: &RpcRequest) -> RpcResponse {
+        let n = match req.params.first().and_then(|v| v.as_u64()) {
+            Some(n) => n,
+            None => return RpcResponse::err("generatetoaddress butuh jumlah blok"),
+        };
+        let addr = match req.params.get(1).and_then(|v| v.as_str()) {
+            Some(a) => a.to_string(),
+            None => return RpcResponse::err("generatetoaddress butuh alamat"),
+        };
+
+        let mut hashes: Vec<String> = Vec::new();
+
+        for _ in 0..n {
+            let prev = self.chain.chain.last().unwrap().clone();
+            let next_index = prev.index + 1;
+            let reward = Blockchain::calculate_reward(next_index);
+
+            if self.chain.circulating_supply() + reward > crate::blockchain::max_supply() {
+                return RpcResponse::err("max supply reached");
+            }
+
+            let mut txs = std::mem::take(&mut self.chain.mempool);
+            txs.push(Transaction::new(
+                "NETWORK",
+                &addr,
+                crate::blockchain::satoshi() / 100,
+                0,
+            ));
+
+            let mut block =
+                crate::block::Block::new(next_index, prev.hash.clone(), reward, txs);
+            pow::mine(&mut block, self.chain.difficulty);
+
+            let hash = block.hash.clone();
+            let height = block.index;
+            self.chain.chain.push(block);
+            self.chain.adjust_difficulty();
+
+            datadir::append_debug_log(&format!(
+                "block mined (generatetoaddress) height={} hash={} address={}",
+                height, hash, addr
+            ));
+
+            hashes.push(hash);
+        }
+
+        if let Err(e) = storage::save_chain(&self.chain) {
+            return RpcResponse::err(&format!("gagal simpan chain: {}", e));
+        }
+
+        RpcResponse::ok(json!(hashes))
     }
 }
 
@@ -375,6 +430,3 @@ pub fn call_and_print(method: &str, params: Vec<Value>) {
         }
     }
 }
-
-#[allow(dead_code)]
-pub fn _unused_tx(_t: &Transaction) {}
