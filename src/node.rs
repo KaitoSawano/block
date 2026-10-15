@@ -1,5 +1,6 @@
 use crate::blockchain::Blockchain;
-use crate::config::{Config, CONFIG_FILE};
+use crate::config::Config;
+use crate::datadir;
 use crate::storage;
 use crate::transaction::Transaction;
 
@@ -10,10 +11,10 @@ pub struct Node {
 
 impl Node {
     pub fn new() -> Self {
-        println!("[node] new: menginisialisasi node dengan chain dan config.");
-        let config = Config::load_or_default(CONFIG_FILE);
-        let chain = storage::load_chain(storage::CHAIN_FILE)
-            .unwrap_or_else(|_| Blockchain::new());
+        println!("[node] new: menginisialisasi node dari .chain.");
+        let _ = datadir::ensure_dirs();
+        let config = Config::load_or_default();
+        let chain = storage::load_chain().unwrap_or_else(|_| Blockchain::new());
         Node { chain, config }
     }
 
@@ -22,8 +23,8 @@ impl Node {
     }
 
     pub fn run_once(&mut self) {
-        println!("[node] run_once: satu siklus mining ke alamat {}.", self.mining_address());
         let addr = self.config.mining_address.clone();
+        datadir::append_debug_log(&format!("mine cycle start target={}", addr));
 
         self.chain.add_transaction(Transaction::new(
             "NETWORK",
@@ -34,15 +35,25 @@ impl Node {
 
         match self.chain.mine_pending() {
             Ok(nonce) => {
-                println!(
-                    "[node] blok ditambang height={} nonce={} difficulty={} reward={}",
+                let last = self.chain.chain.last().unwrap();
+                datadir::append_debug_log(&format!(
+                    "block mined height={} nonce={} difficulty={} reward={} hash={}",
                     self.chain.height(),
                     nonce,
                     self.chain.difficulty,
-                    self.chain.chain.last().unwrap().reward
+                    last.reward,
+                    last.hash
+                ));
+                println!(
+                    "[node] blok height={} nonce={} difficulty={} reward={}",
+                    self.chain.height(),
+                    nonce,
+                    self.chain.difficulty,
+                    last.reward
                 );
             }
             Err(e) => {
+                datadir::append_debug_log(&format!("mine failed: {}", e));
                 println!("[node] mining gagal: {}", e);
             }
         }
@@ -51,10 +62,10 @@ impl Node {
     }
 
     pub fn run_forever(&mut self) {
-        println!("[node] run_forever: node berjalan terus, mining ke {}.", self.mining_address());
+        println!("[node] run_forever: node aktif, target mining {}.", self.mining_address());
         loop {
             self.run_once();
-            let _ = storage::save_chain(&self.chain, storage::CHAIN_FILE);
+            let _ = storage::save_chain(&self.chain);
         }
     }
 }
