@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub const RPC_ADDR: &str = "127.0.0.1:8332";
-pub const DEFAULT_FEE_SATOSHI: u64 = 100_000; // 0.001 ZENAC
+pub const DEFAULT_FEE_SATOSHI: u64 = 100_000;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RpcRequest {
@@ -157,9 +157,7 @@ impl RpcServer {
         if let Err(e) = storage::save_chain(&self.chain) {
             return RpcResponse::err(&format!("gagal simpan chain: {}", e));
         }
-
         self.shutdown.store(true, Ordering::SeqCst);
-
         RpcResponse::ok(json!({
             "stopping": true,
             "height": self.chain.height(),
@@ -170,8 +168,6 @@ impl RpcServer {
 
     fn m_getinfo(&self) -> RpcResponse {
         let c = &self.chain;
-        let circulating = c.circulating_supply();
-        let max_supply = blockchain::max_supply();
         RpcResponse::ok(json!({
             "coin_name": blockchain::coin_name(),
             "symbol": blockchain::symbol(),
@@ -183,8 +179,8 @@ impl RpcServer {
             "chain_len": c.chain.len(),
             "nbits": format!("{:#010x}", c.nbits),
             "pow_limit": blockchain::pow_limit(),
-            "circulating": to_coin(circulating),
-            "max_supply": to_coin(max_supply),
+            "circulating": to_coin(c.circulating_supply()),
+            "max_supply": to_coin(blockchain::max_supply()),
             "era": c.current_era(),
             "subsidy_halving_interval": blockchain::subsidy_halving_interval(),
             "blocks_until_halving": c.blocks_until_halving(),
@@ -196,6 +192,7 @@ impl RpcServer {
             "valid": c.is_valid(),
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
             "checkpoints_highest": blockchain::checkpoint::highest(),
+            "consensus_fingerprint": blockchain::consensus_fingerprint(),
             "datadir": datadir::as_str(&datadir::datadir()),
         }))
     }
@@ -223,6 +220,7 @@ impl RpcServer {
             "subsidy_halving_interval": blockchain::subsidy_halving_interval(),
             "blocks_until_halving": c.blocks_until_halving(),
             "difficulty_adjust_interval": blockchain::difficulty_adjust_interval(),
+            "consensus_fingerprint": blockchain::consensus_fingerprint(),
             "datadir": datadir::as_str(&datadir::datadir()),
         }))
     }
@@ -270,6 +268,7 @@ impl RpcServer {
             "height": block.index,
             "hash": block.hash,
             "txid": block.coinbase_txid,
+            "merkle_root": block.merkle_root,
             "mined_at": block.mined_at,
             "mined_for": block.mined_for,
             "nbits": format!("{:#010x}", block.nbits),
@@ -308,11 +307,7 @@ impl RpcServer {
         if height as usize >= self.chain.chain.len() {
             return RpcResponse::err("height di luar rentang chain");
         }
-        let block = &self.chain.chain[height as usize];
-        if block.index != height {
-            return RpcResponse::err("index blok tidak cocok dengan height");
-        }
-        RpcResponse::ok(json!(block.hash))
+        RpcResponse::ok(json!(self.chain.chain[height as usize].hash))
     }
 
     fn m_getblock(&self, req: &RpcRequest) -> RpcResponse {
@@ -325,9 +320,11 @@ impl RpcServer {
             None => return RpcResponse::err("blok tidak ditemukan"),
         };
         RpcResponse::ok(json!({
+            "nversion": block.nversion,
             "hash": block.hash,
             "height": block.index,
             "previous_hash": block.previous_hash,
+            "merkle_root": block.merkle_root,
             "timestamp": block.timestamp,
             "mined_at": block.mined_at,
             "mined_for": block.mined_for,
@@ -335,6 +332,10 @@ impl RpcServer {
             "nbits": format!("{:#010x}", block.nbits),
             "reward": to_coin(block.reward),
             "coinbase_txid": block.coinbase_txid,
+            "blockchain_size": block.blockchain_size,
+            "genesis_output_script": block.genesis_output_script,
+            "miner_pubkey": block.miner_pubkey,
+            "miner_signature": block.miner_signature,
             "transactions": block.transactions,
         }))
     }
@@ -348,15 +349,25 @@ impl RpcServer {
     }
 
     fn m_verifychain(&self) -> RpcResponse {
-        RpcResponse::ok(json!({
-            "valid": self.chain.is_valid(),
-            "blocks_checked": self.chain.chain.len(),
-            "height": self.chain.height(),
-            "nbits": format!("{:#010x}", self.chain.nbits),
-            "pow_limit": blockchain::pow_limit(),
-            "signature_algo": blockchain::signature_algo(),
-            "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
-        }))
+        match validation::validate_chain(&self.chain) {
+            Ok(_) => RpcResponse::ok(json!({
+                "valid": true,
+                "blocks_checked": self.chain.chain.len(),
+                "height": self.chain.height(),
+                "nbits": format!("{:#010x}", self.chain.nbits),
+                "pow_limit": blockchain::pow_limit(),
+                "signature_algo": blockchain::signature_algo(),
+                "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
+                "consensus_fingerprint": blockchain::consensus_fingerprint(),
+            })),
+            Err(e) => RpcResponse::ok(json!({
+                "valid": false,
+                "code": e.code,
+                "message": e.message,
+                "blocks_checked": self.chain.chain.len(),
+                "height": self.chain.height(),
+            })),
+        }
     }
 
     fn m_getrawtransaction(&self, req: &RpcRequest) -> RpcResponse {
@@ -380,6 +391,7 @@ impl RpcServer {
                         "inputs": tx.inputs,
                         "public_key": tx.public_key,
                         "signature": tx.signature,
+                        "output_script": tx.output_script,
                         "in_mempool": false,
                         "block_hash": block.hash,
                         "block_height": block.index,
@@ -387,7 +399,6 @@ impl RpcServer {
                     }));
                 }
             }
-
             if block.coinbase_txid == txid {
                 return RpcResponse::ok(json!({
                     "txid": block.coinbase_txid,
@@ -396,11 +407,6 @@ impl RpcServer {
                     "amount_satoshi": block.reward,
                     "amount_zenac": to_coin(block.reward),
                     "fee_satoshi": 0,
-                    "fee_zenac": "0.00000000",
-                    "note": "",
-                    "inputs": [],
-                    "public_key": "",
-                    "signature": "",
                     "in_mempool": false,
                     "block_hash": block.hash,
                     "block_height": block.index,
@@ -424,6 +430,7 @@ impl RpcServer {
                     "inputs": tx.inputs,
                     "public_key": tx.public_key,
                     "signature": tx.signature,
+                    "output_script": tx.output_script,
                     "in_mempool": true,
                 }));
             }
@@ -470,7 +477,6 @@ impl RpcServer {
                     }
                 }
             }
-
             if block.mined_for == addr && block.reward > 0 {
                 let mature_at = block.index.saturating_add(validation::COINBASE_MATURITY);
                 let is_mature = mature_at <= current_height;
@@ -503,56 +509,23 @@ impl RpcServer {
     fn m_getmempoolinfo(&self) -> RpcResponse {
         let txs = &self.chain.mempool;
         let count = txs.len();
-
         let mut total_amount: u64 = 0;
         let mut total_fee: u64 = 0;
-        let mut min_fee: u64 = u64::MAX;
-        let mut max_fee: u64 = 0;
-
-        let mut by_from: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
-        let mut by_to: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
-
         for tx in txs {
             total_amount = total_amount.saturating_add(tx.amount);
             total_fee = total_fee.saturating_add(tx.fee);
-
-            if tx.fee < min_fee {
-                min_fee = tx.fee;
-            }
-            if tx.fee > max_fee {
-                max_fee = tx.fee;
-            }
-
-            *by_from.entry(tx.from.clone()).or_insert(0) += 1;
-            *by_to.entry(tx.to.clone()).or_insert(0) += 1;
         }
-
-        if count == 0 {
-            min_fee = 0;
-        }
-
-        let avg_fee = if count > 0 {
-            total_fee / count as u64
-        } else {
-            0
-        };
-
+        let avg_fee = if count > 0 { total_fee / count as u64 } else { 0 };
         RpcResponse::ok(json!({
             "size": count,
             "total_amount_satoshi": total_amount,
             "total_amount_zenac": to_coin(total_amount),
             "total_fee_satoshi": total_fee,
             "total_fee_zenac": to_coin(total_fee),
-            "min_fee_satoshi": min_fee,
-            "min_fee_zenac": to_coin(min_fee),
-            "max_fee_satoshi": max_fee,
-            "max_fee_zenac": to_coin(max_fee),
             "avg_fee_satoshi": avg_fee,
             "avg_fee_zenac": to_coin(avg_fee),
             "default_fee_satoshi": DEFAULT_FEE_SATOSHI,
             "default_fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
-            "by_from": by_from,
-            "by_to": by_to,
         }))
     }
 
@@ -597,28 +570,14 @@ impl RpcServer {
             }
 
             let mut txs = std::mem::take(&mut self.chain.mempool);
-            txs.push(Transaction::new(
-                "NETWORK",
-                &addr,
-                blockchain::satoshi() / 100,
-                0,
-            ));
+            txs.push(Transaction::new("NETWORK", &addr, blockchain::satoshi() / 100, 0));
             txs.push(Transaction::new_with_inputs(
-                "MEMPOOL",
-                "CreateNewBlock",
-                0,
-                0,
-                Vec::new(),
+                "MEMPOOL", "CreateNewBlock", 0, 0, Vec::new(),
                 format!("height={} target={}", next_index, addr),
             ));
 
             let mut block = crate::block::Block::new_for(
-                next_index,
-                prev.hash.clone(),
-                reward,
-                self.chain.nbits,
-                txs,
-                addr.clone(),
+                next_index, prev.hash.clone(), reward, self.chain.nbits, txs, addr.clone(),
             );
             if !pow::mine(&mut block, self.chain.nbits) {
                 return RpcResponse::err("mining gagal: nonce habis");
@@ -627,9 +586,7 @@ impl RpcServer {
             let hash = block.hash.clone();
             self.chain.chain.push(block.clone());
             self.chain.adjust_difficulty();
-
             block.log_add_to_wallet();
-
             hashes.push(hash);
         }
 
@@ -672,12 +629,7 @@ impl RpcServer {
             return RpcResponse::err("jumlah terlalu kecil");
         }
 
-        let mut tx = Transaction::new(
-            &wallet.address,
-            &to,
-            amount_sat,
-            DEFAULT_FEE_SATOSHI,
-        );
+        let mut tx = Transaction::new(&wallet.address, &to, amount_sat, DEFAULT_FEE_SATOSHI);
 
         if let Err(e) = tx.sign(&wallet.secret) {
             return RpcResponse::err(&format!("gagal tanda tangan: {}", e));
