@@ -19,6 +19,7 @@ fn main() {
         "getblockcount" => rpc::call_and_print("getblockcount", vec![]),
         "getbestblockhash" => rpc::call_and_print("getbestblockhash", vec![]),
         "verifychain" => rpc::call_and_print("verifychain", vec![]),
+        "validatemempool" => rpc::call_and_print("validatemempool", vec![]),
         "getwallet" => rpc::call_and_print("getwallet", vec![]),
         "getprivkey" => {
             if args.len() < 3 {
@@ -55,6 +56,18 @@ fn main() {
             }
             rpc::call_and_print("getblock", vec![json!(args[2])]);
         }
+        "getrawtransaction" => {
+            if args.len() < 3 {
+                println!("pemakaian: zenachain getrawtransaction \"<txid>\"");
+                return;
+            }
+            rpc::call_and_print("getrawtransaction", vec![json!(args[2])]);
+        }
+        "listunspent" => {
+            let params = if args.len() >= 3 { vec![json!(args[2])] } else { vec![] };
+            rpc::call_and_print("listunspent", params);
+        }
+        "getmempoolinfo" => rpc::call_and_print("getmempoolinfo", vec![]),
         "generatetoaddress" => {
             if args.len() < 4 {
                 println!("pemakaian: zenachain generatetoaddress <jumlah> \"<alamat>\"");
@@ -107,8 +120,12 @@ fn print_help() {
     println!("  zenachain getblockcount                       jumlah blok di chain");
     println!("  zenachain getbestblockhash                    hash blok terakhir");
     println!("  zenachain verifychain                         verifikasi integritas seluruh chain");
+    println!("  zenachain validatemempool                     validasi seluruh isi mempool");
     println!("  zenachain getblockhash <height>               hash blok pada height tertentu");
     println!("  zenachain getblock \"<hash>\"                   detail blok berdasarkan hash");
+    println!("  zenachain getrawtransaction \"<txid>\"          detail transaksi berdasarkan txid");
+    println!("  zenachain listunspent [address]               daftar UTXO wallet");
+    println!("  zenachain getmempoolinfo                      ringkasan mempool");
     println!("  zenachain getwallet                           buka dompet tersimpan");
     println!("  zenachain getnewwallet                        buat dompet baru");
     println!("  zenachain getaddtowallet                      pakai alamat wallet sebagai tujuan mining");
