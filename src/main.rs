@@ -1,4 +1,4 @@
-use zenachain::config::{Config, CONFIG_FILE};
+use zenachain::config::Config;
 use zenachain::datadir;
 use zenachain::storage;
 use zenachain::utils::now_millis;
@@ -50,7 +50,10 @@ fn cmd_add_to_address(args: &[String]) {
 
 fn cmd_create_wallet() {
     if Wallet::exists_default() {
-        println!("[main] wallet sudah ada di {}", datadir::as_str(&datadir::wallet_path()));
+        println!(
+            "[main] wallet sudah ada di {}",
+            datadir::as_str(&datadir::wallet_path())
+        );
         println!("[main] hapus file tersebut bila ingin membuat wallet baru.");
         return;
     }
@@ -59,7 +62,10 @@ fn cmd_create_wallet() {
         Ok(_) => {
             println!("[main] wallet dibuat.");
             println!("[main] address: {}", w.address);
-            println!("[main] lokasi: {}", datadir::as_str(&datadir::wallet_path()));
+            println!(
+                "[main] lokasi: {}",
+                datadir::as_str(&datadir::wallet_path())
+            );
         }
         Err(e) => println!("[main] gagal menyimpan wallet: {}", e),
     }
@@ -80,21 +86,43 @@ fn cmd_show_wallet() {
 fn cmd_init_datadir() {
     match datadir::ensure_dirs() {
         Ok(_) => {
-            println!("[main] struktur .chain disiapkan di {}", datadir::as_str(&datadir::datadir()));
+            println!(
+                "[main] struktur .chain disiapkan di {}",
+                datadir::as_str(&datadir::datadir())
+            );
             println!("[main] blocks    : {}", datadir::as_str(&datadir::blocks_dir()));
-            println!("[main] chainstate: {}", datadir::as_str(&datadir::chainstate_dir()));
-            println!("[main] wallet    : {}", datadir::as_str(&datadir::wallet_path()));
-            println!("[main] config    : {}", datadir::as_str(&datadir::config_path()));
-            println!("[main] peers     : {}", datadir::as_str(&datadir::peers_path()));
-            println!("[main] mempool   : {}", datadir::as_str(&datadir::mempool_path()));
-            println!("[main] debug log : {}", datadir::as_str(&datadir::debug_log_path()));
+            println!(
+                "[main] chainstate: {}",
+                datadir::as_str(&datadir::chainstate_dir())
+            );
+            println!(
+                "[main] wallet    : {}",
+                datadir::as_str(&datadir::wallet_path())
+            );
+            println!(
+                "[main] config    : {}",
+                datadir::as_str(&datadir::config_path())
+            );
+            println!(
+                "[main] peers     : {}",
+                datadir::as_str(&datadir::peers_path())
+            );
+            println!(
+                "[main] mempool   : {}",
+                datadir::as_str(&datadir::mempool_path())
+            );
+            println!(
+                "[main] debug log : {}",
+                datadir::as_str(&datadir::debug_log_path())
+            );
         }
         Err(e) => println!("[main] gagal menyiapkan .chain: {}", e),
     }
 }
 
 fn cmd_info() {
-    let chain = storage::load_chain().unwrap_or_else(|_| zenachain::blockchain::Blockchain::new());
+    let chain =
+        storage::load_chain().unwrap_or_else(|_| zenachain::blockchain::Blockchain::new());
     let w_exists = Wallet::exists_default();
     println!("datadir      : {}", datadir::as_str(&datadir::datadir()));
     println!("height       : {}", chain.height());
@@ -118,9 +146,4 @@ fn print_help() {
     println!("  zenachain addtoaddress \"<alamat>\"       set alamat tujuan mining");
     println!("  zenachain info                          ringkasan chain dan datadir");
     println!("  zenachaind                              jalankan node / mining server");
-}
-
-#[allow(dead_code)]
-fn _unused_config_file_reference() -> &'static str {
-    CONFIG_FILE
 }
