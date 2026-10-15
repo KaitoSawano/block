@@ -457,8 +457,6 @@ pub fn rule_genesis_output_script(block: &Block) -> Result<(), ValidationError> 
     Ok(())
 }
 
-/// E045: genesis hash harus memenuhi target PoW.
-/// Ini yang membuat genesis harus ditambang.
 pub fn rule_genesis_pow(block: &Block) -> Result<(), ValidationError> {
     if !pow::hash_meets_nbits(&block.hash, block.nbits) {
         return Err(ValidationError::new(
