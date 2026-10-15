@@ -9,6 +9,7 @@ mod spec {
     pub const VERSION: &str = "0.1.0";
     pub const PROTOCOL_VERSION: u32 = 1;
     pub const HASH_ALGO: &str = "SHA3-256";
+    pub const SIGNATURE_ALGO: &str = "secp256k1-ECDSA";
     pub const DECIMALS: u32 = 8;
 
     pub const SATOSHI: u64 = 100_000_000;
@@ -35,9 +36,6 @@ mod spec {
     pub const MAX_TX_PER_BLOCK: usize = 10_000;
 }
 
-/// Checkpoint ZenaChain, gaya Bitcoin era awal.
-/// Hash di height tertentu mengunci blok. Fork yang bercabang
-/// sebelum checkpoint ditolak oleh `is_valid` dan `submitblock`.
 pub mod checkpoint {
     pub struct Checkpoint {
         pub height: u64,
@@ -49,12 +47,6 @@ pub mod checkpoint {
             height: 0,
             hash: "0000000000000000000000000000000000000000000000000000000000000000",
         },
-        // Tambahkan checkpoint setelah chain stabil.
-        //
-        // Checkpoint {
-        //     height: 100_000,
-        //     hash: "abc123...",
-        // },
     ];
 
     pub fn find(height: u64) -> Option<&'static str> {
@@ -72,7 +64,6 @@ pub mod checkpoint {
         CHECKPOINTS.iter().map(|c| c.height).max().unwrap_or(0)
     }
 
-    /// Return true bila tidak ada checkpoint di height itu, atau bila cocok.
     pub fn verify(height: u64, hash: &str) -> bool {
         match find(height) {
             Some(expected) => expected == hash,
@@ -86,6 +77,7 @@ pub fn symbol() -> &'static str { spec::SYMBOL }
 pub fn version() -> &'static str { spec::VERSION }
 pub fn protocol_version() -> u32 { spec::PROTOCOL_VERSION }
 pub fn hash_algo() -> &'static str { spec::HASH_ALGO }
+pub fn signature_algo() -> &'static str { spec::SIGNATURE_ALGO }
 pub fn decimals() -> u32 { spec::DECIMALS }
 pub fn satoshi() -> u64 { spec::SATOSHI }
 pub fn max_supply_zenac() -> u64 { spec::MAX_SUPPLY_ZENAC }
@@ -183,11 +175,6 @@ impl Blockchain {
             return;
         }
 
-        println!(
-            "[blockchain] adjust_difficulty: menyesuaikan difficulty pada height {}.",
-            height
-        );
-
         let interval = spec::DIFFICULTY_ADJUST_INTERVAL as usize;
         let last = &self.chain[height as usize];
         let first = &self.chain[height as usize - interval];
@@ -207,7 +194,6 @@ impl Blockchain {
         }
     }
 
-    /// Validasi chain dengan checkpoint aktif.
     pub fn is_valid(&self) -> bool {
         if self.chain.is_empty() {
             return false;
@@ -228,41 +214,37 @@ impl Blockchain {
             if cur.index != prev.index + 1 {
                 return false;
             }
-
             if cur.hash != cur.calculate_hash() {
                 return false;
             }
-
             if cur.previous_hash != prev.hash {
                 return false;
             }
-
             if cur.reward != Self::calculate_reward(cur.index) {
                 return false;
             }
-
             if !pow::hash_meets_target(&cur.hash, self.difficulty) {
                 return false;
             }
-
             if cur.transactions.len() > spec::MAX_TX_PER_BLOCK {
                 return false;
             }
-
             if cur.timestamp < prev.timestamp {
                 return false;
             }
-
-            // Checkpoint: hash di height tertentu tidak boleh berbeda.
             if !checkpoint::verify(cur.index, &cur.hash) {
                 return false;
+            }
+            for tx in &cur.transactions {
+                if !tx.verify_signature() {
+                    return false;
+                }
             }
         }
 
         true
     }
 
-    /// Validasi chain eksternal terhadap checkpoint.
     pub fn check_against_checkpoints(chain: &[Block]) -> bool {
         for block in chain {
             if !checkpoint::verify(block.index, &block.hash) {
