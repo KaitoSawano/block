@@ -7,7 +7,6 @@ use std::io::{Error, ErrorKind};
 pub const BLOCKS_PER_FILE: usize = 1000;
 
 pub fn save_chain(chain: &Blockchain) -> std::io::Result<()> {
-    println!("[storage] save_chain: menyimpan chain ke .chain/blocks dan .chain/chainstate.");
     datadir::ensure_dirs()?;
     save_blocks(chain)?;
     save_chainstate(chain)?;
@@ -16,7 +15,6 @@ pub fn save_chain(chain: &Blockchain) -> std::io::Result<()> {
 }
 
 pub fn load_chain() -> std::io::Result<Blockchain> {
-    println!("[storage] load_chain: memuat chain dari .chain/blocks dan .chain/chainstate.");
     if !datadir::chainstate_file().exists() {
         return Ok(Blockchain::new());
     }
