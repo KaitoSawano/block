@@ -61,11 +61,6 @@ fn main() {
             continue;
         }
 
-        println!(
-            "[miner] blok ditambang nonce={} hash={} nbits={:#010x} mined_at={} mined_for={}",
-            block.nonce, block.hash, block.nbits, block.mined_at, block.mined_for
-        );
-
         let block_json = serde_json::to_value(&block).unwrap();
         match rpc::call("submitblock", vec![block_json]) {
             Ok(r) if r.ok => {
