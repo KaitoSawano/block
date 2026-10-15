@@ -33,13 +33,6 @@ mod spec {
     pub const GENESIS_TIMESTAMP: u128 = 1_792_012_800_000;
 }
 
-pub(crate) use spec::{
-    DIFFICULTY_ADJUST_INTERVAL, GENESIS_MESSAGE, GENESIS_SECRET, GENESIS_TIMESTAMP,
-    HALVING_INTERVAL_BLOCKS, HASH_ALGO, INITIAL_DIFFICULTY, INITIAL_REWARD,
-    INITIAL_REWARD_ZENAC, MAX_DIFFICULTY, MAX_HALVINGS, MAX_SUPPLY, MAX_SUPPLY_ZENAC,
-    MIN_DIFFICULTY, SATOSHI, TARGET_BLOCK_TIME_SECS,
-};
-
 pub fn coin_name() -> &'static str {
     println!("[blockchain] coin_name: nama resmi coin.");
     spec::COIN_NAME
@@ -61,7 +54,7 @@ pub fn protocol_version() -> u32 {
 }
 
 pub fn hash_algo() -> &'static str {
-    println!("[blockchain] hash_algo: algoritma hash yang dipakai untuk PoW dan identitas blok.");
+    println!("[blockchain] hash_algo: algoritma hash untuk PoW dan identitas blok.");
     spec::HASH_ALGO
 }
 
@@ -76,7 +69,7 @@ pub fn satoshi() -> u64 {
 }
 
 pub fn max_supply_zenac() -> u64 {
-    println!("[blockchain] max_supply_zenac: batas maksimum supply dalam satuan ZENAC.");
+    println!("[blockchain] max_supply_zenac: batas maksimum supply dalam ZENAC.");
     spec::MAX_SUPPLY_ZENAC
 }
 
