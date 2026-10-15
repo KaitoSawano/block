@@ -6,12 +6,14 @@ pub const CHAIN_FILE: &str = "chain.json";
 pub const WALLET_FILE: &str = "wallet.json";
 
 pub fn save_chain(chain: &Blockchain, path: &str) -> std::io::Result<()> {
+    println!("[storage] save_chain: menyimpan chain ke berkas JSON.");
     let json = serde_json::to_string_pretty(chain)
         .map_err(|e| Error::new(ErrorKind::Other, e))?;
     std::fs::write(path, json)
 }
 
 pub fn load_chain(path: &str) -> std::io::Result<Blockchain> {
+    println!("[storage] load_chain: memuat chain dari berkas JSON.");
     let data = std::fs::read_to_string(path)?;
     let chain: Blockchain = serde_json::from_str(&data)
         .map_err(|e| Error::new(ErrorKind::Other, e))?;
@@ -19,9 +21,11 @@ pub fn load_chain(path: &str) -> std::io::Result<Blockchain> {
 }
 
 pub fn save_wallet(wallet: &Wallet, path: &str) -> std::io::Result<()> {
+    println!("[storage] save_wallet: menyimpan wallet ke berkas JSON.");
     wallet.save(path)
 }
 
 pub fn load_wallet(path: &str) -> std::io::Result<Wallet> {
+    println!("[storage] load_wallet: memuat wallet dari berkas JSON.");
     Wallet::load(path)
 }
