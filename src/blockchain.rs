@@ -33,6 +33,46 @@ mod spec {
     pub const GENESIS_TIMESTAMP: u128 = 1_792_012_800_000;
 }
 
+pub mod checkpoint {
+    pub struct Checkpoint {
+        pub height: u64,
+        pub hash: &'static str,
+    }
+
+    pub const CHECKPOINTS: &[Checkpoint] = &[
+        Checkpoint {
+            height: 0,
+            hash: "0000000000000000000000000000000000000000000000000000000000000000",
+        },
+        // Tambahkan entri berikut setiap chain mencapai height penting.
+        // Gaya Bitcoin: hash 64 hex tanpa prefix.
+        //
+        // Checkpoint {
+        //     height: 100_000,
+        //     hash: "abc123...",
+        // },
+    ];
+
+    pub fn find(height: u64) -> Option<&'static str> {
+        CHECKPOINTS
+            .iter()
+            .find(|c| c.height == height)
+            .map(|c| c.hash)
+    }
+
+    pub fn is_checkpoint(height: u64) -> bool {
+        CHECKPOINTS.iter().any(|c| c.height == height)
+    }
+
+    /// Return true bila tidak ada checkpoint di height itu, atau bila cocok.
+    pub fn verify(height: u64, hash: &str) -> bool {
+        match find(height) {
+            Some(expected) => expected == hash,
+            None => true,
+        }
+    }
+}
+
 pub fn coin_name() -> &'static str { spec::COIN_NAME }
 pub fn symbol() -> &'static str { spec::SYMBOL }
 pub fn version() -> &'static str { spec::VERSION }
@@ -75,7 +115,6 @@ impl Blockchain {
         self.chain.last().unwrap().index
     }
 
-    /// Jumlahkan reward semua blok dengan saturating_add, aman dari overflow.
     pub fn circulating_supply(&self) -> u64 {
         self.chain
             .iter()
@@ -172,6 +211,19 @@ impl Blockchain {
                 return false;
             }
             if !pow::hash_meets_target(&cur.hash, self.difficulty) {
+                return false;
+            }
+            if !checkpoint::verify(cur.index, &cur.hash) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Validasi chain eksternal terhadap checkpoint.
+    pub fn check_against_checkpoints(chain: &[Block]) -> bool {
+        for block in chain {
+            if !checkpoint::verify(block.index, &block.hash) {
                 return false;
             }
         }
