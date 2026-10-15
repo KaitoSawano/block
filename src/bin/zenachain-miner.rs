@@ -26,20 +26,37 @@ fn main() {
         let difficulty = template["difficulty"].as_u64().unwrap_or(0) as usize;
         let reward = template["reward"].as_u64().unwrap_or(0);
 
-        let mempool: Vec<Transaction> = serde_json::from_value(template["mempool"].clone())
+        let mut mempool: Vec<Transaction> = serde_json::from_value(template["mempool"].clone())
             .unwrap_or_default();
 
+        let target_address = std::env::var("ZENAC_MINE_FOR")
+            .unwrap_or_else(|_| "UNKNOWN".to_string());
+
+        mempool.push(Transaction {
+            from: "MEMPOOL".into(),
+            to: "CreateNewBlock".into(),
+            amount: 0,
+            fee: 0,
+            note: format!("height={} target={}", height, target_address),
+        });
+
         println!(
-            "[miner] template height={} difficulty={} reward={}",
-            height, difficulty, reward
+            "[miner] CreateNewBlock height={} difficulty={} reward={} target={}",
+            height, difficulty, reward, target_address
         );
 
-        let mut block = Block::new(height, previous_hash, reward, mempool);
+        let mut block = Block::new_for(
+            height,
+            previous_hash,
+            reward,
+            mempool,
+            target_address.clone(),
+        );
         zenachain::pow::mine(&mut block, difficulty);
 
         println!(
-            "[miner] blok ditambang nonce={} hash={}",
-            block.nonce, block.hash
+            "[miner] blok ditambang nonce={} hash={} mined_at={} mined_for={}",
+            block.nonce, block.hash, block.mined_at, block.mined_for
         );
 
         let block_json = serde_json::to_value(&block).unwrap();
