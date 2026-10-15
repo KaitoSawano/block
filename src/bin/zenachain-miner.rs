@@ -23,7 +23,7 @@ fn main() {
 
         let height = template["height"].as_u64().unwrap_or(0);
         let previous_hash = template["previous_hash"].as_str().unwrap_or("").to_string();
-        let difficulty = template["difficulty"].as_u64().unwrap_or(0) as usize;
+        let nbits = template["nbits"].as_u64().unwrap_or(0) as u32;
 
         let mut mempool: Vec<Transaction> = serde_json::from_value(template["mempool"].clone())
             .unwrap_or_default();
@@ -43,26 +43,27 @@ fn main() {
         ));
 
         println!(
-            "[miner] CreateNewBlock height={} difficulty={} target={}",
-            height, difficulty, target_address
+            "[miner] CreateNewBlock height={} nbits={:#010x} target={}",
+            height, nbits, target_address
         );
 
         let mut block = Block::new_for(
             height,
             previous_hash,
             reward,
+            nbits,
             mempool,
             target_address.clone(),
         );
 
-        if !zenachain::pow::mine(&mut block, difficulty) {
+        if !zenachain::pow::mine(&mut block, nbits) {
             println!("[miner] mining gagal: nonce habis. Coba lagi.");
             continue;
         }
 
         println!(
-            "[miner] blok ditambang nonce={} hash={} mined_at={} mined_for={}",
-            block.nonce, block.hash, block.mined_at, block.mined_for
+            "[miner] blok ditambang nonce={} hash={} nbits={:#010x} mined_at={} mined_for={}",
+            block.nonce, block.hash, block.nbits, block.mined_at, block.mined_for
         );
 
         let block_json = serde_json::to_value(&block).unwrap();
