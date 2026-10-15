@@ -5,6 +5,7 @@ pub fn hash_meets_target(hash: &str, difficulty: usize) -> bool {
 }
 
 pub fn mine(block: &mut Block, difficulty: usize) {
+    println!("[pow] mine: mencari nonce sampai hash punya prefix nol sejumlah difficulty.");
     let target = "0".repeat(difficulty);
     loop {
         block.hash = block.calculate_hash();
