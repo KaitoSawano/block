@@ -43,10 +43,7 @@ fn main() {
             }
             let h: u64 = match args[2].parse() {
                 Ok(v) => v,
-                Err(_) => {
-                    println!("height tidak valid");
-                    return;
-                }
+                Err(_) => { println!("height tidak valid"); return; }
             };
             rpc::call_and_print("getblockhash", vec![json!(h)]);
         }
@@ -64,19 +61,23 @@ fn main() {
             }
             let n: u64 = match args[2].parse() {
                 Ok(v) => v,
-                Err(_) => {
-                    println!("jumlah blok tidak valid");
-                    return;
-                }
+                Err(_) => { println!("jumlah blok tidak valid"); return; }
             };
             rpc::call_and_print("generatetoaddress", vec![json!(n), json!(args[3])]);
         }
-        "getbalance" => {
-            let params = if args.len() >= 3 {
-                vec![json!(args[2])]
-            } else {
-                vec![]
+        "sendtoaddress" => {
+            if args.len() < 4 {
+                println!("pemakaian: zenachain sendtoaddress <jumlah> \"<alamat>\"");
+                return;
+            }
+            let amount: f64 = match args[2].parse() {
+                Ok(v) => v,
+                Err(_) => { println!("jumlah tidak valid"); return; }
             };
+            rpc::call_and_print("sendtoaddress", vec![json!(amount), json!(args[3])]);
+        }
+        "getbalance" => {
+            let params = if args.len() >= 3 { vec![json!(args[2])] } else { vec![] };
             rpc::call_and_print("getbalance", params);
         }
         "dumpprivkey" => {
@@ -96,26 +97,27 @@ fn main() {
 fn print_help() {
     println!("ZenaChain CLI");
     println!("pemakaian:");
-    println!("  zenachain help                          tampilkan bantuan ini");
-    println!("  zenachain getinfo                       informasi node");
-    println!("  zenachain getblockchaininfo             informasi blockchain gaya Bitcoin");
-    println!("  zenachain getcheckpoints                daftar checkpoint aktif");
-    println!("  zenachain getblocktemplate              template blok untuk miner");
-    println!("  zenachain getblockcount                 jumlah blok di chain");
-    println!("  zenachain getbestblockhash              hash blok terakhir");
-    println!("  zenachain verifychain                   verifikasi integritas seluruh chain");
-    println!("  zenachain getblockhash <height>         hash blok pada height tertentu");
-    println!("  zenachain getblock \"<hash>\"             detail blok berdasarkan hash");
-    println!("  zenachain getwallet                     buka dompet tersimpan");
-    println!("  zenachain getnewwallet                  buat dompet baru (timpa yang lama)");
-    println!("  zenachain getaddtowallet                pakai alamat wallet sebagai tujuan mining");
-    println!("  zenachain getaddtoaddress \"<alamat>\"    set alamat mining manual");
-    println!("  zenachain generatetoaddress <n> \"<alamat>\"  mining n blok langsung ke alamat");
-    println!("  zenachain getprivkey \"<alamat>\"         tampilkan private key untuk alamat itu");
-    println!("  zenachain dumpprivkey \"<privkey>\"       pulihkan dompet dari private key");
-    println!("  zenachain getbalance [address]          hitung saldo wallet");
+    println!("  zenachain help                                tampilkan bantuan ini");
+    println!("  zenachain getinfo                             informasi jaringan");
+    println!("  zenachain getblockchaininfo                   informasi blockchain");
+    println!("  zenachain getcheckpoints                      daftar checkpoint aktif");
+    println!("  zenachain getblocktemplate                    template blok untuk miner");
+    println!("  zenachain getblockcount                       jumlah blok di chain");
+    println!("  zenachain getbestblockhash                    hash blok terakhir");
+    println!("  zenachain verifychain                         verifikasi integritas seluruh chain");
+    println!("  zenachain getblockhash <height>               hash blok pada height tertentu");
+    println!("  zenachain getblock \"<hash>\"                   detail blok berdasarkan hash");
+    println!("  zenachain getwallet                           buka dompet tersimpan");
+    println!("  zenachain getnewwallet                        buat dompet baru");
+    println!("  zenachain getaddtowallet                      pakai alamat wallet sebagai tujuan mining");
+    println!("  zenachain getaddtoaddress \"<alamat>\"          set alamat mining manual");
+    println!("  zenachain generatetoaddress <n> \"<alamat>\"    mining n blok langsung ke alamat");
+    println!("  zenachain sendtoaddress <jumlah> \"<alamat>\"   kirim koin dari wallet ke alamat tujuan");
+    println!("  zenachain getprivkey \"<alamat>\"               tampilkan private key untuk alamat itu");
+    println!("  zenachain dumpprivkey \"<privkey>\"             pulihkan dompet dari private key");
+    println!("  zenachain getbalance [address]                hitung saldo wallet");
     println!();
     println!("daemon:");
-    println!("  zenachaind                              jalankan node (tidak mining)");
-    println!("  zenachain-miner                         jalankan miner terpisah");
+    println!("  zenachaind                                    jalankan node (tidak mining)");
+    println!("  zenachain-miner                               jalankan miner terpisah");
 }
