@@ -1,4 +1,5 @@
 use crate::blockchain::{self, Blockchain};
+use crate::datadir;
 use crate::pow;
 use crate::transaction::Transaction;
 use crate::utils::{format_datetime, now_millis, sha3_256_hex};
@@ -102,5 +103,17 @@ impl Block {
 
     pub fn reward_at(height: u64) -> u64 {
         Blockchain::calculate_reward(height)
+    }
+
+    /// Cetak dan simpan log AddToWallet.
+    /// Format: AddToWallet, mined_at, txid, hash.
+    pub fn log_add_to_wallet(&self) {
+        let entry = format!(
+            "AddToWallet\n  mined_at : {}\n  txid     : {}\n  hash     : {}",
+            self.mined_at, self.coinbase_txid, self.hash
+        );
+
+        println!("{}", entry);
+        datadir::append_debug_log(&entry);
     }
 }
