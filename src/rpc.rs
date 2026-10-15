@@ -122,7 +122,7 @@ impl RpcServer {
             "getbestblockhash" => self.m_getbestblockhash(),
             "verifychain" => self.m_verifychain(),
             "getwallet" => m_getwallet(),
-            "getprivkey" => m_getprivkey(),
+            "getprivkey" => m_getprivkey(req),
             "dumpprivkey" => m_dumpprivkey(req),
             "getnewwallet" => m_getnewwallet(),
             "getaddtowallet" => m_getaddtowallet(),
@@ -458,14 +458,30 @@ fn m_getwallet() -> RpcResponse {
     }
 }
 
-fn m_getprivkey() -> RpcResponse {
-    match Wallet::load_default() {
-        Ok(w) => RpcResponse::ok(json!({
-            "address": w.address,
-            "privkey": w.secret,
-        })),
-        Err(_) => RpcResponse::err("wallet tidak ditemukan"),
+/// getprivkey wajib disertai alamat tujuan.
+fn m_getprivkey(req: &RpcRequest) -> RpcResponse {
+    let target = match req.params.first().and_then(|v| v.as_str()) {
+        Some(a) => a.to_string(),
+        None => {
+            return RpcResponse::err("wajib memasukkan \"alamat tujuan\"");
+        }
+    };
+
+    let w = match Wallet::load_default() {
+        Ok(w) => w,
+        Err(_) => return RpcResponse::err("wallet tidak ditemukan"),
+    };
+
+    if w.address != target {
+        return RpcResponse::err("alamat tidak cocok dengan wallet tersimpan");
     }
+
+    RpcResponse::ok(json!({
+        "address": w.address,
+        "public_key": w.public_key,
+        "privkey": w.secret,
+        "created_at": w.created_at,
+    }))
 }
 
 fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
