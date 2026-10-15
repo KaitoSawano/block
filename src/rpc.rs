@@ -54,6 +54,12 @@ pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     Ok(resp)
 }
 
+/// Konversi satoshi ke f64 ZENAC dengan 8 desimal (gaya Bitcoin).
+/// 1 ZENAC = 100_000_000 satoshi.
+fn to_coin(satoshi: u64) -> f64 {
+    satoshi as f64 / 100_000_000.0
+}
+
 pub struct RpcServer {
     chain: Blockchain,
 }
@@ -121,6 +127,8 @@ impl RpcServer {
 
     fn m_getinfo(&self) -> RpcResponse {
         let c = &self.chain;
+        let circulating = c.circulating_supply();
+        let max_supply = crate::blockchain::max_supply();
         RpcResponse::ok(json!({
             "coin_name": crate::blockchain::coin_name(),
             "symbol": crate::blockchain::symbol(),
@@ -129,8 +137,8 @@ impl RpcServer {
             "height": c.height(),
             "chain_len": c.chain.len(),
             "difficulty": c.difficulty,
-            "circulating": c.circulating_supply(),
-            "max_supply": crate::blockchain::max_supply(),
+            "circulating": to_coin(circulating),
+            "max_supply": to_coin(max_supply),
             "era": c.current_era(),
             "until_halving": c.blocks_until_halving(),
             "mempool_len": c.mempool.len(),
@@ -148,7 +156,7 @@ impl RpcServer {
             "height": next_height,
             "previous_hash": prev_hash,
             "difficulty": c.difficulty,
-            "reward": reward,
+            "reward": to_coin(reward),
             "mempool": c.mempool,
         }))
     }
@@ -247,10 +255,10 @@ impl RpcServer {
         let balance = mature;
         RpcResponse::ok(json!({
             "address": addr,
-            "balance": balance,
-            "mature": mature,
-            "immature": immature,
-            "received": received,
+            "balance": to_coin(balance),
+            "mature": to_coin(mature),
+            "immature": to_coin(immature),
+            "received": to_coin(received),
             "spent_outputs": spent.len(),
         }))
     }
