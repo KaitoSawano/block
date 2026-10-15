@@ -11,7 +11,7 @@ pub struct Node {
 
 impl Node {
     pub fn new() -> Self {
-        println!("[node] new: menginisialisasi node dari .chain.");
+        println!("[node] new: inisialisasi node dari .chain.");
         let _ = datadir::ensure_dirs();
         let config = Config::load_or_default();
         let chain = storage::load_chain().unwrap_or_else(|_| Blockchain::new());
@@ -24,7 +24,7 @@ impl Node {
 
     pub fn run_once(&mut self) {
         let addr = self.config.mining_address.clone();
-        datadir::append_debug_log(&format!("mine cycle start target={}", addr));
+        println!("[node] run_once: siklus mining ke {}.", addr);
 
         self.chain.add_transaction(Transaction::new(
             "NETWORK",
@@ -62,7 +62,10 @@ impl Node {
     }
 
     pub fn run_forever(&mut self) {
-        println!("[node] run_forever: node aktif, target mining {}.", self.mining_address());
+        println!(
+            "[node] run_forever: node aktif, target mining {}.",
+            self.mining_address()
+        );
         loop {
             self.run_once();
             let _ = storage::save_chain(&self.chain);
