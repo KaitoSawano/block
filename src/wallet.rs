@@ -1,3 +1,4 @@
+use crate::datadir;
 use crate::utils::{now_millis, sha3_256_hex};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -29,15 +30,28 @@ impl Wallet {
         }
     }
 
+    pub fn save_default(&self) -> std::io::Result<()> {
+        println!("[wallet] save_default: menyimpan wallet ke .chain/wallet.dat.");
+        datadir::ensure_dirs()?;
+        self.save(&datadir::as_str(&datadir::wallet_path()))
+    }
+
+    pub fn load_default() -> std::io::Result<Self> {
+        println!("[wallet] load_default: memuat wallet dari .chain/wallet.dat.");
+        Self::load(&datadir::as_str(&datadir::wallet_path()))
+    }
+
+    pub fn exists_default() -> bool {
+        datadir::wallet_path().exists()
+    }
+
     pub fn save(&self, path: &str) -> std::io::Result<()> {
-        println!("[wallet] save: menulis wallet ke berkas JSON.");
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
         std::fs::write(path, json)
     }
 
     pub fn load(path: &str) -> std::io::Result<Self> {
-        println!("[wallet] load: membaca wallet dari berkas JSON.");
         let data = std::fs::read_to_string(path)?;
         let w: Wallet = serde_json::from_str(&data)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
