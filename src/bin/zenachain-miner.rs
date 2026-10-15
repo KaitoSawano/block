@@ -34,40 +34,22 @@ fn main() {
         let reward = zenachain::blockchain::Blockchain::calculate_reward(height);
 
         mempool.push(Transaction::new_with_inputs(
-            "MEMPOOL",
-            "CreateNewBlock",
-            0,
-            0,
-            Vec::new(),
+            "MEMPOOL", "CreateNewBlock", 0, 0, Vec::new(),
             format!("height={} target={}", height, target_address),
         ));
 
-        println!(
-            "[miner] CreateNewBlock height={} nbits={:#010x} target={}",
-            height, nbits, target_address
-        );
-
         let mut block = Block::new_for(
-            height,
-            previous_hash,
-            reward,
-            nbits,
-            mempool,
-            target_address.clone(),
+            height, previous_hash, reward, nbits, mempool, target_address.clone(),
         );
 
         if !zenachain::pow::mine(&mut block, nbits) {
-            println!("[miner] mining gagal: nonce habis. Coba lagi.");
             continue;
         }
 
         let block_json = serde_json::to_value(&block).unwrap();
         match rpc::call("submitblock", vec![block_json]) {
             Ok(r) if r.ok => {
-                println!(
-                    "[miner] blok diterima node: {}",
-                    serde_json::to_string(&r.result).unwrap()
-                );
+                println!("[miner] blok diterima: {}", serde_json::to_string(&r.result).unwrap());
             }
             Ok(r) => println!("[miner] blok ditolak: {}", r.error),
             Err(e) => println!("[miner] gagal submit: {}", e),
