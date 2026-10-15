@@ -17,7 +17,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub const RPC_ADDR: &str = "127.0.0.1:8332";
-pub const COINBASE_MATURITY: u64 = 100;
 pub const DEFAULT_FEE_SATOSHI: u64 = 100_000; // 0.001 ZENAC
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -252,33 +251,9 @@ impl RpcServer {
             Err(e) => return RpcResponse::err(&format!("blok tidak valid: {}", e)),
         };
 
-        if block.hash != block.calculate_hash() {
-            return RpcResponse::err("hash blok tidak cocok");
-        }
+        let prev = self.chain.chain.last().unwrap().clone();
 
-        let prev = self.chain.chain.last().unwrap();
-        if block.previous_hash != prev.hash {
-            return RpcResponse::err("previous_hash tidak cocok");
-        }
-
-        if !pow::hash_meets_nbits(&block.hash, block.nbits) {
-            return RpcResponse::err("pow tidak memenuhi target nbits");
-        }
-
-        if block.nbits != self.chain.nbits {
-            return RpcResponse::err("nbits blok tidak sesuai nbits chain");
-        }
-
-        if block.reward != Blockchain::calculate_reward(block.index) {
-            return RpcResponse::err("reward tidak sesuai era halving");
-        }
-
-        if !blockchain::checkpoint::verify(block.index, &block.hash) {
-            return RpcResponse::err("blok melanggar checkpoint");
-        }
-
-        // Validasi transaksi di blok.
-        if let Err(e) = validation::validate_block_transactions(&self.chain, &block.transactions) {
+        if let Err(e) = validation::validate_block(&self.chain, &prev, &block) {
             return RpcResponse::err(&format!("blok ditolak: {}", e));
         }
 
@@ -315,26 +290,14 @@ impl RpcServer {
             return RpcResponse::err("format alamat tidak valid");
         }
 
-        let balance = validation::mature_balance(&self.chain, &addr);
-
-        // Hitung immature terpisah.
-        let current_height = self.chain.height();
-        let mut immature: u64 = 0;
-        for block in &self.chain.chain {
-            if block.mined_for == addr && block.reward > 0 {
-                let mature_at = block.index.saturating_add(COINBASE_MATURITY);
-                if mature_at > current_height {
-                    immature = immature.saturating_add(block.reward);
-                }
-            }
-        }
+        let mature = validation::mature_balance(&self.chain, &addr);
+        let immature = validation::immature_balance(&self.chain, &addr);
 
         RpcResponse::ok(json!({
             "address": addr,
-            "balance": to_coin(balance),
-            "mature": to_coin(balance),
+            "balance": to_coin(mature),
+            "mature": to_coin(mature),
             "immature": to_coin(immature),
-            "spent_outputs": 0,
         }))
     }
 
@@ -483,15 +446,7 @@ impl RpcServer {
             return RpcResponse::err("format alamat tidak valid");
         }
 
-        let mut spent: HashSet<String> = HashSet::new();
-        for block in &self.chain.chain {
-            for tx in &block.transactions {
-                for input in &tx.inputs {
-                    spent.insert(input.clone());
-                }
-            }
-        }
-
+        let spent = validation::spent_inputs(&self.chain);
         let current_height = self.chain.height();
         let mut entries: Vec<Value> = Vec::new();
 
@@ -518,7 +473,7 @@ impl RpcServer {
             }
 
             if block.mined_for == addr && block.reward > 0 {
-                let mature_at = block.index.saturating_add(COINBASE_MATURITY);
+                let mature_at = block.index.saturating_add(validation::COINBASE_MATURITY);
                 let is_mature = mature_at <= current_height;
                 entries.push(json!({
                     "txid": block.coinbase_txid,
@@ -540,7 +495,7 @@ impl RpcServer {
         RpcResponse::ok(json!({
             "address": addr,
             "height": current_height,
-            "coinbase_maturity": COINBASE_MATURITY,
+            "coinbase_maturity": validation::COINBASE_MATURITY,
             "count": entries.len(),
             "utxos": entries,
         }))
@@ -604,10 +559,14 @@ impl RpcServer {
 
     fn m_validatemempool(&self) -> RpcResponse {
         let errors = validation::validate_mempool(&self.chain);
+        let items: Vec<Value> = errors
+            .iter()
+            .map(|e| json!({"code": e.code, "message": e.message}))
+            .collect();
         RpcResponse::ok(json!({
-            "valid": errors.is_empty(),
+            "valid": items.is_empty(),
             "mempool_len": self.chain.mempool.len(),
-            "errors": errors,
+            "errors": items,
         }))
     }
 
@@ -703,10 +662,6 @@ impl RpcServer {
             Some(a) => a.to_string(),
             None => return RpcResponse::err("alamat tujuan tidak valid"),
         };
-
-        if !validation::is_valid_address(&to) {
-            return RpcResponse::err("format alamat tujuan tidak valid");
-        }
 
         let wallet = match Wallet::load_default() {
             Ok(w) => w,
