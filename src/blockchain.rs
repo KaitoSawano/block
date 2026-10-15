@@ -25,9 +25,6 @@ mod spec {
 
     pub const TARGET_BLOCK_TIME_SECS: u64 = 60;
     pub const DIFFICULTY_ADJUST_INTERVAL: u64 = 2016;
-    pub const INITIAL_DIFFICULTY: usize = 3;
-    pub const MIN_DIFFICULTY: usize = 1;
-    pub const MAX_DIFFICULTY: usize = 12;
 
     pub const GENESIS_MESSAGE: &str = "ZenaChain Genesis - 2026";
     pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
@@ -88,9 +85,6 @@ pub fn halving_interval_blocks() -> u64 { spec::HALVING_INTERVAL_BLOCKS }
 pub fn max_halvings() -> u32 { spec::MAX_HALVINGS }
 pub fn target_block_time_secs() -> u64 { spec::TARGET_BLOCK_TIME_SECS }
 pub fn difficulty_adjust_interval() -> u64 { spec::DIFFICULTY_ADJUST_INTERVAL }
-pub fn initial_difficulty() -> usize { spec::INITIAL_DIFFICULTY }
-pub fn min_difficulty() -> usize { spec::MIN_DIFFICULTY }
-pub fn max_difficulty() -> usize { spec::MAX_DIFFICULTY }
 pub fn genesis_message() -> &'static str { spec::GENESIS_MESSAGE }
 pub fn genesis_secret() -> &'static str { spec::GENESIS_SECRET }
 pub fn genesis_timestamp() -> u128 { spec::GENESIS_TIMESTAMP }
@@ -99,7 +93,7 @@ pub fn max_tx_per_block() -> usize { spec::MAX_TX_PER_BLOCK }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blockchain {
     pub chain: Vec<Block>,
-    pub difficulty: usize,
+    pub nbits: u32,
     pub mempool: Vec<Transaction>,
 }
 
@@ -107,7 +101,7 @@ impl Blockchain {
     pub fn new() -> Self {
         Blockchain {
             chain: vec![Block::genesis()],
-            difficulty: spec::INITIAL_DIFFICULTY,
+            nbits: pow::NBITS_ONE,
             mempool: Vec::new(),
         }
     }
@@ -160,8 +154,9 @@ impl Blockchain {
         }
 
         let txs = std::mem::take(&mut self.mempool);
-        let mut new_block = Block::new(next_index, prev.hash.clone(), reward, txs);
-        if !pow::mine(&mut new_block, self.difficulty) {
+        let mut new_block =
+            Block::new(next_index, prev.hash.clone(), reward, self.nbits, txs);
+        if !pow::mine(&mut new_block, self.nbits) {
             return Err("mining gagal: nonce habis".into());
         }
         let nonce = new_block.nonce;
@@ -169,6 +164,7 @@ impl Blockchain {
         Ok(nonce)
     }
 
+    /// Sesuaikan nbits berdasarkan waktu aktual blok.
     pub fn adjust_difficulty(&mut self) {
         let height = self.height();
         if height == 0 || height % spec::DIFFICULTY_ADJUST_INTERVAL != 0 {
@@ -183,14 +179,26 @@ impl Blockchain {
         let actual_time_secs = actual_time_ms / 1000;
         let expected_time_secs = spec::TARGET_BLOCK_TIME_SECS * spec::DIFFICULTY_ADJUST_INTERVAL;
 
-        if actual_time_secs < expected_time_secs / 2 {
-            if self.difficulty < spec::MAX_DIFFICULTY {
-                self.difficulty += 1;
-            }
-        } else if actual_time_secs > expected_time_secs * 2 {
-            if self.difficulty > spec::MIN_DIFFICULTY {
-                self.difficulty -= 1;
-            }
+        let current_target = pow::nbits_to_target(self.nbits);
+
+        // Hitung target baru secara proporsional.
+        let mut new_target = current_target;
+        if actual_time_secs > 0 {
+            // Skala target: makin lama waktu aktual, makin besar target (makin mudah).
+            let scale = expected_time_secs as u128 * 256 / actual_time_secs as u128;
+            new_target = scale_target(&current_target, scale);
+        }
+
+        let new_nbits = target_to_nbits(&new_target);
+        let clamped = new_nbits
+            .clamp(pow::NBITS_MIN, pow::NBITS_MAX);
+
+        if clamped != self.nbits {
+            println!(
+                "[blockchain] adjust_difficulty: nbits {:#010x} -> {:#010x} pada height {}",
+                self.nbits, clamped, height
+            );
+            self.nbits = clamped;
         }
     }
 
@@ -204,6 +212,9 @@ impl Blockchain {
             return false;
         }
         if genesis.previous_hash != "0".repeat(64) {
+            return false;
+        }
+        if !pow::hash_meets_nbits(&genesis.hash, genesis.nbits) {
             return false;
         }
 
@@ -223,7 +234,7 @@ impl Blockchain {
             if cur.reward != Self::calculate_reward(cur.index) {
                 return false;
             }
-            if !pow::hash_meets_target(&cur.hash, self.difficulty) {
+            if !pow::hash_meets_nbits(&cur.hash, cur.nbits) {
                 return false;
             }
             if cur.transactions.len() > spec::MAX_TX_PER_BLOCK {
@@ -259,4 +270,46 @@ impl Default for Blockchain {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Skala target 256-bit dengan faktor pembilang/256.
+fn scale_target(target: &[u8; 32], scale_256: u128) -> [u8; 32] {
+    let mut result = [0u8; 32];
+    let mut carry: u128 = 0;
+
+    for i in (0..32).rev() {
+        let v = (target[i] as u128) * scale_256 + carry;
+        result[i] = (v & 0xff) as u8;
+        carry = v >> 8;
+    }
+    result
+}
+
+/// Ubah target 256-bit menjadi nbits format compact.
+fn target_to_nbits(target: &[u8; 32]) -> u32 {
+    let mut i = 0;
+    while i < 32 && target[i] == 0 {
+        i += 1;
+    }
+    if i == 32 {
+        return pow::NBITS_MAX;
+    }
+
+    let size = 32 - i;
+    let mut mantissa: u32 = 0;
+    mantissa |= (target[i] as u32) << 16;
+    if i + 1 < 32 {
+        mantissa |= (target[i + 1] as u32) << 8;
+    }
+    if i + 2 < 32 {
+        mantissa |= target[i + 2] as u32;
+    }
+
+    // Kalau bit paling atas mantissa nol, geser.
+    if mantissa & 0x00800000 == 0 {
+        mantissa <<= 8;
+        return (((size - 1) as u32) << 24) | (mantissa & 0x00ffffff);
+    }
+
+    ((size as u32) << 24) | (mantissa & 0x00ffffff)
 }
