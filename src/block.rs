@@ -1,11 +1,12 @@
 use crate::blockchain::{self, Blockchain};
+use crate::consensus::{genesis, pow as cpow, rules};
 use crate::datadir;
 use crate::pow;
 use crate::transaction::Transaction;
 use crate::utils::{format_datetime, now_millis, sha3_256_hex};
 use serde::{Deserialize, Serialize};
 
-pub const BLOCK_VERSION: u32 = 1;
+pub const BLOCK_VERSION: u32 = rules::BLOCK_VERSION;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
@@ -71,7 +72,7 @@ impl Block {
             + 256) as u64;
 
         let mut b = Block {
-            nversion: BLOCK_VERSION,
+            nversion: rules::BLOCK_VERSION,
             index,
             timestamp: ts,
             mined_at: format_datetime(ts),
@@ -93,19 +94,15 @@ impl Block {
         b
     }
 
-    /// Genesis block. WAJIB DITAMBANG sampai hash memenuhi target nbits.
-    /// Nonce awal 0, lalu ditambang. Kalau parameter konsensus diubah,
-    /// coinbase_txid berubah, hash berubah, dan nonce lama tidak akan
-    /// memenuhi target. Genesis baru harus ditambang ulang.
     pub fn genesis() -> Self {
-        let ts = blockchain::genesis_timestamp();
+        let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
-        let genesis_output_script = blockchain::genesis_output_script();
-        let nbits = pow::GENESIS_NBITS;
+        let genesis_output_script = genesis::GENESIS_OUTPUT_SCRIPT.to_string();
+        let nbits = cpow::GENESIS_NBITS;
 
         let transactions = vec![
-            Transaction::coinbase(blockchain::genesis_message().into()),
-            Transaction::secret(blockchain::genesis_secret().into()),
+            Transaction::coinbase(genesis::GENESIS_MESSAGE.into()),
+            Transaction::secret(genesis::GENESIS_SECRET.into()),
         ];
         let merkle_root = Self::compute_merkle_root(&transactions);
 
@@ -116,7 +113,7 @@ impl Block {
             + 256) as u64;
 
         let mut b = Block {
-            nversion: BLOCK_VERSION,
+            nversion: rules::BLOCK_VERSION,
             index: 0,
             timestamp: ts,
             mined_at: format_datetime(ts),
@@ -126,7 +123,7 @@ impl Block {
             hash: String::new(),
             nonce: 0,
             nbits,
-            reward: blockchain::initial_reward(),
+            reward: crate::consensus::spec::INITIAL_REWARD,
             coinbase_txid,
             blockchain_size: size,
             genesis_output_script,
@@ -135,7 +132,6 @@ impl Block {
             transactions,
         };
 
-        // Tambang genesis. Nonce dicari sampai hash memenuhi target.
         if !pow::mine(&mut b, nbits) {
             panic!("genesis mining gagal: nonce habis");
         }
