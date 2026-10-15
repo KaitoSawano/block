@@ -115,6 +115,8 @@ impl RpcServer {
             "getblocktemplate" => self.m_getblocktemplate(),
             "submitblock" => self.m_submitblock(req),
             "getbalance" => self.m_getbalance(req),
+            "getblockhash" => self.m_getblockhash(req),
+            "getblock" => self.m_getblock(req),
             "getwallet" => m_getwallet(),
             "getprivkey" => m_getprivkey(),
             "dumpprivkey" => m_dumpprivkey(req),
@@ -267,6 +269,48 @@ impl RpcServer {
             "immature": to_coin(immature),
             "received": to_coin(received),
             "spent_outputs": spent.len(),
+        }))
+    }
+
+    fn m_getblockhash(&self, req: &RpcRequest) -> RpcResponse {
+        let height = match req.params.first().and_then(|v| v.as_u64()) {
+            Some(h) => h,
+            None => return RpcResponse::err("getblockhash butuh height"),
+        };
+
+        if height as usize >= self.chain.chain.len() {
+            return RpcResponse::err("height di luar rentang chain");
+        }
+
+        let block = &self.chain.chain[height as usize];
+        if block.index != height {
+            return RpcResponse::err("index blok tidak cocok dengan height");
+        }
+
+        RpcResponse::ok(json!(block.hash))
+    }
+
+    fn m_getblock(&self, req: &RpcRequest) -> RpcResponse {
+        let hash = match req.params.first().and_then(|v| v.as_str()) {
+            Some(h) => h,
+            None => return RpcResponse::err("getblock butuh hash"),
+        };
+
+        let block = match self.chain.chain.iter().find(|b| b.hash == hash) {
+            Some(b) => b,
+            None => return RpcResponse::err("blok tidak ditemukan"),
+        };
+
+        RpcResponse::ok(json!({
+            "hash": block.hash,
+            "height": block.index,
+            "previous_hash": block.previous_hash,
+            "timestamp": block.timestamp,
+            "mined_at": block.mined_at,
+            "mined_for": block.mined_for,
+            "nonce": block.nonce,
+            "reward": to_coin(block.reward),
+            "transactions": block.transactions,
         }))
     }
 
