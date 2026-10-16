@@ -127,10 +127,9 @@ impl Block {
         b
     }
 
-    /// Genesis block. Menambang sampai hash memenuhi target.
-    ///
-    /// Fungsi ini TIDAK memanggil `check_genesis_consensus`. Cek dilakukan
-    /// di `Blockchain::new()` supaya genesis bisa dihitung dulu.
+    /// Genesis block. Menambang genesis, lalu memeriksa hash dan merkle
+    /// root terhadap konstanta di `src/consensus/genesis.rs`, seperti
+    /// `assert` di `chainparams.cpp` Bitcoin.
     pub fn genesis() -> Self {
         let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
@@ -172,6 +171,71 @@ impl Block {
         if !pow::mine(&mut b, nbits) {
             panic!("genesis mining gagal: nonce habis");
         }
+
+        // Assert seperti Bitcoin chainparams.cpp.
+        assert!(
+            b.hash == genesis::EXPECTED_GENESIS_HASH,
+            "\n\
+             ============================================================\n\
+             GENESIS HASH MISMATCH\n\
+             ============================================================\n\
+             hash genesis     : {}\n\
+             EXPECTED_HASH    : {}\n\
+             \n\
+             Ada parameter konsensus yang diubah, atau konstanta\n\
+             EXPECTED_GENESIS_HASH di src/consensus/genesis.rs belum\n\
+             diisi dengan nilai genesis yang sah.\n\
+             \n\
+             Cara memperbaiki:\n\
+             1. Komentari sementara assert! di src/block.rs\n\
+             2. rm -rf ~/.chain && make build\n\
+             3. ./zenachaind & ./zenachain getgenesis\n\
+             4. Salin hash, merkle_root, timestamp, nonce ke\n\
+                src/consensus/genesis.rs\n\
+             5. Hidupkan kembali assert!, make build, jalankan.\n\
+             ============================================================\n",
+            b.hash,
+            genesis::EXPECTED_GENESIS_HASH
+        );
+
+        assert!(
+            b.merkle_root == genesis::EXPECTED_GENESIS_MERKLE_ROOT,
+            "\n\
+             ============================================================\n\
+             GENESIS MERKLE ROOT MISMATCH\n\
+             ============================================================\n\
+             merkle_root genesis : {}\n\
+             EXPECTED_MERKLE     : {}\n\
+             ============================================================\n",
+            b.merkle_root,
+            genesis::EXPECTED_GENESIS_MERKLE_ROOT
+        );
+
+        assert!(
+            b.timestamp == genesis::EXPECTED_GENESIS_TIMESTAMP,
+            "\n\
+             ============================================================\n\
+             GENESIS TIMESTAMP MISMATCH\n\
+             ============================================================\n\
+             timestamp genesis : {}\n\
+             EXPECTED_TIMESTAMP: {}\n\
+             ============================================================\n",
+            b.timestamp,
+            genesis::EXPECTED_GENESIS_TIMESTAMP
+        );
+
+        assert!(
+            b.nonce == genesis::EXPECTED_GENESIS_NONCE,
+            "\n\
+             ============================================================\n\
+             GENESIS NONCE MISMATCH\n\
+             ============================================================\n\
+             nonce genesis : {}\n\
+             EXPECTED_NONCE: {}\n\
+             ============================================================\n",
+            b.nonce,
+            genesis::EXPECTED_GENESIS_NONCE
+        );
 
         b
     }
