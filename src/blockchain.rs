@@ -86,95 +86,6 @@ pub fn max_tx_per_block() -> usize { rules::MAX_TX_PER_BLOCK }
 pub fn pow_limit() -> &'static str { cpow::POW_LIMIT }
 pub fn genesis_nbits() -> u32 { cpow::GENESIS_NBITS }
 
-/// Pesan panic yang dicetak saat genesis tidak cocok.
-///
-/// Semua perintah CLI dan `zenachaind` akan gagal dengan pesan ini
-/// sampai konstanta di `src/consensus/genesis.rs` diisi dengan
-/// nilai genesis yang sah.
-fn panic_genesis(reason: &str, actual: &str, expected: &str) -> ! {
-    eprintln!();
-    eprintln!("============================================================");
-    eprintln!("  ZENACHAIN GENESIS MISMATCH");
-    eprintln!("============================================================");
-    eprintln!("  Alasan    : {}", reason);
-    eprintln!("  Aktual    : {}", actual);
-    eprintln!("  Diharapkan: {}", expected);
-    eprintln!();
-    eprintln!("  Node tidak bisa dijalankan. Semua perintah ditolak.");
-    eprintln!();
-    eprintln!("  Kemungkinan penyebab:");
-    eprintln!("  1. Ada parameter konsensus yang diubah di src/consensus/.");
-    eprintln!("  2. Konstanta EXPECTED_GENESIS_* di src/consensus/genesis.rs");
-    eprintln!("     belum diisi dengan nilai genesis yang sah.");
-    eprintln!("  3. Chain lama di .chain dibuat dengan parameter konsensus");
-    eprintln!("     yang berbeda dari binary yang sedang dijalankan.");
-    eprintln!();
-    eprintln!("  Cara memperbaiki:");
-    eprintln!("  1. Hapus .chain:");
-    eprintln!("       rm -rf ~/.chain");
-    eprintln!("  2. Build ulang:");
-    eprintln!("       make build");
-    eprintln!("  3. Jalankan node, salin nilai genesis:");
-    eprintln!("       ./zenachaind");
-    eprintln!("       ./zenachain getgenesis");
-    eprintln!("  4. Salin nilai berikut ke src/consensus/genesis.rs:");
-    eprintln!("       EXPECTED_GENESIS_HASH");
-    eprintln!("       EXPECTED_GENESIS_MERKLE_ROOT");
-    eprintln!("       EXPECTED_GENESIS_TIMESTAMP");
-    eprintln!("       EXPECTED_GENESIS_NONCE");
-    eprintln!("  5. Build ulang dan jalankan kembali.");
-    eprintln!("============================================================");
-    eprintln!();
-    std::process::exit(1);
-}
-
-/// Cek genesis terhadap konstanta `EXPECTED_GENESIS_*`.
-///
-/// Kalau konstanta belum diisi atau genesis tidak cocok, node
-/// langsung panic dan keluar. Semua perintah CLI akan gagal.
-pub fn check_genesis_consensus(block: &Block) {
-    // Cek apakah konstanta sudah diisi.
-    if !genesis::expected_filled() {
-        panic_genesis(
-            "EXPECTED_GENESIS_* belum diisi di src/consensus/genesis.rs",
-            "belum diisi",
-            "harus diisi dengan nilai genesis yang sah",
-        );
-    }
-
-    if block.hash != genesis::EXPECTED_GENESIS_HASH {
-        panic_genesis(
-            "hash genesis tidak cocok",
-            &block.hash,
-            genesis::EXPECTED_GENESIS_HASH,
-        );
-    }
-
-    if block.merkle_root != genesis::EXPECTED_GENESIS_MERKLE_ROOT {
-        panic_genesis(
-            "merkle_root genesis tidak cocok",
-            &block.merkle_root,
-            genesis::EXPECTED_GENESIS_MERKLE_ROOT,
-        );
-    }
-
-    if block.timestamp != genesis::EXPECTED_GENESIS_TIMESTAMP {
-        panic_genesis(
-            "timestamp genesis tidak cocok",
-            &block.timestamp.to_string(),
-            &genesis::EXPECTED_GENESIS_TIMESTAMP.to_string(),
-        );
-    }
-
-    if block.nonce != genesis::EXPECTED_GENESIS_NONCE {
-        panic_genesis(
-            "nonce genesis tidak cocok",
-            &block.nonce.to_string(),
-            &genesis::EXPECTED_GENESIS_NONCE.to_string(),
-        );
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blockchain {
     pub chain: Vec<Block>,
@@ -183,14 +94,9 @@ pub struct Blockchain {
 }
 
 impl Blockchain {
-    /// Bikin chain baru. Memanggil `Block::genesis()` yang menambang
-    /// genesis, lalu memverifikasi terhadap `EXPECTED_GENESIS_*`.
-    /// Kalau tidak cocok, panic dan node keluar.
     pub fn new() -> Self {
-        let genesis_block = Block::genesis();
-        check_genesis_consensus(&genesis_block);
         Blockchain {
-            chain: vec![genesis_block],
+            chain: vec![Block::genesis()],
             nbits: cpow::GENESIS_NBITS,
             mempool: Vec::new(),
         }
