@@ -30,16 +30,61 @@ pub struct Block {
 }
 
 impl Block {
+    /// Merkle root biner seperti Bitcoin.
+    ///
+    /// Algoritma:
+    /// 1. Kumpulkan txid sebagai leaf.
+    /// 2. Pasangkan dua-dua, hash `left + right`.
+    /// 3. Kalau jumlah ganjil, duplikat yang terakhir.
+    /// 4. Ulangi sampai satu root.
+    ///
+    /// Kalau tidak ada transaksi, kembalikan hash dari byte kosong.
     pub fn compute_merkle_root(transactions: &[Transaction]) -> String {
         if transactions.is_empty() {
             return sha3_256_hex(b"empty");
         }
-        let mut payload = String::new();
-        for tx in transactions {
-            payload.push_str(&tx.txid);
-            payload.push('|');
+
+        // Langkah 1: kumpulkan txid sebagai bytes 32-byte.
+        let mut layer: Vec<[u8; 32]> = transactions
+            .iter()
+            .filter_map(|tx| {
+                let bytes = hex::decode(&tx.txid).ok()?;
+                if bytes.len() != 32 {
+                    return None;
+                }
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&bytes);
+                Some(arr)
+            })
+            .collect();
+
+        if layer.is_empty() {
+            return sha3_256_hex(b"empty");
         }
-        sha3_256_hex(payload.as_bytes())
+
+        // Langkah 2-4: pasangkan dan hash sampai satu root.
+        while layer.len() > 1 {
+            // Kalau ganjil, duplikat yang terakhir.
+            if layer.len() % 2 == 1 {
+                let last = *layer.last().unwrap();
+                layer.push(last);
+            }
+
+            let mut next: Vec<[u8; 32]> = Vec::with_capacity(layer.len() / 2);
+            for pair in layer.chunks(2) {
+                let mut buf = [0u8; 64];
+                buf[..32].copy_from_slice(&pair[0]);
+                buf[32..].copy_from_slice(&pair[1]);
+                let hash = sha3_256_hex(&buf);
+                let bytes = hex::decode(&hash).unwrap();
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&bytes);
+                next.push(arr);
+            }
+            layer = next;
+        }
+
+        hex::encode(layer[0])
     }
 
     pub fn new(
