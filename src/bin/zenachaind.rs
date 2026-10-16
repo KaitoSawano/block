@@ -59,12 +59,7 @@ async fn main() {
     });
 
     // Loop event P2P.
-    loop {
-        match swarm.next().await {
-            Some(event) => {
-                let _ = p2p::events::classify(event);
-            }
-            None => break,
-        }
+    while let Some(event) = swarm.next().await {
+        let _ = p2p::events::classify(event);
     }
 }

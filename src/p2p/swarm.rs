@@ -14,10 +14,8 @@ pub async fn build_swarm(
         .with_behaviour(|key| {
             let peer_id = key.public().to_peer_id();
             ZenaBehaviour::new(key, peer_id).map_err(|e| {
-                Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e.to_string(),
-                )) as Box<dyn std::error::Error + Send + Sync>
+                Box::new(std::io::Error::other(e.to_string()))
+                    as Box<dyn std::error::Error + Send + Sync>
             })
         })?
         .with_swarm_config(|cfg| {

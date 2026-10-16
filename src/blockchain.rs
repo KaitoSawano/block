@@ -165,7 +165,7 @@ impl Blockchain {
 
     pub fn adjust_difficulty(&mut self) {
         let height = self.height();
-        if height == 0 || height % spec::DIFFICULTY_ADJUST_INTERVAL != 0 {
+        if height == 0 || !height.is_multiple_of(spec::DIFFICULTY_ADJUST_INTERVAL) {
             return;
         }
 

@@ -22,16 +22,14 @@ impl Config {
     pub fn save_default(&self) -> std::io::Result<()> {
         datadir::ensure_dirs()?;
         let path = datadir::as_str(&datadir::config_path());
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 
     pub fn load_default() -> std::io::Result<Self> {
         let path = datadir::as_str(&datadir::config_path());
         let data = std::fs::read_to_string(path)?;
-        let c: Config = serde_json::from_str(&data)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let c: Config = serde_json::from_str(&data).map_err(std::io::Error::other)?;
         Ok(c)
     }
 

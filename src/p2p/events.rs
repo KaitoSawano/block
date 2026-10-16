@@ -10,7 +10,7 @@ use crate::p2p::behaviour::ZenaBehaviourEvent;
 #[derive(Debug)]
 pub enum P2PEvent {
     Ping(PingEvent),
-    Identify(IdentifyEvent),
+    Identify(Box<IdentifyEvent>),
     Gossipsub(GossipsubEvent),
     Kademlia(KademliaEvent),
     Other,
@@ -19,7 +19,7 @@ pub enum P2PEvent {
 pub fn classify(event: SwarmEvent<ZenaBehaviourEvent>) -> P2PEvent {
     match event {
         SwarmEvent::Behaviour(ZenaBehaviourEvent::Ping(e)) => P2PEvent::Ping(e),
-        SwarmEvent::Behaviour(ZenaBehaviourEvent::Identify(e)) => P2PEvent::Identify(e),
+        SwarmEvent::Behaviour(ZenaBehaviourEvent::Identify(e)) => P2PEvent::Identify(Box::new(e)),
         SwarmEvent::Behaviour(ZenaBehaviourEvent::Gossipsub(e)) => P2PEvent::Gossipsub(e),
         SwarmEvent::Behaviour(ZenaBehaviourEvent::Kademlia(e)) => P2PEvent::Kademlia(e),
         _ => P2PEvent::Other,
