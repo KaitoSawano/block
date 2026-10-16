@@ -1,23 +1,37 @@
 use futures::StreamExt;
 use libp2p::Multiaddr;
+use tokio::signal::unix::{signal, SignalKind};
 use zenachain::blockchain::Blockchain;
 use zenachain::p2p;
 use zenachain::rpc::RpcServer;
 
 #[tokio::main]
 async fn main() {
-    // Bikin chain. Genesis dihitung dan di-assert di sini.
-    // Kalau genesis tidak cocok dengan EXPECTED_GENESIS_* di
-    // src/consensus/genesis.rs, fungsi ini akan cetak nilai genesis
-    // baru dan keluar sebelum baris "server starting".
     let chain = Blockchain::new();
 
     println!("ZenaChain server starting");
+    println!("Gunakan `./zenachain stop` untuk menghentikan node.");
 
-    // Bikin peer identity (Ed25519). Terpisah dari wallet.
+    // Abaikan SIGINT dan SIGHUP supaya node tetap jalan.
+    // Hanya perintah `./zenachain stop` yang boleh menghentikan.
+    let mut sigint = signal(SignalKind::interrupt()).expect("gagal daftar SIGINT");
+    let mut sighup = signal(SignalKind::hangup()).expect("gagal daftar SIGHUP");
+
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = sigint.recv() => {
+                    println!("[signal] SIGINT diabaikan. Gunakan `./zenachain stop` untuk berhenti.");
+                }
+                _ = sighup.recv() => {
+                    println!("[signal] SIGHUP diabaikan. Node tetap jalan.");
+                }
+            }
+        }
+    });
+
     let keypair = p2p::swarm::load_or_generate_keypair(".chain/peer_id");
 
-    // Bikin swarm.
     let mut swarm = match p2p::build_swarm(keypair).await {
         Ok(s) => s,
         Err(e) => {
@@ -26,7 +40,6 @@ async fn main() {
         }
     };
 
-    // Listen di alamat default.
     let listen_addr: Multiaddr = match p2p::peers::LISTEN_ADDR.parse() {
         Ok(a) => a,
         Err(e) => {
@@ -39,7 +52,6 @@ async fn main() {
         eprintln!("[p2p] gagal listen {}: {}", p2p::peers::LISTEN_ADDR, e);
     }
 
-    // Konek ke peer bootstrap.
     for addr in p2p::peers::BOOTSTRAP_PEERS {
         match addr.parse::<Multiaddr>() {
             Ok(ma) => {
@@ -51,14 +63,12 @@ async fn main() {
         }
     }
 
-    // RPC server di task terpisah.
     let chain_for_rpc = chain.clone();
     tokio::spawn(async move {
         let mut server = RpcServer::new(chain_for_rpc);
         server.listen();
     });
 
-    // Loop event P2P.
     while let Some(event) = swarm.next().await {
         let _ = p2p::events::classify(event);
     }
