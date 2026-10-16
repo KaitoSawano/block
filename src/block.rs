@@ -127,9 +127,11 @@ impl Block {
         b
     }
 
-    /// Genesis block. Menambang genesis, lalu mencetak semua nilai
-    /// genesis sebelum `assert!`. Tujuannya supaya Anda bisa salin
-    /// keempat nilai ke `src/consensus/genesis.rs` dalam sekali jalan.
+    /// Genesis block. Menambang genesis, lalu `assert!` terhadap konstanta
+    /// `EXPECTED_GENESIS_*` di `src/consensus/genesis.rs`.
+    ///
+    /// Tidak mencetak apa pun. Untuk melihat nilai genesis, jalankan
+    /// binary `zenachain-genesis`.
     pub fn genesis() -> Self {
         let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
@@ -172,19 +174,6 @@ impl Block {
             panic!("genesis mining gagal: nonce habis");
         }
 
-        // Cetak semua nilai genesis sebelum assert.
-        // Ini yang Anda salin ke src/consensus/genesis.rs.
-        println!();
-        println!("============================================================");
-        println!("  GENESIS ZENACHAIN (salin ke src/consensus/genesis.rs)");
-        println!("============================================================");
-        println!("  EXPECTED_GENESIS_HASH        = \"{}\"", b.hash);
-        println!("  EXPECTED_GENESIS_MERKLE_ROOT = \"{}\"", b.merkle_root);
-        println!("  EXPECTED_GENESIS_TIMESTAMP   = {}u128", b.timestamp);
-        println!("  EXPECTED_GENESIS_NONCE       = {}u64", b.nonce);
-        println!("============================================================");
-        println!();
-
         assert!(
             b.hash == genesis::EXPECTED_GENESIS_HASH,
             "\n\
@@ -194,8 +183,8 @@ impl Block {
              hash genesis     : {}\n\
              EXPECTED_HASH    : {}\n\
              \n\
-             Salin nilai genesis di atas ke src/consensus/genesis.rs,\n\
-             lalu build ulang.\n\
+             Jalankan `./zenachain-genesis` untuk melihat nilai genesis\n\
+             baru, lalu salin ke src/consensus/genesis.rs.\n\
              ============================================================\n",
             b.hash,
             genesis::EXPECTED_GENESIS_HASH
