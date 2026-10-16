@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-pub const RPC_ADDR: &str = "127.0.0.1:8332";
+pub const DEFAULT_RPC_ADDR: &str = "127.0.0.1:8332";
 pub const DEFAULT_FEE_SATOSHI: u64 = 100_000;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -50,7 +50,11 @@ impl RpcResponse {
 }
 
 pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
-    let mut stream = TcpStream::connect(RPC_ADDR)?;
+    call_at(DEFAULT_RPC_ADDR, method, params)
+}
+
+pub fn call_at(addr: &str, method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
+    let mut stream = TcpStream::connect(addr)?;
     let req = RpcRequest {
         method: method.to_string(),
         params,
@@ -64,7 +68,8 @@ pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     let mut buf = String::new();
     reader.read_line(&mut buf)?;
 
-    let resp: RpcResponse = serde_json::from_str(buf.trim()).map_err(std::io::Error::other)?;
+    let resp: RpcResponse = serde_json::from_str(buf.trim())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     Ok(resp)
 }
 
@@ -77,23 +82,23 @@ fn to_coin(satoshi: u64) -> String {
 pub struct RpcServer {
     chain: Blockchain,
     shutdown: Arc<AtomicBool>,
+    rpc_addr: String,
 }
 
 impl RpcServer {
-    /// Bikin RpcServer dari Blockchain yang sudah ada.
-    /// Genesis dihitung dan di-assert di `Blockchain::new()` sebelum ini.
-    pub fn new(chain: Blockchain) -> Self {
+    pub fn new(chain: Blockchain, rpc_addr: String) -> Self {
         RpcServer {
             chain,
             shutdown: Arc::new(AtomicBool::new(false)),
+            rpc_addr,
         }
     }
 
     pub fn listen(&mut self) {
-        let listener = match TcpListener::bind(RPC_ADDR) {
+        let listener = match TcpListener::bind(&self.rpc_addr) {
             Ok(l) => l,
             Err(e) => {
-                eprintln!("[rpc] gagal bind {}: {}", RPC_ADDR, e);
+                println!("[rpc] gagal bind {}: {}", self.rpc_addr, e);
                 return;
             }
         };
@@ -103,7 +108,7 @@ impl RpcServer {
         loop {
             if self.shutdown.load(Ordering::SeqCst) {
                 let _ = storage::save_chain(&self.chain);
-                eprintln!("[rpc] node berhenti.");
+                println!("[rpc] node berhenti.");
                 break;
             }
 
@@ -114,7 +119,7 @@ impl RpcServer {
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     std::thread::sleep(Duration::from_millis(50));
                 }
-                Err(e) => eprintln!("[rpc] koneksi gagal: {}", e),
+                Err(e) => println!("[rpc] koneksi gagal: {}", e),
             }
         }
     }
@@ -738,7 +743,7 @@ fn m_getnetworkinfo() -> RpcResponse {
         "prune_after_height": blockchain::network::PRUNE_AFTER_HEIGHT,
         "assumed_blockchain_size_mb": blockchain::network::ASSUMED_BLOCKCHAIN_SIZE,
         "assumed_chain_state_size_mb": blockchain::network::ASSUMED_CHAIN_STATE_SIZE,
-        "p2p_enabled": false,
+        "p2p_enabled": true,
         "connection_count": 0,
     }))
 }
@@ -826,9 +831,7 @@ fn m_getaddtowallet() -> RpcResponse {
     };
     let cfg = Config {
         mining_address: w.address.clone(),
-        created_at: now_millis(),
-        protocol_version: consensus::protocol_version(),
-        network: "main".to_string(),
+        ..Config::load_or_default()
     };
     match cfg.save_default() {
         Ok(_) => RpcResponse::ok(json!({
@@ -849,9 +852,7 @@ fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
     }
     let cfg = Config {
         mining_address: addr.clone(),
-        created_at: now_millis(),
-        protocol_version: consensus::protocol_version(),
-        network: "main".to_string(),
+        ..Config::load_or_default()
     };
     match cfg.save_default() {
         Ok(_) => RpcResponse::ok(json!({
@@ -879,7 +880,10 @@ pub fn call_and_print(method: &str, params: Vec<Value>) {
             }
         }
         Err(e) => {
-            println!("[rpc] tidak dapat menghubungi node di {}: {}", RPC_ADDR, e);
+            println!(
+                "[rpc] tidak dapat menghubungi node di {}: {}",
+                DEFAULT_RPC_ADDR, e
+            );
             println!("[rpc] jalankan zenachaind terlebih dahulu.");
         }
     }
