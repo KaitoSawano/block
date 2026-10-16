@@ -127,12 +127,8 @@ impl Block {
         b
     }
 
-    /// Genesis block. Menambang genesis, lalu `assert!` terhadap konstanta
-    /// `EXPECTED_GENESIS_*` di `src/consensus/genesis.rs`.
-    ///
-    /// Tidak mencetak apa pun. Untuk melihat nilai genesis, jalankan
-    /// binary `zenachain-genesis`.
-    pub fn genesis() -> Self {
+    /// Tambang genesis. Deterministik: hasilnya sama setiap kali.
+    fn genesis_mined() -> Self {
         let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
         let genesis_output_script = genesis::GENESIS_OUTPUT_SCRIPT.to_string();
@@ -174,62 +170,58 @@ impl Block {
             panic!("genesis mining gagal: nonce habis");
         }
 
-        assert!(
-            b.hash == genesis::EXPECTED_GENESIS_HASH,
-            "\n\
-             ============================================================\n\
-             GENESIS HASH MISMATCH\n\
-             ============================================================\n\
-             hash genesis     : {}\n\
-             EXPECTED_HASH    : {}\n\
-             \n\
-             Jalankan `./zenachain-genesis` untuk melihat nilai genesis\n\
-             baru, lalu salin ke src/consensus/genesis.rs.\n\
-             ============================================================\n",
-            b.hash,
-            genesis::EXPECTED_GENESIS_HASH
-        );
-
-        assert!(
-            b.merkle_root == genesis::EXPECTED_GENESIS_MERKLE_ROOT,
-            "\n\
-             ============================================================\n\
-             GENESIS MERKLE ROOT MISMATCH\n\
-             ============================================================\n\
-             merkle_root genesis : {}\n\
-             EXPECTED_MERKLE     : {}\n\
-             ============================================================\n",
-            b.merkle_root,
-            genesis::EXPECTED_GENESIS_MERKLE_ROOT
-        );
-
-        assert!(
-            b.timestamp == genesis::EXPECTED_GENESIS_TIMESTAMP,
-            "\n\
-             ============================================================\n\
-             GENESIS TIMESTAMP MISMATCH\n\
-             ============================================================\n\
-             timestamp genesis : {}\n\
-             EXPECTED_TIMESTAMP: {}\n\
-             ============================================================\n",
-            b.timestamp,
-            genesis::EXPECTED_GENESIS_TIMESTAMP
-        );
-
-        assert!(
-            b.nonce == genesis::EXPECTED_GENESIS_NONCE,
-            "\n\
-             ============================================================\n\
-             GENESIS NONCE MISMATCH\n\
-             ============================================================\n\
-             nonce genesis : {}\n\
-             EXPECTED_NONCE: {}\n\
-             ============================================================\n",
-            b.nonce,
-            genesis::EXPECTED_GENESIS_NONCE
-        );
-
         b
+    }
+
+    /// Genesis block. Bandingkan dengan `EXPECTED_GENESIS_*` di
+    /// `src/consensus/genesis.rs`.
+    ///
+    /// - Cocok: pakai genesis.
+    /// - Tidak cocok: cetak nilai genesis baru, keluar.
+    ///   Salin nilai ke `src/consensus/genesis.rs`, build ulang, jalankan lagi.
+    pub fn genesis() -> Self {
+        let b = Self::genesis_mined();
+
+        let hash_ok = b.hash == genesis::EXPECTED_GENESIS_HASH;
+        let merkle_ok = b.merkle_root == genesis::EXPECTED_GENESIS_MERKLE_ROOT;
+        let ts_ok = b.timestamp == genesis::EXPECTED_GENESIS_TIMESTAMP;
+        let nonce_ok = b.nonce == genesis::EXPECTED_GENESIS_NONCE;
+
+        if hash_ok && merkle_ok && ts_ok && nonce_ok {
+            return b;
+        }
+
+        eprintln!();
+        eprintln!("============================================================");
+        eprintln!("  GENESIS TIDAK COCOK");
+        eprintln!("  Salin nilai berikut ke src/consensus/genesis.rs");
+        eprintln!("============================================================");
+        eprintln!();
+        eprintln!("  pub const EXPECTED_GENESIS_HASH: &str =");
+        eprintln!("      \"{}\";", b.hash);
+        eprintln!();
+        eprintln!("  pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =");
+        eprintln!("      \"{}\";", b.merkle_root);
+        eprintln!();
+        eprintln!("  pub const EXPECTED_GENESIS_TIMESTAMP: u128 = {};", b.timestamp);
+        eprintln!();
+        eprintln!("  pub const EXPECTED_GENESIS_NONCE: u64 = {};", b.nonce);
+        eprintln!();
+        eprintln!("------------------------------------------------------------");
+        eprintln!("  Perbandingan:");
+        eprintln!("  hash        : hitung {}", b.hash);
+        eprintln!("                saat ini {}", genesis::EXPECTED_GENESIS_HASH);
+        eprintln!("  merkle_root : hitung {}", b.merkle_root);
+        eprintln!("                saat ini {}", genesis::EXPECTED_GENESIS_MERKLE_ROOT);
+        eprintln!("  timestamp   : hitung {}", b.timestamp);
+        eprintln!("                saat ini {}", genesis::EXPECTED_GENESIS_TIMESTAMP);
+        eprintln!("  nonce       : hitung {}", b.nonce);
+        eprintln!("                saat ini {}", genesis::EXPECTED_GENESIS_NONCE);
+        eprintln!("============================================================");
+        eprintln!("  Setelah diubah, build ulang dan jalankan ulang ./zenachaind");
+        eprintln!();
+
+        std::process::exit(1);
     }
 
     pub fn calculate_hash(&self) -> String {
