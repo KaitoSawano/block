@@ -14,6 +14,7 @@ fn main() {
         "stop" => rpc::call_and_print("stop", vec![]),
         "getinfo" => rpc::call_and_print("getinfo", vec![]),
         "getblockchaininfo" => rpc::call_and_print("getblockchaininfo", vec![]),
+        "getnetworkinfo" => rpc::call_and_print("getnetworkinfo", vec![]),
         "getcheckpoints" => rpc::call_and_print("getcheckpoints", vec![]),
         "getblocktemplate" => rpc::call_and_print("getblocktemplate", vec![]),
         "getblockcount" => rpc::call_and_print("getblockcount", vec![]),
@@ -117,6 +118,7 @@ fn print_help() {
     println!("  zenachain stop                                simpan chain dan hentikan node");
     println!("  zenachain getinfo                             informasi jaringan");
     println!("  zenachain getblockchaininfo                   informasi blockchain");
+    println!("  zenachain getnetworkinfo                      parameter jaringan");
     println!("  zenachain getcheckpoints                      daftar checkpoint aktif");
     println!("  zenachain getblocktemplate                    template blok untuk miner");
     println!("  zenachain getblockcount                       jumlah blok di chain");
