@@ -105,10 +105,7 @@ impl SyncState {
 
     /// Validasi blok yang diterima dari peer.
     /// Return `Ok(())` kalau blok valid dan bisa ditambahkan ke chain.
-    pub fn accept_block(
-        chain: &mut Blockchain,
-        block: Block,
-    ) -> Result<(), String> {
+    pub fn accept_block(chain: &mut Blockchain, block: Block) -> Result<(), String> {
         let prev = match chain.chain.last() {
             Some(p) => p.clone(),
             None => return Err("chain kosong".into()),
@@ -122,10 +119,7 @@ impl SyncState {
         }
 
         if block.previous_hash != prev.hash {
-            return Err(format!(
-                "blok {} previous_hash tidak cocok",
-                block.index
-            ));
+            return Err(format!("blok {} previous_hash tidak cocok", block.index));
         }
 
         if let Err(e) = validation::validate_block(chain, &prev, &block) {
