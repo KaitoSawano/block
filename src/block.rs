@@ -31,20 +31,11 @@ pub struct Block {
 
 impl Block {
     /// Merkle root biner seperti Bitcoin.
-    ///
-    /// Algoritma:
-    /// 1. Kumpulkan txid sebagai leaf.
-    /// 2. Pasangkan dua-dua, hash `left + right`.
-    /// 3. Kalau jumlah ganjil, duplikat yang terakhir.
-    /// 4. Ulangi sampai satu root.
-    ///
-    /// Kalau tidak ada transaksi, kembalikan hash dari byte kosong.
     pub fn compute_merkle_root(transactions: &[Transaction]) -> String {
         if transactions.is_empty() {
             return sha3_256_hex(b"empty");
         }
 
-        // Langkah 1: kumpulkan txid sebagai bytes 32-byte.
         let mut layer: Vec<[u8; 32]> = transactions
             .iter()
             .filter_map(|tx| {
@@ -62,9 +53,7 @@ impl Block {
             return sha3_256_hex(b"empty");
         }
 
-        // Langkah 2-4: pasangkan dan hash sampai satu root.
         while layer.len() > 1 {
-            // Kalau ganjil, duplikat yang terakhir.
             if layer.len() % 2 == 1 {
                 let last = *layer.last().unwrap();
                 layer.push(last);
@@ -139,6 +128,13 @@ impl Block {
         b
     }
 
+    /// Genesis block. Setelah ditambang, dipanggil
+    /// `blockchain::check_genesis_consensus(&b)`.
+    ///
+    /// Kalau hash, merkle root, timestamp, atau nonce tidak cocok dengan
+    /// konstanta `EXPECTED_GENESIS_*`, fungsi ini `panic!`. Semua perintah
+    /// CLI akan gagal. Wajib isi ulang `EXPECTED_GENESIS_*` di
+    /// `src/consensus/genesis.rs`.
     pub fn genesis() -> Self {
         let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
@@ -180,6 +176,9 @@ impl Block {
         if !pow::mine(&mut b, nbits) {
             panic!("genesis mining gagal: nonce habis");
         }
+
+        // Cek terhadap konstanta EXPECTED_GENESIS_*.
+        blockchain::check_genesis_consensus(&b);
 
         b
     }
