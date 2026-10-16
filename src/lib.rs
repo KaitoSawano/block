@@ -5,6 +5,7 @@ pub mod consensus;
 pub mod datadir;
 pub mod mempool;
 pub mod node;
+pub mod p2p;
 pub mod pow;
 pub mod rpc;
 pub mod secp256k1;
