@@ -30,7 +30,6 @@ pub struct Block {
 }
 
 impl Block {
-    /// Merkle root biner seperti Bitcoin.
     pub fn compute_merkle_root(transactions: &[Transaction]) -> String {
         if transactions.is_empty() {
             return sha3_256_hex(b"empty");
@@ -128,13 +127,10 @@ impl Block {
         b
     }
 
-    /// Genesis block. Setelah ditambang, dipanggil
-    /// `blockchain::check_genesis_consensus(&b)`.
+    /// Genesis block. Menambang sampai hash memenuhi target.
     ///
-    /// Kalau hash, merkle root, timestamp, atau nonce tidak cocok dengan
-    /// konstanta `EXPECTED_GENESIS_*`, fungsi ini `panic!`. Semua perintah
-    /// CLI akan gagal. Wajib isi ulang `EXPECTED_GENESIS_*` di
-    /// `src/consensus/genesis.rs`.
+    /// Fungsi ini TIDAK memanggil `check_genesis_consensus`. Cek dilakukan
+    /// di `Blockchain::new()` supaya genesis bisa dihitung dulu.
     pub fn genesis() -> Self {
         let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
@@ -176,9 +172,6 @@ impl Block {
         if !pow::mine(&mut b, nbits) {
             panic!("genesis mining gagal: nonce habis");
         }
-
-        // Cek terhadap konstanta EXPECTED_GENESIS_*.
-        blockchain::check_genesis_consensus(&b);
 
         b
     }
