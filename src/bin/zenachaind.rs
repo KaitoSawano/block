@@ -1,4 +1,5 @@
 use futures::StreamExt;
+use libp2p::Multiaddr;
 use zenachain::blockchain::Blockchain;
 use zenachain::p2p;
 use zenachain::rpc::RpcServer;
@@ -21,16 +22,27 @@ async fn main() {
     };
 
     // Listen di alamat default.
-    if let Err(e) = swarm.listen_on(p2p::peers::LISTEN_ADDR.parse().unwrap()) {
+    let listen_addr: Multiaddr = match p2p::peers::LISTEN_ADDR.parse() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("[p2p] alamat listen tidak valid: {}", e);
+            return;
+        }
+    };
+
+    if let Err(e) = swarm.listen_on(listen_addr) {
         eprintln!("[p2p] gagal listen {}: {}", p2p::peers::LISTEN_ADDR, e);
     }
 
     // Konek ke peer bootstrap.
     for addr in p2p::peers::BOOTSTRAP_PEERS {
-        if let Ok(ma) = addr.parse() {
-            if let Err(e) = swarm.dial(ma) {
-                eprintln!("[p2p] gagal dial {}: {}", addr, e);
+        match addr.parse::<Multiaddr>() {
+            Ok(ma) => {
+                if let Err(e) = swarm.dial(ma) {
+                    eprintln!("[p2p] gagal dial {}: {}", addr, e);
+                }
             }
+            Err(e) => eprintln!("[p2p] alamat bootstrap tidak valid {}: {}", addr, e),
         }
     }
 
