@@ -42,6 +42,7 @@ libp2p = { version = "0.56", features = [
     "gossipsub",
     "kad",
     "request-response",
+    "cbor",
     "macros",
 ] }
 tokio = { version = "1", features = ["full"] }
