@@ -41,7 +41,40 @@ pub mod checkpoint {
     }
 }
 
-// Re-export parameter konsensus supaya pemanggil lama tetap bekerja.
+/// Parameter jaringan ZenaChain.
+///
+/// Tidak masuk ke `consensus_fingerprint`. Mengubah parameter di sini
+/// tidak membuat chain tidak valid, tetapi bisa membuat node
+/// terisolasi dari jaringan karena magic dan port berbeda.
+pub mod network {
+    /// 4 byte magic untuk pesan P2P.
+    pub const NETWORK_MAGIC: [u8; 4] = [0xf9, 0xbe, 0xb4, 0xd9];
+
+    /// Nama jaringan.
+    pub const NETWORK_NAME: &str = "main";
+
+    /// Port default P2P.
+    pub const DEFAULT_PORT: u16 = 8333;
+
+    /// Height setelah blok boleh di-prune.
+    pub const PRUNE_AFTER_HEIGHT: u64 = 100_000;
+
+    /// Asumsi ukuran chain dalam MB.
+    pub const ASSUMED_BLOCKCHAIN_SIZE: u64 = 496;
+
+    /// Asumsi ukuran chainstate dalam MB.
+    pub const ASSUMED_CHAIN_STATE_SIZE: u64 = 6;
+
+    /// Magic dalam bentuk hex.
+    pub fn network_magic_hex() -> String {
+        format!(
+            "{:02x}{:02x}{:02x}{:02x}",
+            NETWORK_MAGIC[0], NETWORK_MAGIC[1], NETWORK_MAGIC[2], NETWORK_MAGIC[3]
+        )
+    }
+}
+
+// Re-export parameter konsensus.
 pub use consensus::consensus_fingerprint;
 pub use consensus::genesis_coinbase_txid;
 pub use genesis::genesis_message;
