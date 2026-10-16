@@ -1,8 +1,6 @@
 //! Logika sinkronisasi chain dari peer (IBD).
-//!
-//! Tahap 1: minta header dari peer, validasi header secara ringan.
-//! Tahap 2 (belum): minta full block, validasi penuh, tambahkan ke chain.
 
+use crate::block::Block;
 use crate::blockchain::Blockchain;
 use crate::p2p::codec::{BlockHeader, SyncMessage};
 use crate::p2p::peers;
@@ -36,6 +34,7 @@ impl SyncState {
     }
 
     /// Proses pesan Headers dari peer.
+    /// Cek: header berurutan, previous_hash cocok, nbits sesuai, reward sesuai.
     pub fn apply_headers(
         &mut self,
         chain: &Blockchain,
@@ -101,6 +100,39 @@ impl SyncState {
         self.best_known_height = last.index;
         self.last_request_at_height = Some(last.index);
 
+        Ok(())
+    }
+
+    /// Validasi blok yang diterima dari peer.
+    /// Return `Ok(())` kalau blok valid dan bisa ditambahkan ke chain.
+    pub fn accept_block(
+        chain: &mut Blockchain,
+        block: Block,
+    ) -> Result<(), String> {
+        let prev = match chain.chain.last() {
+            Some(p) => p.clone(),
+            None => return Err("chain kosong".into()),
+        };
+
+        if block.index != prev.index + 1 {
+            return Err(format!(
+                "blok index {} tidak nyambung dengan tip {}",
+                block.index, prev.index
+            ));
+        }
+
+        if block.previous_hash != prev.hash {
+            return Err(format!(
+                "blok {} previous_hash tidak cocok",
+                block.index
+            ));
+        }
+
+        if let Err(e) = validation::validate_block(chain, &prev, &block) {
+            return Err(format!("blok {} ditolak: {}", block.index, e));
+        }
+
+        chain.chain.push(block);
         Ok(())
     }
 
