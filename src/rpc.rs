@@ -70,8 +70,9 @@ pub struct RpcServer {
 }
 
 impl RpcServer {
-    pub fn new() -> Self {
-        let chain = storage::load_chain().unwrap_or_else(|_| Blockchain::new());
+    /// Bikin RpcServer dari Blockchain yang sudah ada.
+    /// Genesis dihitung dan di-assert di `Blockchain::new()` sebelum ini.
+    pub fn new(chain: Blockchain) -> Self {
         RpcServer {
             chain,
             shutdown: Arc::new(AtomicBool::new(false)),
