@@ -5,7 +5,7 @@ use crate::datadir;
 use crate::pow;
 use crate::storage;
 use crate::transaction::Transaction;
-use crate::utils::{now_millis, zenac_to_satoshi};
+use crate::utils::zenac_to_satoshi;
 use crate::validation;
 use crate::wallet::Wallet;
 use serde::{Deserialize, Serialize};
