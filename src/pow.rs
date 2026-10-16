@@ -1,5 +1,5 @@
 use crate::block::Block;
-use crate::consensus::pow::{GENESIS_NBITS, POW_LIMIT};
+pub use crate::consensus::pow::{GENESIS_NBITS, POW_LIMIT};
 
 /// Ubah nBits format compact menjadi target 256-bit big-endian.
 pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
@@ -68,6 +68,3 @@ pub fn mine(block: &mut Block, nbits: u32) -> bool {
         block.nonce = block.nonce.wrapping_add(1);
     }
 }
-
-pub use GENESIS_NBITS;
-pub use POW_LIMIT;
