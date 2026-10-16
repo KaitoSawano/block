@@ -41,31 +41,14 @@ pub mod checkpoint {
     }
 }
 
-/// Parameter jaringan ZenaChain.
-///
-/// Tidak masuk ke `consensus_fingerprint`. Mengubah parameter di sini
-/// tidak membuat chain tidak valid, tetapi bisa membuat node
-/// terisolasi dari jaringan karena magic dan port berbeda.
 pub mod network {
-    /// 4 byte magic untuk pesan P2P.
     pub const NETWORK_MAGIC: [u8; 4] = [0xf9, 0xbe, 0xb4, 0xd9];
-
-    /// Nama jaringan.
     pub const NETWORK_NAME: &str = "main";
-
-    /// Port default P2P.
     pub const DEFAULT_PORT: u16 = 8333;
-
-    /// Height setelah blok boleh di-prune.
     pub const PRUNE_AFTER_HEIGHT: u64 = 100_000;
-
-    /// Asumsi ukuran chain dalam MB.
     pub const ASSUMED_BLOCKCHAIN_SIZE: u64 = 496;
-
-    /// Asumsi ukuran chainstate dalam MB.
     pub const ASSUMED_CHAIN_STATE_SIZE: u64 = 6;
 
-    /// Magic dalam bentuk hex.
     pub fn network_magic_hex() -> String {
         format!(
             "{:02x}{:02x}{:02x}{:02x}",
@@ -74,7 +57,6 @@ pub mod network {
     }
 }
 
-// Re-export parameter konsensus.
 pub use consensus::consensus_fingerprint;
 pub use consensus::genesis_coinbase_txid;
 pub use genesis::genesis_message;
@@ -103,6 +85,55 @@ pub use spec::version;
 pub fn max_tx_per_block() -> usize { rules::MAX_TX_PER_BLOCK }
 pub fn pow_limit() -> &'static str { cpow::POW_LIMIT }
 pub fn genesis_nbits() -> u32 { cpow::GENESIS_NBITS }
+
+/// Cek genesis yang dihitung terhadap konstanta `EXPECTED_GENESIS_*`.
+///
+/// Kalau ada parameter konsensus yang diubah, genesis hash akan berbeda
+/// dari `EXPECTED_GENESIS_HASH`, dan fungsi ini akan `panic!`.
+/// Semua perintah CLI akan gagal sampai `EXPECTED_GENESIS_*` diisi ulang
+/// dengan nilai genesis baru.
+pub fn check_genesis_consensus(block: &Block) {
+    // Cek hash genesis.
+    if block.hash != genesis::EXPECTED_GENESIS_HASH {
+        panic!(
+            "GENESIS MISMATCH: hash genesis {}\n\
+             tidak cocok dengan EXPECTED_GENESIS_HASH {}\n\
+             Ada parameter konsensus yang diubah, atau konstanta\n\
+             EXPECTED_GENESIS_HASH belum diisi.\n\
+             Jalankan node dengan .chain kosong, lalu salin nilai\n\
+             hash, merkle_root, timestamp, dan nonce dari getgenesis\n\
+             ke src/consensus/genesis.rs.",
+            block.hash, genesis::EXPECTED_GENESIS_HASH
+        );
+    }
+
+    // Cek merkle root genesis.
+    if block.merkle_root != genesis::EXPECTED_GENESIS_MERKLE_ROOT {
+        panic!(
+            "GENESIS MISMATCH: merkle_root {}\n\
+             tidak cocok dengan EXPECTED_GENESIS_MERKLE_ROOT {}",
+            block.merkle_root, genesis::EXPECTED_GENESIS_MERKLE_ROOT
+        );
+    }
+
+    // Cek timestamp genesis.
+    if block.timestamp != genesis::EXPECTED_GENESIS_TIMESTAMP {
+        panic!(
+            "GENESIS MISMATCH: timestamp {}\n\
+             tidak cocok dengan EXPECTED_GENESIS_TIMESTAMP {}",
+            block.timestamp, genesis::EXPECTED_GENESIS_TIMESTAMP
+        );
+    }
+
+    // Cek nonce genesis.
+    if block.nonce != genesis::EXPECTED_GENESIS_NONCE {
+        panic!(
+            "GENESIS MISMATCH: nonce {}\n\
+             tidak cocok dengan EXPECTED_GENESIS_NONCE {}",
+            block.nonce, genesis::EXPECTED_GENESIS_NONCE
+        );
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blockchain {
