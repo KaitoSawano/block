@@ -127,9 +127,9 @@ impl Block {
         b
     }
 
-    /// Genesis block. Menambang genesis, lalu memeriksa hash dan merkle
-    /// root terhadap konstanta di `src/consensus/genesis.rs`, seperti
-    /// `assert` di `chainparams.cpp` Bitcoin.
+    /// Genesis block. Menambang genesis, lalu mencetak semua nilai
+    /// genesis sebelum `assert!`. Tujuannya supaya Anda bisa salin
+    /// keempat nilai ke `src/consensus/genesis.rs` dalam sekali jalan.
     pub fn genesis() -> Self {
         let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
@@ -172,7 +172,19 @@ impl Block {
             panic!("genesis mining gagal: nonce habis");
         }
 
-        // Assert seperti Bitcoin chainparams.cpp.
+        // Cetak semua nilai genesis sebelum assert.
+        // Ini yang Anda salin ke src/consensus/genesis.rs.
+        println!();
+        println!("============================================================");
+        println!("  GENESIS ZENACHAIN (salin ke src/consensus/genesis.rs)");
+        println!("============================================================");
+        println!("  EXPECTED_GENESIS_HASH        = \"{}\"", b.hash);
+        println!("  EXPECTED_GENESIS_MERKLE_ROOT = \"{}\"", b.merkle_root);
+        println!("  EXPECTED_GENESIS_TIMESTAMP   = {}u128", b.timestamp);
+        println!("  EXPECTED_GENESIS_NONCE       = {}u64", b.nonce);
+        println!("============================================================");
+        println!();
+
         assert!(
             b.hash == genesis::EXPECTED_GENESIS_HASH,
             "\n\
@@ -182,17 +194,8 @@ impl Block {
              hash genesis     : {}\n\
              EXPECTED_HASH    : {}\n\
              \n\
-             Ada parameter konsensus yang diubah, atau konstanta\n\
-             EXPECTED_GENESIS_HASH di src/consensus/genesis.rs belum\n\
-             diisi dengan nilai genesis yang sah.\n\
-             \n\
-             Cara memperbaiki:\n\
-             1. Komentari sementara assert! di src/block.rs\n\
-             2. rm -rf ~/.chain && make build\n\
-             3. ./zenachaind & ./zenachain getgenesis\n\
-             4. Salin hash, merkle_root, timestamp, nonce ke\n\
-                src/consensus/genesis.rs\n\
-             5. Hidupkan kembali assert!, make build, jalankan.\n\
+             Salin nilai genesis di atas ke src/consensus/genesis.rs,\n\
+             lalu build ulang.\n\
              ============================================================\n",
             b.hash,
             genesis::EXPECTED_GENESIS_HASH
