@@ -4,7 +4,7 @@ use zenachain::transaction::Transaction;
 
 fn main() {
     println!("[miner] zenachain-miner dijalankan.");
-    println!("[miner] terhubung ke node di {}.", rpc::RPC_ADDR);
+    println!("[miner] terhubung ke node di {}.", rpc::DEFAULT_RPC_ADDR);
 
     loop {
         let template = match rpc::call("getblocktemplate", vec![]) {
