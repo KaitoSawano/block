@@ -3,6 +3,9 @@
 //! Semua parameter yang mengikat aturan validasi chain berada di sini.
 //! Kalau ada parameter di sini yang diubah, genesis hash berubah,
 //! dan seluruh chain lama menjadi tidak valid.
+//!
+//! Parameter jaringan (peer bootstrap, DNS seed, port P2P) TIDAK
+//! di sini. Itu ada di `src/p2p/peers.rs`.
 
 pub mod genesis;
 pub mod pow;
@@ -11,18 +14,9 @@ pub mod spec;
 
 use crate::utils::sha3_256_hex;
 
-/// Fingerprint konsensus.
-///
-/// Menggabungkan semua parameter yang mengikat aturan validasi.
-/// TIDAK termasuk nama coin, simbol, versi software, atau fee default.
-///
-/// Kalau ada parameter di sini yang diubah, genesis hash berubah,
-/// dan seluruh chain lama menjadi tidak valid. Node harus mengunduh
-/// binary baru, lalu menambang genesis baru.
 pub fn consensus_fingerprint() -> String {
     let payload = format!(
         "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-        // spec
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
         spec::DECIMALS,
@@ -37,15 +31,12 @@ pub fn consensus_fingerprint() -> String {
         spec::POW_TARGET_TIMESPAN_SECS,
         spec::MINER_CONFIRMATION_WINDOW,
         spec::DIFFICULTY_ADJUST_INTERVAL,
-        // genesis
         genesis::GENESIS_MESSAGE,
         genesis::GENESIS_SECRET,
         genesis::GENESIS_TIMESTAMP,
         genesis::GENESIS_OUTPUT_SCRIPT,
-        // pow
         pow::GENESIS_NBITS,
         pow::POW_LIMIT,
-        // rules
         rules::COINBASE_MATURITY,
         rules::ADDRESS_PREFIX,
         rules::ADDRESS_HEX_LEN,
@@ -58,7 +49,6 @@ pub fn consensus_fingerprint() -> String {
     sha3_256_hex(payload.as_bytes())
 }
 
-/// Coinbase txid genesis yang diharapkan.
 pub fn genesis_coinbase_txid() -> String {
     let fp = consensus_fingerprint();
     let payload = format!(
