@@ -35,7 +35,7 @@ async fn main() {
     let mut swarm = match p2p::build_swarm(keypair).await {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("[p2p] gagal bikin swarm: {}", e);
+            println!("[p2p] gagal bikin swarm: {}", e);
             return;
         }
     };
@@ -43,23 +43,23 @@ async fn main() {
     let listen_addr: Multiaddr = match p2p::peers::LISTEN_ADDR.parse() {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("[p2p] alamat listen tidak valid: {}", e);
+            println!("[p2p] alamat listen tidak valid: {}", e);
             return;
         }
     };
 
     if let Err(e) = swarm.listen_on(listen_addr) {
-        eprintln!("[p2p] gagal listen {}: {}", p2p::peers::LISTEN_ADDR, e);
+        println!("[p2p] gagal listen {}: {}", p2p::peers::LISTEN_ADDR, e);
     }
 
     for addr in p2p::peers::BOOTSTRAP_PEERS {
         match addr.parse::<Multiaddr>() {
             Ok(ma) => {
                 if let Err(e) = swarm.dial(ma) {
-                    eprintln!("[p2p] gagal dial {}: {}", addr, e);
+                    println!("[p2p] gagal dial {}: {}", addr, e);
                 }
             }
-            Err(e) => eprintln!("[p2p] alamat bootstrap tidak valid {}: {}", addr, e),
+            Err(e) => println!("[p2p] alamat bootstrap tidak valid {}: {}", addr, e),
         }
     }
 
