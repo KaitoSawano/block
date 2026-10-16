@@ -20,15 +20,9 @@ pub enum P2PEvent {
 pub fn classify(event: SwarmEvent<ZenaBehaviourEvent>) -> P2PEvent {
     match event {
         SwarmEvent::Behaviour(ZenaBehaviourEvent::Ping(e)) => P2PEvent::Ping(e),
-        SwarmEvent::Behaviour(ZenaBehaviourEvent::Identify(e)) => {
-            P2PEvent::Identify(Box::new(e))
-        }
-        SwarmEvent::Behaviour(ZenaBehaviourEvent::Gossipsub(e)) => {
-            P2PEvent::Gossipsub(Box::new(e))
-        }
-        SwarmEvent::Behaviour(ZenaBehaviourEvent::Kademlia(e)) => {
-            P2PEvent::Kademlia(Box::new(e))
-        }
+        SwarmEvent::Behaviour(ZenaBehaviourEvent::Identify(e)) => P2PEvent::Identify(Box::new(e)),
+        SwarmEvent::Behaviour(ZenaBehaviourEvent::Gossipsub(e)) => P2PEvent::Gossipsub(Box::new(e)),
+        SwarmEvent::Behaviour(ZenaBehaviourEvent::Kademlia(e)) => P2PEvent::Kademlia(Box::new(e)),
         SwarmEvent::Behaviour(ZenaBehaviourEvent::Sync(e)) => P2PEvent::Sync(e),
         _ => P2PEvent::Other,
     }
