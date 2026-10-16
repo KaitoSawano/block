@@ -21,6 +21,10 @@ path = "src/bin/zenachaind.rs"
 name = "zenachain-miner"
 path = "src/bin/zenachain-miner.rs"
 
+[[bin]]
+name = "zenachain-genesis"
+path = "src/bin/zenachain-genesis.rs"
+
 [dependencies]
 sha3 = "0.10"
 serde = { version = "1.0", features = ["derive"] }
