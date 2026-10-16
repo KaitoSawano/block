@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use tokio::signal::unix::{signal, SignalKind};
 use zenachain::block::Block;
 use zenachain::blockchain::Blockchain;
+use zenachain::config::Config;
 use zenachain::p2p::{self, SyncMessage, SyncState};
 use zenachain::rpc::RpcServer;
 
@@ -14,6 +15,21 @@ async fn main() {
 
     println!("ZenaChain server starting");
     println!("Gunakan `./zenachain stop` untuk menghentikan node.");
+
+    // Baca config dari .chain/zenachain.conf.
+    let config = Config::load_or_default();
+    println!("[config] network      : {}", config.network);
+    println!("[config] rpc_addr     : {}", config.rpc_addr);
+    println!("[config] listen_addr  : {}", config.listen_addr);
+    println!("[config] bootstrap    : {:?}", config.bootstrap);
+    println!("[config] mining_addr  : {}", config.mining_address);
+    println!("[config] lokasi       : {}", Config::default_path());
+
+    // Simpan config default kalau file belum ada.
+    if !std::path::Path::new(&Config::default_path()).exists() {
+        let _ = config.save_default();
+        println!("[config] file config dibuat di {}", Config::default_path());
+    }
 
     // Abaikan SIGINT dan SIGHUP.
     let mut sigint = signal(SignalKind::interrupt()).expect("gagal daftar SIGINT");
@@ -42,7 +58,7 @@ async fn main() {
         }
     };
 
-    let listen_addr: Multiaddr = match p2p::peers::LISTEN_ADDR.parse() {
+    let listen_addr: Multiaddr = match config.listen_addr.parse() {
         Ok(a) => a,
         Err(e) => {
             println!("[p2p] alamat listen tidak valid: {}", e);
@@ -51,11 +67,11 @@ async fn main() {
     };
 
     if let Err(e) = swarm.listen_on(listen_addr) {
-        println!("[p2p] gagal listen {}: {}", p2p::peers::LISTEN_ADDR, e);
+        println!("[p2p] gagal listen {}: {}", config.listen_addr, e);
     }
 
-    // Dial bootstrap peers.
-    for addr in p2p::peers::BOOTSTRAP_PEERS {
+    // Dial bootstrap dari config.
+    for addr in &config.bootstrap {
         match addr.parse::<Multiaddr>() {
             Ok(ma) => {
                 if let Err(e) = swarm.dial(ma) {
@@ -66,31 +82,25 @@ async fn main() {
         }
     }
 
-    // Mulai Kademlia bootstrap untuk cari peer lain.
     if let Err(e) = swarm.behaviour_mut().kademlia.bootstrap() {
         println!("[p2p] kademlia bootstrap gagal: {}", e);
     }
 
-    // Sync state.
     let mut sync_state = SyncState::new();
-
-    // Set peer yang sudah diminta header.
     let mut requested_headers: HashSet<PeerId> = HashSet::new();
 
-    // RPC di task terpisah.
+    // RPC di task terpisah, pakai rpc_addr dari config.
     let chain_for_rpc = chain.clone();
+    let rpc_addr = config.rpc_addr.clone();
     tokio::spawn(async move {
-        let mut server = RpcServer::new(chain_for_rpc);
+        let mut server = RpcServer::new(chain_for_rpc, rpc_addr);
         server.listen();
     });
 
-    // Gossipsub topic.
     let blocks_topic = gossipsub::IdentTopic::new(p2p::TOPIC_BLOCKS);
 
-    // Loop event.
     while let Some(event) = swarm.next().await {
         match event {
-            // Identify: peer baru teridentifikasi. Minta header.
             libp2p::swarm::SwarmEvent::Behaviour(
                 p2p::behaviour::ZenaBehaviourEvent::Identify(identify::Event::Received {
                     peer_id,
@@ -111,53 +121,33 @@ async fn main() {
                 }
             }
 
-            // Request-response: balasan dari peer.
-            libp2p::swarm::SwarmEvent::Behaviour(
-                p2p::behaviour::ZenaBehaviourEvent::Sync(RrEvent::Message {
-                    peer,
-                    message,
-                    ..
-                }),
-            ) => match message {
+            libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Sync(
+                RrEvent::Message { peer, message, .. },
+            )) => match message {
                 RrMessage::Response { response, .. } => {
                     if let Some(msg) = SyncMessage::from_bytes(&response) {
-                        handle_sync_message(
-                            &mut swarm,
-                            &mut chain,
-                            &mut sync_state,
-                            peer,
-                            msg,
-                        );
+                        handle_sync_message(&mut swarm, &mut chain, &mut sync_state, peer, msg);
                     }
                 }
                 RrMessage::Request { request, channel, .. } => {
-                    // Peer lain minta header atau blok. Balas.
                     if let Some(msg) = SyncMessage::from_bytes(&request) {
                         let reply = handle_sync_request(&chain, msg);
-                        let _ =
-                            swarm
-                                .behaviour_mut()
-                                .sync
-                                .send_response(channel, reply.to_bytes());
+                        let _ = swarm
+                            .behaviour_mut()
+                            .sync
+                            .send_response(channel, reply.to_bytes());
                     }
                 }
             },
 
-            // Gossipsub: blok baru dari peer.
-            libp2p::swarm::SwarmEvent::Behaviour(
-                p2p::behaviour::ZenaBehaviourEvent::Gossipsub(
-                    gossipsub::Event::Message { message, .. },
-                ),
-            ) => {
+            libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Gossipsub(
+                gossipsub::Event::Message { message, .. },
+            )) => {
                 if message.topic == blocks_topic.hash() {
                     if let Ok(block) = serde_json::from_slice::<Block>(&message.data) {
                         match SyncState::accept_block(&mut chain, block) {
-                            Ok(_) => {
-                                println!("[p2p] blok diterima dari gossip");
-                            }
-                            Err(e) => {
-                                println!("[p2p] blok gossip ditolak: {}", e);
-                            }
+                            Ok(_) => println!("[p2p] blok diterima dari gossip"),
+                            Err(e) => println!("[p2p] blok gossip ditolak: {}", e),
                         }
                     }
                 }
@@ -168,7 +158,6 @@ async fn main() {
     }
 }
 
-/// Tangani pesan sync dari peer.
 fn handle_sync_message(
     swarm: &mut libp2p::Swarm<p2p::behaviour::ZenaBehaviour>,
     chain: &mut Blockchain,
@@ -185,7 +174,6 @@ fn handle_sync_message(
 
             println!("[p2p] {} header diterima dari {}", headers.len(), peer);
 
-            // Minta blok.
             let hashes: Vec<String> = headers.iter().map(|h| h.hash.clone()).collect();
             if !hashes.is_empty() {
                 let msg = SyncMessage::GetData { hashes };
@@ -209,7 +197,6 @@ fn handle_sync_message(
     }
 }
 
-/// Balas permintaan sync dari peer.
 fn handle_sync_request(chain: &Blockchain, msg: SyncMessage) -> SyncMessage {
     match msg {
         SyncMessage::GetHeaders { from_height, max } => {
@@ -234,7 +221,6 @@ fn handle_sync_request(chain: &Blockchain, msg: SyncMessage) -> SyncMessage {
             SyncMessage::Headers { headers }
         }
         SyncMessage::GetData { hashes } => {
-            // Balas satu blok pertama yang ada di chain.
             for hash in hashes {
                 if let Some(block) = chain.chain.iter().find(|b| b.hash == hash) {
                     let raw = serde_json::to_vec(block).unwrap_or_default();
