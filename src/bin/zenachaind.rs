@@ -1,9 +1,8 @@
 use futures::StreamExt;
 use libp2p::Multiaddr;
 use zenachain::blockchain::Blockchain;
-use zenachain::consensus;
 use zenachain::p2p;
-use zenachain::rpc::{RpcServer, RPC_ADDR};
+use zenachain::rpc::RpcServer;
 
 #[tokio::main]
 async fn main() {
@@ -14,12 +13,6 @@ async fn main() {
     let chain = Blockchain::new();
 
     println!("ZenaChain server starting");
-    println!("  height               : {}", chain.height());
-    println!("  chain_len            : {}", chain.chain.len());
-    println!("  consensus_fingerprint: {}", consensus::consensus_fingerprint());
-    println!("  p2p listen           : {}", p2p::peers::LISTEN_ADDR);
-    println!("  rpc listen           : {}", RPC_ADDR);
-    println!();
 
     // Bikin peer identity (Ed25519). Terpisah dari wallet.
     let keypair = p2p::swarm::load_or_generate_keypair(".chain/peer_id");
