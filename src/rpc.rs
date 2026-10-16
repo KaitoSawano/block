@@ -128,6 +128,7 @@ impl RpcServer {
         match req.method.as_str() {
             "getinfo" => self.m_getinfo(),
             "getblockchaininfo" => self.m_getblockchaininfo(),
+            "getnetworkinfo" => m_getnetworkinfo(),
             "getcheckpoints" => m_getcheckpoints(),
             "getblocktemplate" => self.m_getblocktemplate(),
             "submitblock" => self.m_submitblock(req),
@@ -698,6 +699,19 @@ fn m_getcheckpoints() -> RpcResponse {
         .map(|c| json!({"height": c.height, "hash": c.hash}))
         .collect();
     RpcResponse::ok(json!(items))
+}
+
+fn m_getnetworkinfo() -> RpcResponse {
+    RpcResponse::ok(json!({
+        "network": blockchain::network::NETWORK_NAME,
+        "magic": blockchain::network::network_magic_hex(),
+        "default_port": blockchain::network::DEFAULT_PORT,
+        "prune_after_height": blockchain::network::PRUNE_AFTER_HEIGHT,
+        "assumed_blockchain_size_mb": blockchain::network::ASSUMED_BLOCKCHAIN_SIZE,
+        "assumed_chain_state_size_mb": blockchain::network::ASSUMED_CHAIN_STATE_SIZE,
+        "p2p_enabled": false,
+        "connection_count": 0,
+    }))
 }
 
 fn m_getwallet() -> RpcResponse {
