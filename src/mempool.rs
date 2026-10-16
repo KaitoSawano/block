@@ -24,6 +24,10 @@ impl Mempool {
         std::mem::take(&mut self.txs)
     }
 
-    pub fn len(&self) -> usize { self.txs.len() }
-    pub fn is_empty(&self) -> bool { self.txs.is_empty() }
+    pub fn len(&self) -> usize {
+        self.txs.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.txs.is_empty()
+    }
 }

@@ -13,8 +13,12 @@ pub async fn build_swarm(
         .with_other_transport(|key| Ok(crate::p2p::transport::build_transport(key)))?
         .with_behaviour(|key| {
             let peer_id = key.public().to_peer_id();
-            ZenaBehaviour::new(key, peer_id)
-                .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())) as Box<dyn std::error::Error + Send + Sync>)
+            ZenaBehaviour::new(key, peer_id).map_err(|e| {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e.to_string(),
+                )) as Box<dyn std::error::Error + Send + Sync>
+            })
         })?
         .with_swarm_config(|cfg| {
             cfg.with_idle_connection_timeout(std::time::Duration::from_secs(60))

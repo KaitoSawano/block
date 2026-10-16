@@ -11,12 +11,10 @@ pub mod checkpoint {
         pub hash: &'static str,
     }
 
-    pub const CHECKPOINTS: &[Checkpoint] = &[
-        Checkpoint {
-            height: 0,
-            hash: "0000000000000000000000000000000000000000000000000000000000000000",
-        },
-    ];
+    pub const CHECKPOINTS: &[Checkpoint] = &[Checkpoint {
+        height: 0,
+        hash: "0000000000000000000000000000000000000000000000000000000000000000",
+    }];
 
     pub fn find(height: u64) -> Option<&'static str> {
         CHECKPOINTS
@@ -82,9 +80,15 @@ pub use spec::subsidy_halving_interval;
 pub use spec::symbol;
 pub use spec::version;
 
-pub fn max_tx_per_block() -> usize { rules::MAX_TX_PER_BLOCK }
-pub fn pow_limit() -> &'static str { cpow::POW_LIMIT }
-pub fn genesis_nbits() -> u32 { cpow::GENESIS_NBITS }
+pub fn max_tx_per_block() -> usize {
+    rules::MAX_TX_PER_BLOCK
+}
+pub fn pow_limit() -> &'static str {
+    cpow::POW_LIMIT
+}
+pub fn genesis_nbits() -> u32 {
+    cpow::GENESIS_NBITS
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blockchain {
@@ -150,8 +154,7 @@ impl Blockchain {
         }
 
         let txs = std::mem::take(&mut self.mempool);
-        let mut new_block =
-            Block::new(next_index, prev.hash.clone(), reward, self.nbits, txs);
+        let mut new_block = Block::new(next_index, prev.hash.clone(), reward, self.nbits, txs);
         if !pow::mine(&mut new_block, self.nbits) {
             return Err("mining gagal: nonce habis".into());
         }

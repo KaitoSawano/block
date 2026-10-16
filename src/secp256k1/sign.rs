@@ -17,8 +17,8 @@ pub fn sign(secret_key: &[u8], message_hash: &[u8]) -> Result<Vec<u8>, String> {
     }
 
     let secp = Secp256k1::new();
-    let secret = SecretKey::from_slice(secret_key)
-        .map_err(|e| format!("secret key tidak valid: {}", e))?;
+    let secret =
+        SecretKey::from_slice(secret_key).map_err(|e| format!("secret key tidak valid: {}", e))?;
     let msg = Message::from_digest_slice(message_hash)
         .map_err(|e| format!("message tidak valid: {}", e))?;
 

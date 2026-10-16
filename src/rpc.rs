@@ -34,16 +34,27 @@ pub struct RpcResponse {
 
 impl RpcResponse {
     pub fn ok(result: Value) -> Self {
-        RpcResponse { ok: true, result, error: String::new() }
+        RpcResponse {
+            ok: true,
+            result,
+            error: String::new(),
+        }
     }
     pub fn err(msg: &str) -> Self {
-        RpcResponse { ok: false, result: Value::Null, error: msg.to_string() }
+        RpcResponse {
+            ok: false,
+            result: Value::Null,
+            error: msg.to_string(),
+        }
     }
 }
 
 pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     let mut stream = TcpStream::connect(RPC_ADDR)?;
-    let req = RpcRequest { method: method.to_string(), params };
+    let req = RpcRequest {
+        method: method.to_string(),
+        params,
+    };
     let line = serde_json::to_string(&req).unwrap();
     stream.write_all(line.as_bytes())?;
     stream.write_all(b"\n")?;
@@ -98,7 +109,9 @@ impl RpcServer {
             }
 
             match listener.accept() {
-                Ok((stream, _)) => { let _ = self.handle(stream); }
+                Ok((stream, _)) => {
+                    let _ = self.handle(stream);
+                }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     std::thread::sleep(Duration::from_millis(50));
                 }
@@ -550,7 +563,11 @@ impl RpcServer {
             total_amount = total_amount.saturating_add(tx.amount);
             total_fee = total_fee.saturating_add(tx.fee);
         }
-        let avg_fee = if count > 0 { total_fee / count as u64 } else { 0 };
+        let avg_fee = if count > 0 {
+            total_fee / count as u64
+        } else {
+            0
+        };
         RpcResponse::ok(json!({
             "size": count,
             "total_amount_satoshi": total_amount,
@@ -598,21 +615,33 @@ impl RpcServer {
             let next_index = prev.index + 1;
             let reward = Blockchain::calculate_reward(next_index);
 
-            if self.chain.circulating_supply().saturating_add(reward)
-                > consensus::max_supply()
-            {
+            if self.chain.circulating_supply().saturating_add(reward) > consensus::max_supply() {
                 return RpcResponse::err("max supply reached");
             }
 
             let mut txs = std::mem::take(&mut self.chain.mempool);
-            txs.push(Transaction::new("NETWORK", &addr, consensus::satoshi() / 100, 0));
+            txs.push(Transaction::new(
+                "NETWORK",
+                &addr,
+                consensus::satoshi() / 100,
+                0,
+            ));
             txs.push(Transaction::new_with_inputs(
-                "MEMPOOL", "CreateNewBlock", 0, 0, Vec::new(),
+                "MEMPOOL",
+                "CreateNewBlock",
+                0,
+                0,
+                Vec::new(),
                 format!("height={} target={}", next_index, addr),
             ));
 
             let mut block = crate::block::Block::new_for(
-                next_index, prev.hash.clone(), reward, self.chain.nbits, txs, addr.clone(),
+                next_index,
+                prev.hash.clone(),
+                reward,
+                self.chain.nbits,
+                txs,
+                addr.clone(),
             );
             if !pow::mine(&mut block, self.chain.nbits) {
                 return RpcResponse::err("mining gagal: nonce habis");

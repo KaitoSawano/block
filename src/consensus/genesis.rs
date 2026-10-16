@@ -21,7 +21,15 @@ pub const EXPECTED_GENESIS_TIMESTAMP: u128 = 1_792_012_800_000;
 
 pub const EXPECTED_GENESIS_NONCE: u64 = 621179;
 
-pub fn genesis_message() -> &'static str { GENESIS_MESSAGE }
-pub fn genesis_secret() -> &'static str { GENESIS_SECRET }
-pub fn genesis_timestamp() -> u128 { GENESIS_TIMESTAMP }
-pub fn genesis_output_script() -> String { GENESIS_OUTPUT_SCRIPT.to_string() }
+pub fn genesis_message() -> &'static str {
+    GENESIS_MESSAGE
+}
+pub fn genesis_secret() -> &'static str {
+    GENESIS_SECRET
+}
+pub fn genesis_timestamp() -> u128 {
+    GENESIS_TIMESTAMP
+}
+pub fn genesis_output_script() -> String {
+    GENESIS_OUTPUT_SCRIPT.to_string()
+}

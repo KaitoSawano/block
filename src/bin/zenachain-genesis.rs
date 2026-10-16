@@ -18,7 +18,10 @@ fn main() {
     println!("      \"{}\";", b.hash);
     println!("  pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =");
     println!("      \"{}\";", b.merkle_root);
-    println!("  pub const EXPECTED_GENESIS_TIMESTAMP: u128 = {};", b.timestamp);
+    println!(
+        "  pub const EXPECTED_GENESIS_TIMESTAMP: u128 = {};",
+        b.timestamp
+    );
     println!("  pub const EXPECTED_GENESIS_NONCE: u64 = {};", b.nonce);
     println!("============================================================");
     println!();

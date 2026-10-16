@@ -84,10 +84,7 @@ impl SyncState {
         for h in headers {
             let expected = Blockchain::calculate_reward(h.index);
             if h.reward != expected {
-                return Err(format!(
-                    "header {} reward tidak sesuai era",
-                    h.index
-                ));
+                return Err(format!("header {} reward tidak sesuai era", h.index));
             }
         }
 

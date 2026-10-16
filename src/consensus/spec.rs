@@ -27,21 +27,57 @@ pub const POW_TARGET_TIMESPAN_SECS: u64 = 259_200;
 pub const MINER_CONFIRMATION_WINDOW: u64 = 69_120;
 pub const DIFFICULTY_ADJUST_INTERVAL: u64 = 69_120;
 
-pub fn coin_name() -> &'static str { COIN_NAME }
-pub fn symbol() -> &'static str { SYMBOL }
-pub fn version() -> &'static str { VERSION }
-pub fn protocol_version() -> u32 { PROTOCOL_VERSION }
-pub fn hash_algo() -> &'static str { HASH_ALGO }
-pub fn signature_algo() -> &'static str { SIGNATURE_ALGO }
-pub fn decimals() -> u32 { DECIMALS }
-pub fn satoshi() -> u64 { SATOSHI }
-pub fn max_supply_zenac() -> u64 { MAX_SUPPLY_ZENAC }
-pub fn max_supply() -> u64 { MAX_SUPPLY }
-pub fn initial_reward_zenac() -> u64 { INITIAL_REWARD_ZENAC }
-pub fn initial_reward() -> u64 { INITIAL_REWARD }
-pub fn subsidy_halving_interval() -> u64 { SUBSIDY_HALVING_INTERVAL }
-pub fn max_halvings() -> u32 { MAX_HALVINGS }
-pub fn pow_target_spacing_secs() -> u64 { POW_TARGET_SPACING_SECS }
-pub fn pow_target_timespan_secs() -> u64 { POW_TARGET_TIMESPAN_SECS }
-pub fn miner_confirmation_window() -> u64 { MINER_CONFIRMATION_WINDOW }
-pub fn difficulty_adjust_interval() -> u64 { DIFFICULTY_ADJUST_INTERVAL }
+pub fn coin_name() -> &'static str {
+    COIN_NAME
+}
+pub fn symbol() -> &'static str {
+    SYMBOL
+}
+pub fn version() -> &'static str {
+    VERSION
+}
+pub fn protocol_version() -> u32 {
+    PROTOCOL_VERSION
+}
+pub fn hash_algo() -> &'static str {
+    HASH_ALGO
+}
+pub fn signature_algo() -> &'static str {
+    SIGNATURE_ALGO
+}
+pub fn decimals() -> u32 {
+    DECIMALS
+}
+pub fn satoshi() -> u64 {
+    SATOSHI
+}
+pub fn max_supply_zenac() -> u64 {
+    MAX_SUPPLY_ZENAC
+}
+pub fn max_supply() -> u64 {
+    MAX_SUPPLY
+}
+pub fn initial_reward_zenac() -> u64 {
+    INITIAL_REWARD_ZENAC
+}
+pub fn initial_reward() -> u64 {
+    INITIAL_REWARD
+}
+pub fn subsidy_halving_interval() -> u64 {
+    SUBSIDY_HALVING_INTERVAL
+}
+pub fn max_halvings() -> u32 {
+    MAX_HALVINGS
+}
+pub fn pow_target_spacing_secs() -> u64 {
+    POW_TARGET_SPACING_SECS
+}
+pub fn pow_target_timespan_secs() -> u64 {
+    POW_TARGET_TIMESPAN_SECS
+}
+pub fn miner_confirmation_window() -> u64 {
+    MINER_CONFIRMATION_WINDOW
+}
+pub fn difficulty_adjust_interval() -> u64 {
+    DIFFICULTY_ADJUST_INTERVAL
+}

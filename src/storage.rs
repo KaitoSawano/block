@@ -44,15 +44,13 @@ pub fn save_chainstate(chain: &Blockchain) -> std::io::Result<()> {
         nbits: chain.nbits,
         updated_at: crate::utils::now_millis(),
     };
-    let json = serde_json::to_string_pretty(&state)
-        .map_err(|e| Error::new(ErrorKind::Other, e))?;
+    let json = serde_json::to_string_pretty(&state).map_err(|e| Error::new(ErrorKind::Other, e))?;
     std::fs::write(datadir::chainstate_file(), json)
 }
 
 pub fn load_chainstate() -> std::io::Result<ChainState> {
     let data = std::fs::read_to_string(datadir::chainstate_file())?;
-    let s: ChainState = serde_json::from_str(&data)
-        .map_err(|e| Error::new(ErrorKind::Other, e))?;
+    let s: ChainState = serde_json::from_str(&data).map_err(|e| Error::new(ErrorKind::Other, e))?;
     Ok(s)
 }
 
@@ -64,8 +62,8 @@ pub fn save_blocks(chain: &Blockchain) -> std::io::Result<()> {
         let end = (written + BLOCKS_PER_FILE).min(total);
         let slice = &chain.chain[written..end];
         let path = datadir::block_file(file_index);
-        let json = serde_json::to_string_pretty(slice)
-            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+        let json =
+            serde_json::to_string_pretty(slice).map_err(|e| Error::new(ErrorKind::Other, e))?;
         std::fs::write(path, json)?;
         written = end;
         file_index += 1;
@@ -82,8 +80,8 @@ pub fn load_blocks(_total_blocks: u64) -> std::io::Result<Vec<Block>> {
             break;
         }
         let data = std::fs::read_to_string(&path)?;
-        let mut chunk: Vec<Block> = serde_json::from_str(&data)
-            .map_err(|e| Error::new(ErrorKind::Other, e))?;
+        let mut chunk: Vec<Block> =
+            serde_json::from_str(&data).map_err(|e| Error::new(ErrorKind::Other, e))?;
         all.append(&mut chunk);
         i += 1;
     }
@@ -91,15 +89,15 @@ pub fn load_blocks(_total_blocks: u64) -> std::io::Result<Vec<Block>> {
 }
 
 pub fn save_mempool(mempool: &[crate::transaction::Transaction]) -> std::io::Result<()> {
-    let json = serde_json::to_string_pretty(mempool)
-        .map_err(|e| Error::new(ErrorKind::Other, e))?;
+    let json =
+        serde_json::to_string_pretty(mempool).map_err(|e| Error::new(ErrorKind::Other, e))?;
     std::fs::write(datadir::mempool_path(), json)
 }
 
 pub fn load_mempool() -> std::io::Result<Vec<crate::transaction::Transaction>> {
     let data = std::fs::read_to_string(datadir::mempool_path())?;
-    let v: Vec<crate::transaction::Transaction> = serde_json::from_str(&data)
-        .map_err(|e| Error::new(ErrorKind::Other, e))?;
+    let v: Vec<crate::transaction::Transaction> =
+        serde_json::from_str(&data).map_err(|e| Error::new(ErrorKind::Other, e))?;
     Ok(v)
 }
 

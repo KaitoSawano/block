@@ -60,8 +60,8 @@ pub fn genesis_coinbase_txid() -> String {
     sha3_256_hex(payload.as_bytes())
 }
 
-pub use genesis::genesis_output_script;
 pub use genesis::genesis_message;
+pub use genesis::genesis_output_script;
 pub use genesis::genesis_secret;
 pub use genesis::genesis_timestamp;
 pub use pow::genesis_nbits;

@@ -4,18 +4,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SyncMessage {
     /// Minta header mulai dari `from_height`.
-    GetHeaders {
-        from_height: u64,
-        max: u64,
-    },
+    GetHeaders { from_height: u64, max: u64 },
     /// Balasan header.
-    Headers {
-        headers: Vec<BlockHeader>,
-    },
+    Headers { headers: Vec<BlockHeader> },
     /// Minta blok berdasarkan hash.
-    GetData {
-        hashes: Vec<String>,
-    },
+    GetData { hashes: Vec<String> },
     /// Balasan blok.
     Block {
         height: u64,

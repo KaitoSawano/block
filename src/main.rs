@@ -48,7 +48,10 @@ fn main() {
             }
             let h: u64 = match args[2].parse() {
                 Ok(v) => v,
-                Err(_) => { println!("height tidak valid"); return; }
+                Err(_) => {
+                    println!("height tidak valid");
+                    return;
+                }
             };
             rpc::call_and_print("getblockhash", vec![json!(h)]);
         }
@@ -67,7 +70,11 @@ fn main() {
             rpc::call_and_print("getrawtransaction", vec![json!(args[2])]);
         }
         "listunspent" => {
-            let params = if args.len() >= 3 { vec![json!(args[2])] } else { vec![] };
+            let params = if args.len() >= 3 {
+                vec![json!(args[2])]
+            } else {
+                vec![]
+            };
             rpc::call_and_print("listunspent", params);
         }
         "getmempoolinfo" => rpc::call_and_print("getmempoolinfo", vec![]),
@@ -78,7 +85,10 @@ fn main() {
             }
             let n: u64 = match args[2].parse() {
                 Ok(v) => v,
-                Err(_) => { println!("jumlah blok tidak valid"); return; }
+                Err(_) => {
+                    println!("jumlah blok tidak valid");
+                    return;
+                }
             };
             rpc::call_and_print("generatetoaddress", vec![json!(n), json!(args[3])]);
         }
@@ -89,12 +99,19 @@ fn main() {
             }
             let amount: f64 = match args[2].parse() {
                 Ok(v) => v,
-                Err(_) => { println!("jumlah tidak valid"); return; }
+                Err(_) => {
+                    println!("jumlah tidak valid");
+                    return;
+                }
             };
             rpc::call_and_print("sendtoaddress", vec![json!(amount), json!(args[3])]);
         }
         "getbalance" => {
-            let params = if args.len() >= 3 { vec![json!(args[2])] } else { vec![] };
+            let params = if args.len() >= 3 {
+                vec![json!(args[2])]
+            } else {
+                vec![]
+            };
             rpc::call_and_print("getbalance", params);
         }
         "dumpprivkey" => {
@@ -134,11 +151,17 @@ fn print_help() {
     println!("  zenachain getmempoolinfo                      ringkasan mempool");
     println!("  zenachain getwallet                           buka dompet tersimpan");
     println!("  zenachain getnewwallet                        buat dompet baru");
-    println!("  zenachain getaddtowallet                      pakai alamat wallet sebagai tujuan mining");
+    println!(
+        "  zenachain getaddtowallet                      pakai alamat wallet sebagai tujuan mining"
+    );
     println!("  zenachain getaddtoaddress \"<alamat>\"          set alamat mining manual");
     println!("  zenachain generatetoaddress <n> \"<alamat>\"    mining n blok langsung ke alamat");
-    println!("  zenachain sendtoaddress <jumlah> \"<alamat>\"   kirim koin dari wallet ke alamat tujuan");
-    println!("  zenachain getprivkey \"<alamat>\"               tampilkan private key untuk alamat itu");
+    println!(
+        "  zenachain sendtoaddress <jumlah> \"<alamat>\"   kirim koin dari wallet ke alamat tujuan"
+    );
+    println!(
+        "  zenachain getprivkey \"<alamat>\"               tampilkan private key untuk alamat itu"
+    );
     println!("  zenachain dumpprivkey \"<privkey>\"             pulihkan dompet dari private key");
     println!("  zenachain getbalance [address]                hitung saldo wallet");
     println!();

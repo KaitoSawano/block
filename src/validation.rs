@@ -12,15 +12,15 @@ use crate::wallet::Wallet;
 use std::collections::HashSet;
 use std::fmt;
 
-pub use rules::COINBASE_MATURITY;
-pub use rules::ADDRESS_PREFIX;
 pub use rules::ADDRESS_HEX_LEN;
-pub use rules::MAX_TX_PER_BLOCK;
-pub use rules::MAX_INPUTS_PER_TX;
-pub use rules::MAX_OUTPUTS_PER_TX;
-pub use rules::MAX_NOTE_LEN;
-pub use rules::ZERO_HASH;
+pub use rules::ADDRESS_PREFIX;
 pub use rules::BLOCK_VERSION;
+pub use rules::COINBASE_MATURITY;
+pub use rules::MAX_INPUTS_PER_TX;
+pub use rules::MAX_NOTE_LEN;
+pub use rules::MAX_OUTPUTS_PER_TX;
+pub use rules::MAX_TX_PER_BLOCK;
+pub use rules::ZERO_HASH;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValidationError {
@@ -54,7 +54,11 @@ pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
     if hex_part.len() != ADDRESS_HEX_LEN {
         return Err(ValidationError::new(
             "E002",
-            format!("panjang hex alamat harus {}, dapat {}", ADDRESS_HEX_LEN, hex_part.len()),
+            format!(
+                "panjang hex alamat harus {}, dapat {}",
+                ADDRESS_HEX_LEN,
+                hex_part.len()
+            ),
         ));
     }
     if !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -68,7 +72,10 @@ pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
 
 pub fn rule_self_send(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.from == tx.to {
-        return Err(ValidationError::new("E004", "alamat pengirim dan tujuan sama"));
+        return Err(ValidationError::new(
+            "E004",
+            "alamat pengirim dan tujuan sama",
+        ));
     }
     Ok(())
 }
@@ -110,15 +117,11 @@ pub fn rule_signature(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.signature.is_empty() {
         return Err(ValidationError::new("E010", "signature kosong"));
     }
-    let pk = hex::decode(&tx.public_key).map_err(|_| {
-        ValidationError::new("E010", "public key bukan hex")
-    })?;
-    let sig = hex::decode(&tx.signature).map_err(|_| {
-        ValidationError::new("E010", "signature bukan hex")
-    })?;
-    let msg = hex::decode(&tx.txid).map_err(|_| {
-        ValidationError::new("E010", "txid bukan hex")
-    })?;
+    let pk = hex::decode(&tx.public_key)
+        .map_err(|_| ValidationError::new("E010", "public key bukan hex"))?;
+    let sig = hex::decode(&tx.signature)
+        .map_err(|_| ValidationError::new("E010", "signature bukan hex"))?;
+    let msg = hex::decode(&tx.txid).map_err(|_| ValidationError::new("E010", "txid bukan hex"))?;
     if !verify::verify(&pk, &msg, &sig) {
         return Err(ValidationError::new(
             "E010",
@@ -135,12 +138,10 @@ pub fn rule_address_matches_pubkey(tx: &Transaction) -> Result<(), ValidationErr
     if tx.public_key.is_empty() {
         return Err(ValidationError::new("E011", "public key kosong"));
     }
-    let pk = hex::decode(&tx.public_key).map_err(|_| {
-        ValidationError::new("E011", "public key bukan hex")
-    })?;
-    let expected = address::address_from_public_key(&pk).map_err(|_| {
-        ValidationError::new("E011", "public key tidak dapat diturunkan ke alamat")
-    })?;
+    let pk = hex::decode(&tx.public_key)
+        .map_err(|_| ValidationError::new("E011", "public key bukan hex"))?;
+    let expected = address::address_from_public_key(&pk)
+        .map_err(|_| ValidationError::new("E011", "public key tidak dapat diturunkan ke alamat"))?;
     if expected != tx.from {
         return Err(ValidationError::new(
             "E011",
@@ -182,10 +183,7 @@ pub fn mempool_inputs(chain: &Blockchain) -> HashSet<String> {
     used
 }
 
-pub fn rule_no_double_spend(
-    chain: &Blockchain,
-    tx: &Transaction,
-) -> Result<(), ValidationError> {
+pub fn rule_no_double_spend(chain: &Blockchain, tx: &Transaction) -> Result<(), ValidationError> {
     if is_special_tx(tx) {
         return Ok(());
     }
@@ -255,7 +253,10 @@ pub fn rule_sufficient_balance(
     if balance < need {
         return Err(ValidationError::new(
             "E021",
-            format!("saldo tidak cukup: butuh {} sat, tersedia {} sat", need, balance),
+            format!(
+                "saldo tidak cukup: butuh {} sat, tersedia {} sat",
+                need, balance
+            ),
         ));
     }
     Ok(())
@@ -278,7 +279,11 @@ pub fn rule_block_tx_count(block: &Block) -> Result<(), ValidationError> {
     if block.transactions.len() > MAX_TX_PER_BLOCK {
         return Err(ValidationError::new(
             "E030",
-            format!("blok berisi {} transaksi, melebihi batas {}", block.transactions.len(), MAX_TX_PER_BLOCK),
+            format!(
+                "blok berisi {} transaksi, melebihi batas {}",
+                block.transactions.len(),
+                MAX_TX_PER_BLOCK
+            ),
         ));
     }
     Ok(())
@@ -289,20 +294,23 @@ pub fn rule_block_reward(block: &Block) -> Result<(), ValidationError> {
     if block.reward != expected {
         return Err(ValidationError::new(
             "E031",
-            format!("reward blok {} tidak sesuai era: dapat {}, seharusnya {}", block.index, block.reward, expected),
+            format!(
+                "reward blok {} tidak sesuai era: dapat {}, seharusnya {}",
+                block.index, block.reward, expected
+            ),
         ));
     }
     Ok(())
 }
 
-pub fn rule_block_timestamp_monotonic(
-    prev: &Block,
-    cur: &Block,
-) -> Result<(), ValidationError> {
+pub fn rule_block_timestamp_monotonic(prev: &Block, cur: &Block) -> Result<(), ValidationError> {
     if cur.timestamp < prev.timestamp {
         return Err(ValidationError::new(
             "E032",
-            format!("timestamp blok {} mundur dari blok {}", cur.index, prev.index),
+            format!(
+                "timestamp blok {} mundur dari blok {}",
+                cur.index, prev.index
+            ),
         ));
     }
     Ok(())
@@ -312,7 +320,10 @@ pub fn rule_block_nbits(chain: &Blockchain, block: &Block) -> Result<(), Validat
     if block.nbits != chain.nbits {
         return Err(ValidationError::new(
             "E033",
-            format!("nbits blok {:#010x} tidak sesuai chain {:#010x}", block.nbits, chain.nbits),
+            format!(
+                "nbits blok {:#010x} tidak sesuai chain {:#010x}",
+                block.nbits, chain.nbits
+            ),
         ));
     }
     Ok(())
@@ -328,27 +339,27 @@ pub fn rule_block_hash_consistent(block: &Block) -> Result<(), ValidationError> 
     Ok(())
 }
 
-pub fn rule_block_previous_hash(
-    prev: &Block,
-    cur: &Block,
-) -> Result<(), ValidationError> {
+pub fn rule_block_previous_hash(prev: &Block, cur: &Block) -> Result<(), ValidationError> {
     if cur.previous_hash != prev.hash {
         return Err(ValidationError::new(
             "E035",
-            format!("previous_hash blok {} tidak cocok dengan hash blok {}", cur.index, prev.index),
+            format!(
+                "previous_hash blok {} tidak cocok dengan hash blok {}",
+                cur.index, prev.index
+            ),
         ));
     }
     Ok(())
 }
 
-pub fn rule_block_index_sequential(
-    prev: &Block,
-    cur: &Block,
-) -> Result<(), ValidationError> {
+pub fn rule_block_index_sequential(prev: &Block, cur: &Block) -> Result<(), ValidationError> {
     if cur.index != prev.index + 1 {
         return Err(ValidationError::new(
             "E036",
-            format!("index blok {} tidak berurutan setelah {}", cur.index, prev.index),
+            format!(
+                "index blok {} tidak berurutan setelah {}",
+                cur.index, prev.index
+            ),
         ));
     }
     Ok(())
@@ -382,7 +393,10 @@ pub fn rule_genesis(block: &Block) -> Result<(), ValidationError> {
         return Err(ValidationError::new("E039", "genesis block harus index 0"));
     }
     if block.previous_hash != ZERO_HASH {
-        return Err(ValidationError::new("E039", "genesis previous_hash harus nol"));
+        return Err(ValidationError::new(
+            "E039",
+            "genesis previous_hash harus nol",
+        ));
     }
     Ok(())
 }
@@ -458,20 +472,14 @@ pub fn rule_genesis_pow(block: &Block) -> Result<(), ValidationError> {
 }
 
 pub fn is_special_tx(tx: &Transaction) -> bool {
-    tx.from == "COINBASE"
-        || tx.from == "GENESIS"
-        || tx.from == "NETWORK"
-        || tx.from == "MEMPOOL"
+    tx.from == "COINBASE" || tx.from == "GENESIS" || tx.from == "NETWORK" || tx.from == "MEMPOOL"
 }
 
 pub fn is_valid_address(addr: &str) -> bool {
     rule_address_format(addr).is_ok()
 }
 
-pub fn validate_transaction(
-    chain: &Blockchain,
-    tx: &Transaction,
-) -> Result<(), ValidationError> {
+pub fn validate_transaction(chain: &Blockchain, tx: &Transaction) -> Result<(), ValidationError> {
     if is_special_tx(tx) {
         return Ok(());
     }

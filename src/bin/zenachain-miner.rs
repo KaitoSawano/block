@@ -25,21 +25,30 @@ fn main() {
         let previous_hash = template["previous_hash"].as_str().unwrap_or("").to_string();
         let nbits = template["nbits"].as_u64().unwrap_or(0) as u32;
 
-        let mut mempool: Vec<Transaction> = serde_json::from_value(template["mempool"].clone())
-            .unwrap_or_default();
+        let mut mempool: Vec<Transaction> =
+            serde_json::from_value(template["mempool"].clone()).unwrap_or_default();
 
-        let target_address = std::env::var("ZENAC_MINE_FOR")
-            .unwrap_or_else(|_| "UNKNOWN".to_string());
+        let target_address =
+            std::env::var("ZENAC_MINE_FOR").unwrap_or_else(|_| "UNKNOWN".to_string());
 
         let reward = zenachain::blockchain::Blockchain::calculate_reward(height);
 
         mempool.push(Transaction::new_with_inputs(
-            "MEMPOOL", "CreateNewBlock", 0, 0, Vec::new(),
+            "MEMPOOL",
+            "CreateNewBlock",
+            0,
+            0,
+            Vec::new(),
             format!("height={} target={}", height, target_address),
         ));
 
         let mut block = Block::new_for(
-            height, previous_hash, reward, nbits, mempool, target_address.clone(),
+            height,
+            previous_hash,
+            reward,
+            nbits,
+            mempool,
+            target_address.clone(),
         );
 
         if !zenachain::pow::mine(&mut block, nbits) {
@@ -49,7 +58,10 @@ fn main() {
         let block_json = serde_json::to_value(&block).unwrap();
         match rpc::call("submitblock", vec![block_json]) {
             Ok(r) if r.ok => {
-                println!("[miner] blok diterima: {}", serde_json::to_string(&r.result).unwrap());
+                println!(
+                    "[miner] blok diterima: {}",
+                    serde_json::to_string(&r.result).unwrap()
+                );
             }
             Ok(r) => println!("[miner] blok ditolak: {}", r.error),
             Err(e) => println!("[miner] gagal submit: {}", e),

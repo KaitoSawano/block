@@ -82,7 +82,14 @@ impl Block {
         nbits: u32,
         transactions: Vec<Transaction>,
     ) -> Self {
-        Self::new_for(index, previous_hash, reward, nbits, transactions, String::new())
+        Self::new_for(
+            index,
+            previous_hash,
+            reward,
+            nbits,
+            transactions,
+            String::new(),
+        )
     }
 
     pub fn new_for(
@@ -94,8 +101,7 @@ impl Block {
         mined_for: String,
     ) -> Self {
         let ts = now_millis();
-        let coinbase_txid =
-            sha3_256_hex(format!("{}|{}|{}", index, mined_for, ts).as_bytes());
+        let coinbase_txid = sha3_256_hex(format!("{}|{}|{}", index, mined_for, ts).as_bytes());
         let merkle_root = Self::compute_merkle_root(&transactions);
 
         let size = (previous_hash.len()
@@ -191,7 +197,10 @@ impl Block {
         eprintln!("pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =");
         eprintln!("    \"{}\";", b.merkle_root);
         eprintln!();
-        eprintln!("pub const EXPECTED_GENESIS_TIMESTAMP: u128 = {};", b.timestamp);
+        eprintln!(
+            "pub const EXPECTED_GENESIS_TIMESTAMP: u128 = {};",
+            b.timestamp
+        );
         eprintln!();
         eprintln!("pub const EXPECTED_GENESIS_NONCE: u64 = {};", b.nonce);
         eprintln!();
