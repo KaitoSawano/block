@@ -127,7 +127,6 @@ impl Block {
         b
     }
 
-    /// Tambang genesis. Deterministik: hasilnya sama setiap kali.
     fn genesis_mined() -> Self {
         let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
@@ -173,12 +172,6 @@ impl Block {
         b
     }
 
-    /// Genesis block. Bandingkan dengan `EXPECTED_GENESIS_*` di
-    /// `src/consensus/genesis.rs`.
-    ///
-    /// - Cocok: pakai genesis.
-    /// - Tidak cocok: cetak nilai genesis baru, keluar.
-    ///   Salin nilai ke `src/consensus/genesis.rs`, build ulang, jalankan lagi.
     pub fn genesis() -> Self {
         let b = Self::genesis_mined();
 
@@ -192,33 +185,15 @@ impl Block {
         }
 
         eprintln!();
-        eprintln!("============================================================");
-        eprintln!("  GENESIS TIDAK COCOK");
-        eprintln!("  Salin nilai berikut ke src/consensus/genesis.rs");
-        eprintln!("============================================================");
+        eprintln!("pub const EXPECTED_GENESIS_HASH: &str =");
+        eprintln!("    \"{}\";", b.hash);
         eprintln!();
-        eprintln!("  pub const EXPECTED_GENESIS_HASH: &str =");
-        eprintln!("      \"{}\";", b.hash);
+        eprintln!("pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =");
+        eprintln!("    \"{}\";", b.merkle_root);
         eprintln!();
-        eprintln!("  pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =");
-        eprintln!("      \"{}\";", b.merkle_root);
+        eprintln!("pub const EXPECTED_GENESIS_TIMESTAMP: u128 = {};", b.timestamp);
         eprintln!();
-        eprintln!("  pub const EXPECTED_GENESIS_TIMESTAMP: u128 = {};", b.timestamp);
-        eprintln!();
-        eprintln!("  pub const EXPECTED_GENESIS_NONCE: u64 = {};", b.nonce);
-        eprintln!();
-        eprintln!("------------------------------------------------------------");
-        eprintln!("  Perbandingan:");
-        eprintln!("  hash        : hitung {}", b.hash);
-        eprintln!("                saat ini {}", genesis::EXPECTED_GENESIS_HASH);
-        eprintln!("  merkle_root : hitung {}", b.merkle_root);
-        eprintln!("                saat ini {}", genesis::EXPECTED_GENESIS_MERKLE_ROOT);
-        eprintln!("  timestamp   : hitung {}", b.timestamp);
-        eprintln!("                saat ini {}", genesis::EXPECTED_GENESIS_TIMESTAMP);
-        eprintln!("  nonce       : hitung {}", b.nonce);
-        eprintln!("                saat ini {}", genesis::EXPECTED_GENESIS_NONCE);
-        eprintln!("============================================================");
-        eprintln!("  Setelah diubah, build ulang dan jalankan ulang ./zenachaind");
+        eprintln!("pub const EXPECTED_GENESIS_NONCE: u64 = {};", b.nonce);
         eprintln!();
 
         std::process::exit(1);
