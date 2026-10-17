@@ -69,9 +69,15 @@ fn transaction_with_self_send_is_rejected() {
 
 #[test]
 fn address_format_validation() {
-    assert!(validation::is_valid_address(&format!("ZENA{}", "a".repeat(40))));
+    assert!(validation::is_valid_address(&format!(
+        "ZENA{}",
+        "a".repeat(40)
+    )));
     assert!(!validation::is_valid_address("ZENA123"));
-    assert!(!validation::is_valid_address(&format!("XXXX{}", "a".repeat(40))));
+    assert!(!validation::is_valid_address(&format!(
+        "XXXX{}",
+        "a".repeat(40)
+    )));
 }
 
 #[test]

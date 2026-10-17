@@ -54,7 +54,10 @@ fn genesis_hash_matches_expected() {
 #[test]
 fn genesis_merkle_root_matches_expected() {
     let g = Block::genesis();
-    assert_eq!(g.merkle_root, consensus::genesis::EXPECTED_GENESIS_MERKLE_ROOT);
+    assert_eq!(
+        g.merkle_root,
+        consensus::genesis::EXPECTED_GENESIS_MERKLE_ROOT
+    );
 }
 
 #[test]

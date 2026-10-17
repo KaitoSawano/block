@@ -14,7 +14,10 @@ use zenachain::transaction::Transaction;
 
 fn main() {
     println!("[miner] zenachain-miner started");
-    println!("[miner] connecting to the node at {}", rpc::DEFAULT_RPC_ADDR);
+    println!(
+        "[miner] connecting to the node at {}",
+        rpc::DEFAULT_RPC_ADDR
+    );
 
     loop {
         let template = match rpc::call("getblocktemplate", vec![]) {
