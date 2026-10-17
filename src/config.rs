@@ -37,7 +37,9 @@ impl Config {
     /// Cari file config: cek di home dulu, lalu di datadir.
     pub fn find_config_path() -> Option<String> {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let home_conf = PathBuf::from(&home).join(".zenachain").join("zenachain.conf");
+        let home_conf = PathBuf::from(&home)
+            .join(".zenachain")
+            .join("zenachain.conf");
         if home_conf.exists() {
             return Some(home_conf.to_string_lossy().to_string());
         }
@@ -112,7 +114,7 @@ impl Config {
         out.push_str(&format!("port={}\n", port));
         out.push_str(&format!("listen={}\n", self.listen_addr));
         out.push_str(&format!("miningaddress={}\n", self.mining_address));
-        
+
         for b in &self.bootstrap {
             out.push_str(&format!("bootstrap={}\n", b));
         }

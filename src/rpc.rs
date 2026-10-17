@@ -57,17 +57,20 @@ pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
 
 pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     let mut stream = TcpStream::connect(&cfg.rpc_addr)?;
-    
+
     let auth = format!("{}:{}", cfg.rpc_user, cfg.rpc_password);
     let req = RpcRequest {
         method: method.to_string(),
         params,
     };
     let body = serde_json::to_string(&req).unwrap();
-    
+
     let request = format!(
         "POST / HTTP/1.1\r\nHost: {}\r\nAuthorization: {}\r\nContent-Length: {}\r\n\r\n{}",
-        cfg.rpc_addr, auth, body.len(), body
+        cfg.rpc_addr,
+        auth,
+        body.len(),
+        body
     );
 
     stream.write_all(request.as_bytes())?;
@@ -75,7 +78,7 @@ pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Resul
 
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
-    
+
     // Skip header HTTP
     loop {
         line.clear();
@@ -84,13 +87,12 @@ pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Resul
             break;
         }
     }
-    
+
     // Baca body
     let mut buf = String::new();
     reader.read_line(&mut buf)?;
 
-    let resp: RpcResponse = serde_json::from_str(buf.trim())
-        .map_err(std::io::Error::other)?;
+    let resp: RpcResponse = serde_json::from_str(buf.trim()).map_err(std::io::Error::other)?;
     Ok(resp)
 }
 
@@ -152,7 +154,7 @@ impl RpcServer {
     fn handle(&mut self, mut stream: TcpStream) -> std::io::Result<()> {
         let mut reader = BufReader::new(stream.try_clone()?);
         let mut line = String::new();
-        
+
         let mut auth_header = String::new();
         let mut content_length = 0;
 
@@ -167,7 +169,11 @@ impl RpcServer {
                 auth_header = line.trim_start_matches("Authorization:").trim().to_string();
             }
             if line.starts_with("Content-Length:") {
-                content_length = line.trim_start_matches("Content-Length:").trim().parse().unwrap_or(0);
+                content_length = line
+                    .trim_start_matches("Content-Length:")
+                    .trim()
+                    .parse()
+                    .unwrap_or(0);
             }
         }
 
@@ -914,12 +920,19 @@ fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
     }
 }
 
-fn write_http_response(mut stream: TcpStream, status: u16, resp: &RpcResponse) -> std::io::Result<()> {
+fn write_http_response(
+    mut stream: TcpStream,
+    status: u16,
+    resp: &RpcResponse,
+) -> std::io::Result<()> {
     let body = serde_json::to_string(resp).unwrap();
     let status_text = if status == 200 { "OK" } else { "Error" };
     let response = format!(
         "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-        status, status_text, body.len(), body
+        status,
+        status_text,
+        body.len(),
+        body
     );
     stream.write_all(response.as_bytes())?;
     stream.flush()
@@ -936,7 +949,10 @@ pub fn call_and_print(method: &str, params: Vec<Value>) {
         }
         Err(e) => {
             let cfg = Config::load_or_default();
-            println!("[rpc] tidak dapat menghubungi node di {}: {}", cfg.rpc_addr, e);
+            println!(
+                "[rpc] tidak dapat menghubungi node di {}: {}",
+                cfg.rpc_addr, e
+            );
             println!("[rpc] jalankan zenachaind terlebih dahulu.");
         }
     }
