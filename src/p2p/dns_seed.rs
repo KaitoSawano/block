@@ -3,13 +3,15 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! DNS seed resolution for peer discovery.
+
 use std::net::SocketAddr;
 
-/// Daftar DNS seed ZenaChain.
-/// Isi dengan hostname nyata saat sudah di-deploy.
+/// List of ZenaChain DNS seeds.
+/// Populate this list with real hostnames once the seeds are deployed.
 pub const DNS_SEEDS: &[&str] = &[];
 
-/// Query semua DNS seed dan kembalikan daftar SocketAddr.
+/// Resolve every DNS seed and return the resulting socket addresses.
 pub async fn resolve_seeds() -> Vec<SocketAddr> {
     let mut out = Vec::new();
     for seed in DNS_SEEDS {
@@ -20,19 +22,19 @@ pub async fn resolve_seeds() -> Vec<SocketAddr> {
                 }
             }
             Err(e) => {
-                eprintln!("[dns_seed] gagal resolve {}: {}", seed, e);
+                eprintln!("[dns_seed] failed to resolve {}: {}", seed, e);
             }
         }
     }
     out
 }
 
-/// Query DNS seed tertentu.
+/// Resolve a single DNS seed.
 pub async fn resolve_one(seed: &str) -> Vec<SocketAddr> {
     match tokio::net::lookup_host(seed).await {
         Ok(iter) => iter.collect(),
         Err(e) => {
-            eprintln!("[dns_seed] gagal resolve {}: {}", seed, e);
+            eprintln!("[dns_seed] failed to resolve {}: {}", seed, e);
             Vec::new()
         }
     }
