@@ -3,12 +3,17 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Version and Verack handshaking for the ZenaChain peer-to-peer network.
+
 use std::net::SocketAddr;
 
 use crate::blockchain::Blockchain;
-use crate::p2p::message::{Message, NetAddr, VersionMessage, PROTOCOL_VERSION, USER_AGENT};
+use crate::p2p::message::{
+    Message, NetAddr, VersionMessage, PROTOCOL_VERSION, USER_AGENT,
+};
 use crate::p2p::peer::{Peer, PeerState};
 
+/// Build a Version message to be sent to the peer.
 pub fn build_version(chain: &Blockchain, peer: &Peer, local_addr: SocketAddr) -> Message {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -28,20 +33,21 @@ pub fn build_version(chain: &Blockchain, peer: &Peer, local_addr: SocketAddr) ->
     })
 }
 
+/// Process a Version message from the peer.
 pub fn handle_version(peer: &mut Peer, msg: &VersionMessage) -> Result<(), String> {
     if peer.state != PeerState::Handshaking {
-        return Err("version diterima di state yang salah".into());
+        return Err("version received in the wrong state".into());
     }
 
     if msg.protocol_version < PROTOCOL_VERSION {
         return Err(format!(
-            "protocol version peer {} terlalu rendah (minimum {})",
+            "peer protocol version {} is below the minimum {}",
             msg.protocol_version, PROTOCOL_VERSION
         ));
     }
 
     if msg.nonce == peer.local_nonce {
-        return Err("self-connection terdeteksi".into());
+        return Err("self-connection detected".into());
     }
 
     peer.protocol_version = msg.protocol_version;
@@ -52,17 +58,21 @@ pub fn handle_version(peer: &mut Peer, msg: &VersionMessage) -> Result<(), Strin
     Ok(())
 }
 
+/// Process a Verack message from the peer.
+/// Return `true` if the handshake is complete.
 pub fn handle_verack(peer: &mut Peer) -> Result<bool, String> {
     if peer.state != PeerState::Handshaking {
-        return Err("verack diterima di state yang salah".into());
+        return Err("verack received in the wrong state".into());
     }
     if peer.protocol_version == 0 {
-        return Err("verack diterima sebelum version".into());
+        return Err("verack received before version".into());
     }
     peer.state = PeerState::Connected;
     Ok(true)
 }
 
+/// Validate that the peer sends the correct network magic. The actual
+/// check is performed by the framing layer.
 pub fn validate_magic(_peer: &Peer) -> bool {
     true
 }
@@ -78,7 +88,7 @@ mod tests {
     }
 
     #[test]
-    fn version_valid() {
+    fn valid_version() {
         let mut peer = dummy_peer();
         let msg = VersionMessage {
             protocol_version: PROTOCOL_VERSION,
@@ -96,7 +106,7 @@ mod tests {
     }
 
     #[test]
-    fn version_self_connection_ditolak() {
+    fn self_connection_is_rejected() {
         let mut peer = dummy_peer();
         let nonce = peer.local_nonce;
         let msg = VersionMessage {
@@ -114,7 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn verack_setelah_version() {
+    fn verack_after_version() {
         let mut peer = dummy_peer();
         let msg = VersionMessage {
             protocol_version: PROTOCOL_VERSION,
@@ -133,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn verack_tanpa_version_ditolak() {
+    fn verack_without_version_is_rejected() {
         let mut peer = dummy_peer();
         assert!(handle_verack(&mut peer).is_err());
     }
