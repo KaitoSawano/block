@@ -1,7 +1,4 @@
 //! Loop utama jaringan P2P ZenaChain.
-//!
-//! Mengelola TcpListener, koneksi masuk/keluar, handshake, ping,
-//! sync header/blok, dan relay inventory.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -10,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use crate::block::Block;
 use crate::blockchain::Blockchain;
@@ -19,13 +16,12 @@ use crate::p2p::dns_seed;
 use crate::p2p::framing::{read_message, write_message};
 use crate::p2p::handshake;
 use crate::p2p::inv::InventoryManager;
-use crate::p2p::message::{BlockLocator, InvType, Inventory, Message};
+use crate::p2p::message::{BlockLocator, Inventory, InvType, Message};
 use crate::p2p::peer_manager::{PeerEvent, PeerManager};
 use crate::p2p::peers;
 use crate::storage;
 use crate::validation;
 
-/// Konfigurasi jaringan.
 #[derive(Debug, Clone)]
 pub struct NetworkConfig {
     pub listen_addr: SocketAddr,
@@ -55,20 +51,16 @@ impl Default for NetworkConfig {
     }
 }
 
-/// State satu koneksi aktif.
 struct Connection {
-    id: u64,
     stream: TcpStream,
     addr: SocketAddr,
-    outbound: bool,
     read_buf: Vec<u8>,
     write_buf: Vec<u8>,
 }
 
-/// Jaringan P2P.
 pub struct Network {
     config: NetworkConfig,
-    chain: Arc<Mutex<Blockchain>>,
+    chain: Arc<RwLock<Blockchain>>,
     peer_manager: PeerManager,
     addr_book: AddrBook,
     inv: InventoryManager,
@@ -79,7 +71,7 @@ pub struct Network {
 }
 
 impl Network {
-    pub fn new(config: NetworkConfig, chain: Arc<Mutex<Blockchain>>) -> Self {
+    pub fn new(config: NetworkConfig, chain: Arc<RwLock<Blockchain>>) -> Self {
         let peer_manager = PeerManager::new(
             config.max_peers,
             config.max_outbound,
@@ -101,7 +93,6 @@ impl Network {
         }
     }
 
-    /// Jalankan loop utama. Tidak pernah return kecuali error fatal.
     pub async fn run(&mut self) -> Result<(), String> {
         let listener = TcpListener::bind(self.config.listen_addr)
             .await
@@ -193,10 +184,8 @@ impl Network {
                     self.connections.insert(
                         id,
                         Connection {
-                            id,
                             stream,
                             addr,
-                            outbound: true,
                             read_buf: Vec::new(),
                             write_buf: Vec::new(),
                         },
@@ -223,10 +212,8 @@ impl Network {
         self.connections.insert(
             id,
             Connection {
-                id,
                 stream,
                 addr,
-                outbound: false,
                 read_buf: Vec::new(),
                 write_buf: Vec::new(),
             },
@@ -244,7 +231,7 @@ impl Network {
             Some(a) => a,
             None => return,
         };
-        let chain = self.chain.lock().await;
+        let chain = self.chain.read().await;
         let msg = handshake::build_version(&chain, &peer, local);
         drop(chain);
         self.queue_message(id, &msg);
@@ -382,8 +369,7 @@ impl Network {
                         self.queue_message(id, &Message::Verack);
                     }
                     Err(e) => {
-                        self.disconnect(id, &format!("version ditolak: {}", e))
-                            .await;
+                        self.disconnect(id, &format!("version ditolak: {}", e)).await;
                     }
                 }
             }
@@ -444,11 +430,13 @@ impl Network {
                     return;
                 }
                 let mut to_request = Vec::new();
-                let chain = self.chain.lock().await;
+                let chain = self.chain.read().await;
                 for inv in &new_items {
                     if inv.inv_type == InvType::Block && !self.inv.has_block(&inv.hash) {
                         to_request.push(inv.clone());
-                    } else if inv.inv_type == InvType::Transaction && !self.inv.has_tx(&inv.hash) {
+                    } else if inv.inv_type == InvType::Transaction
+                        && !self.inv.has_tx(&inv.hash)
+                    {
                         if chain.mempool.iter().any(|t| t.txid == inv.hash) {
                             self.inv.add_tx(&inv.hash);
                         } else {
@@ -462,7 +450,7 @@ impl Network {
                 }
             }
             Message::GetData(items) => {
-                let chain = self.chain.lock().await;
+                let chain = self.chain.read().await;
                 for inv in items {
                     match inv.inv_type {
                         InvType::Block => {
@@ -487,7 +475,7 @@ impl Network {
                 }
             }
             Message::GetHeaders(loc) => {
-                let chain = self.chain.lock().await;
+                let chain = self.chain.read().await;
                 let headers = build_headers_response(&chain, &loc);
                 drop(chain);
                 self.queue_message(id, &Message::Headers(headers));
@@ -499,7 +487,7 @@ impl Network {
                 self.handle_block(id, b).await;
             }
             Message::Tx(tx) => {
-                let mut chain = self.chain.lock().await;
+                let mut chain = self.chain.write().await;
                 if chain.add_transaction(tx.clone()) {
                     self.inv.add_tx(&tx.txid);
                     drop(chain);
@@ -526,7 +514,7 @@ impl Network {
         if headers.is_empty() {
             return;
         }
-        let chain = self.chain.lock().await;
+        let chain = self.chain.read().await;
         let tip = match chain.chain.last() {
             Some(b) => b.clone(),
             None => return,
@@ -563,7 +551,7 @@ impl Network {
     }
 
     async fn handle_block(&mut self, id: u64, block: Block) {
-        let mut chain = self.chain.lock().await;
+        let mut chain = self.chain.write().await;
         match crate::p2p::sync::SyncState::accept_block(&mut chain, block.clone()) {
             Ok(_) => {
                 self.inv.add_block(&block.hash);
@@ -640,7 +628,7 @@ impl Network {
     }
 
     async fn send_getheaders(&mut self, id: u64) {
-        let chain = self.chain.lock().await;
+        let chain = self.chain.read().await;
         let locator = build_locator(&chain);
         drop(chain);
         self.queue_message(id, &Message::GetHeaders(locator));
@@ -695,7 +683,7 @@ fn build_headers_response(chain: &Blockchain, loc: &BlockLocator) -> Vec<Block> 
 
 pub fn spawn(
     config: NetworkConfig,
-    chain: Arc<Mutex<Blockchain>>,
+    chain: Arc<RwLock<Blockchain>>,
 ) -> tokio::task::JoinHandle<Result<(), String>> {
     tokio::spawn(async move {
         let mut net = Network::new(config, chain);
