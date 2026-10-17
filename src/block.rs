@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Aldianokto
 // Copyright (c) 2026-present Zenachain Core developers
 // Distributed under the MIT software license, see the accompanying
-// file LICENSE or https://opensource.org/license/mit
+// file LICENSE or https://opensource.org/license/mit.
 
 use crate::blockchain::{self, Blockchain};
 use crate::consensus::{genesis, pow as cpow, rules};
