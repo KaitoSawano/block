@@ -1,7 +1,8 @@
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use zenachain::blockchain::Blockchain;
 use zenachain::config::Config;
@@ -27,7 +28,7 @@ async fn main() {
         println!("[config] file config dibuat di {}", Config::default_path());
     }
 
-    let chain = Arc::new(Mutex::new(
+    let chain = Arc::new(RwLock::new(
         storage::load_chain().unwrap_or_else(|_| Blockchain::new()),
     ));
 
@@ -56,32 +57,34 @@ async fn main() {
 
     let chain_for_rpc = chain.clone();
     let cfg_for_rpc = config.clone();
-    tokio::spawn(async move {
-        let chain_guard = chain_for_rpc.lock().await.clone();
-        let mut server = RpcServer::new(chain_guard, &cfg_for_rpc);
-        server.listen();
-    });
+    let rpc_shutdown = {
+        let mut server = RpcServer::new(chain_for_rpc.clone(), &cfg_for_rpc);
+        let flag = server.shutdown_flag();
+        tokio::task::spawn_blocking(move || {
+            server.listen();
+        });
+        flag
+    };
 
     let net_handle = spawn(net_config, chain.clone());
 
-    tokio::select! {
-        res = net_handle => {
-            match res {
-                Ok(Ok(())) => println!("[p2p] network berhenti"),
-                Ok(Err(e)) => eprintln!("[p2p] network error: {}", e),
-                Err(e) => eprintln!("[p2p] task error: {}", e),
-            }
+    loop {
+        if rpc_shutdown.load(Ordering::SeqCst) {
+            println!("[node] shutdown diminta via RPC");
+            break;
         }
-        _ = tokio::signal::ctrl_c() => {
-            println!("\n[signal] Ctrl+C diterima. Menyimpan chain...");
-            let guard = chain.lock().await;
-            if let Err(e) = storage::save_chain(&guard) {
-                eprintln!("[node] gagal simpan chain: {}", e);
-            } else {
-                println!("[node] chain disimpan");
-            }
-        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
+
+    let guard = chain.read().await;
+    if let Err(e) = storage::save_chain(&guard) {
+        eprintln!("[node] gagal simpan chain: {}", e);
+    } else {
+        println!("[node] chain disimpan");
+    }
+    drop(guard);
+
+    net_handle.abort();
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     println!("[node] shutdown selesai");
