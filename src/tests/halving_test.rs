@@ -13,18 +13,26 @@ fn reward_era_0() {
 
 #[test]
 fn reward_era_1() {
-    let r = Blockchain::calculate_reward(blockchain::halving_interval_blocks());
-    assert_eq!(r, blockchain::initial_reward() / 2);
+    let r = Blockchain::calculate_reward(blockchain::subsidy_halving_interval());
+    assert_eq!(r, blockchain::initial_reward() >> 1);
 }
 
 #[test]
 fn reward_era_2() {
-    let r = Blockchain::calculate_reward(blockchain::halving_interval_blocks() * 2);
-    assert_eq!(r, blockchain::initial_reward() / 4);
+    let r = Blockchain::calculate_reward(blockchain::subsidy_halving_interval() * 2);
+    assert_eq!(r, blockchain::initial_reward() >> 2);
 }
 
 #[test]
-fn reward_batas_halving() {
-    let r = Blockchain::calculate_reward(blockchain::halving_interval_blocks() * 100);
+fn reward_at_max_halvings_is_zero() {
+    let height = blockchain::subsidy_halving_interval() * (blockchain::max_halvings() as u64);
+    let r = Blockchain::calculate_reward(height);
+    assert_eq!(r, 0);
+}
+
+#[test]
+fn reward_beyond_max_halvings_is_zero() {
+    let height = blockchain::subsidy_halving_interval() * (blockchain::max_halvings() as u64 + 1);
+    let r = Blockchain::calculate_reward(height);
     assert_eq!(r, 0);
 }
