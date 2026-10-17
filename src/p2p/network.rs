@@ -3,6 +3,12 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Main network loop for the ZenaChain peer-to-peer layer.
+//!
+//! This module manages the TCP listener, inbound and outbound
+//! connections, handshaking, ping scheduling, header and block
+//! synchronization, and inventory relay.
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -19,7 +25,7 @@ use crate::p2p::dns_seed;
 use crate::p2p::framing::{read_message, write_message};
 use crate::p2p::handshake;
 use crate::p2p::inv::InventoryManager;
-use crate::p2p::message::{BlockLocator, InvType, Inventory, Message};
+use crate::p2p::message::{BlockLocator, Inventory, InvType, Message};
 use crate::p2p::peer_manager::{PeerEvent, PeerManager};
 use crate::p2p::peers;
 use crate::storage;
@@ -99,13 +105,13 @@ impl Network {
     pub async fn run(&mut self) -> Result<(), String> {
         let listener = TcpListener::bind(self.config.listen_addr)
             .await
-            .map_err(|e| format!("gagal bind {}: {}", self.config.listen_addr, e))?;
+            .map_err(|e| format!("failed to bind {}: {}", self.config.listen_addr, e))?;
         let local = listener
             .local_addr()
-            .map_err(|e| format!("gagal local_addr: {}", e))?;
+            .map_err(|e| format!("failed to get local address: {}", e))?;
         self.local_addr = Some(local);
         self.listener = Some(listener);
-        println!("[p2p] listen di {}", local);
+        println!("[p2p] listening on {}", local);
 
         for addr in &self.config.bootstrap {
             self.addr_book.add(*addr);
@@ -115,7 +121,7 @@ impl Network {
             let seeds = dns_seed::resolve_seeds().await;
             let n = self.addr_book.add_many(&seeds);
             if n > 0 {
-                println!("[p2p] {} peer dari DNS seed", n);
+                println!("[p2p] {} peers discovered from DNS seeds", n);
             }
         }
 
@@ -145,7 +151,7 @@ impl Network {
                             self.on_inbound(stream, addr).await;
                         }
                         Err(e) => {
-                            eprintln!("[p2p] accept gagal: {}", e);
+                            eprintln!("[p2p] accept failed: {}", e);
                         }
                     }
                 }
@@ -193,11 +199,11 @@ impl Network {
                             write_buf: Vec::new(),
                         },
                     );
-                    println!("[p2p] outbound ke {}", addr);
+                    println!("[p2p] outbound connection to {}", addr);
                     self.send_version(id).await;
                 }
                 Err(e) => {
-                    eprintln!("[p2p] gagal connect {}: {}", addr, e);
+                    eprintln!("[p2p] failed to connect to {}: {}", addr, e);
                 }
             }
         }
@@ -207,7 +213,7 @@ impl Network {
 
     async fn on_inbound(&mut self, stream: TcpStream, addr: SocketAddr) {
         if !self.peer_manager.can_accept_inbound() {
-            eprintln!("[p2p] tolak inbound {}: peer penuh", addr);
+            eprintln!("[p2p] rejecting inbound {}: peer limit reached", addr);
             return;
         }
         let _ = stream.set_nodelay(true);
@@ -221,7 +227,7 @@ impl Network {
                 write_buf: Vec::new(),
             },
         );
-        println!("[p2p] inbound dari {}", addr);
+        println!("[p2p] inbound connection from {}", addr);
         self.send_version(id).await;
     }
 
@@ -270,7 +276,7 @@ impl Network {
             let read_result = tokio::time::timeout(Duration::from_millis(10), read_fut).await;
 
             match read_result {
-                Ok(Ok(0)) => (Err("peer menutup koneksi".to_string()), false),
+                Ok(Ok(0)) => (Err("peer closed the connection".to_string()), false),
                 Ok(Ok(n)) => {
                     conn.read_buf.extend_from_slice(&buf[..n]);
                     (Ok(n), !conn.write_buf.is_empty())
@@ -306,7 +312,7 @@ impl Network {
         }
         let data = std::mem::take(&mut conn.write_buf);
         if let Err(e) = conn.stream.write_all(&data).await {
-            eprintln!("[p2p] write gagal ke {}: {}", conn.addr, e);
+            eprintln!("[p2p] write failed to {}: {}", conn.addr, e);
         }
     }
 
@@ -329,7 +335,7 @@ impl Network {
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return,
                     Err(e) => {
-                        eprintln!("[p2p] framing error dari {}: {}", conn.addr, e);
+                        eprintln!("[p2p] framing error from {}: {}", conn.addr, e);
                         self.disconnect(id, "framing error").await;
                         return;
                     }
@@ -348,8 +354,8 @@ impl Network {
         let msg = match Message::deserialize(cmd, payload) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("[p2p] pesan tidak valid dari {}: {}", id, e);
-                self.punish(id, 10, "pesan tidak valid").await;
+                eprintln!("[p2p] invalid message from {}: {}", id, e);
+                self.punish(id, 10, "invalid message").await;
                 return;
             }
         };
@@ -372,8 +378,7 @@ impl Network {
                         self.queue_message(id, &Message::Verack);
                     }
                     Err(e) => {
-                        self.disconnect(id, &format!("version ditolak: {}", e))
-                            .await;
+                        self.disconnect(id, &format!("version rejected: {}", e)).await;
                     }
                 }
             }
@@ -392,7 +397,7 @@ impl Network {
                     }
                     Ok(false) => {}
                     Err(e) => {
-                        self.disconnect(id, &format!("verack ditolak: {}", e)).await;
+                        self.disconnect(id, &format!("verack rejected: {}", e)).await;
                     }
                 }
             }
@@ -425,7 +430,7 @@ impl Network {
                     }
                 }
                 if count > 0 {
-                    println!("[p2p] {} alamat baru dari {}", count, id);
+                    println!("[p2p] {} new addresses from {}", count, id);
                 }
             }
             Message::Inv(items) => {
@@ -438,7 +443,9 @@ impl Network {
                 for inv in &new_items {
                     if inv.inv_type == InvType::Block && !self.inv.has_block(&inv.hash) {
                         to_request.push(inv.clone());
-                    } else if inv.inv_type == InvType::Transaction && !self.inv.has_tx(&inv.hash) {
+                    } else if inv.inv_type == InvType::Transaction
+                        && !self.inv.has_tx(&inv.hash)
+                    {
                         if chain.mempool.iter().any(|t| t.txid == inv.hash) {
                             self.inv.add_tx(&inv.hash);
                         } else {
@@ -505,7 +512,7 @@ impl Network {
                 reason,
             } => {
                 eprintln!(
-                    "[p2p] reject dari {}: {} code={} reason={}",
+                    "[p2p] reject from {}: {} code={} reason={}",
                     id, command, code, reason
                 );
             }
@@ -524,19 +531,19 @@ impl Network {
         let first = &headers[0];
         if first.index != tip.index + 1 || first.previous_hash != tip.hash {
             drop(chain);
-            self.punish(id, 20, "header tidak nyambung").await;
+            self.punish(id, 20, "headers do not connect to the tip").await;
             return;
         }
         let mut to_request = Vec::new();
         for h in &headers {
             if validation::rule_block_pow(h).is_err() {
                 drop(chain);
-                self.punish(id, 50, "header pow tidak valid").await;
+                self.punish(id, 50, "invalid header proof of work").await;
                 return;
             }
             if validation::rule_block_reward(h).is_err() {
                 drop(chain);
-                self.punish(id, 50, "header reward tidak valid").await;
+                self.punish(id, 50, "invalid header reward").await;
                 return;
             }
             if !self.inv.has_block(&h.hash) {
@@ -563,11 +570,11 @@ impl Network {
                     inv_type: InvType::Block,
                     hash: block.hash.clone(),
                 }]);
-                println!("[p2p] blok {} diterima dari {}", block.index, id);
+                println!("[p2p] block {} accepted from {}", block.index, id);
             }
             Err(e) => {
                 drop(chain);
-                self.punish(id, 50, &format!("blok ditolak: {}", e)).await;
+                self.punish(id, 50, &format!("block rejected: {}", e)).await;
             }
         }
     }
@@ -610,7 +617,7 @@ impl Network {
         for ev in events {
             match ev {
                 PeerEvent::HandshakeComplete(id) => {
-                    println!("[p2p] handshake selesai dengan {}", id);
+                    println!("[p2p] handshake complete with {}", id);
                     self.send_getheaders(id).await;
                     self.queue_message(id, &Message::GetAddr);
                 }
@@ -619,10 +626,10 @@ impl Network {
                 }
                 PeerEvent::Disconnected(id, reason) => {
                     self.connections.remove(&id);
-                    println!("[p2p] peer {} disconnect: {}", id, reason);
+                    println!("[p2p] peer {} disconnected: {}", id, reason);
                 }
                 PeerEvent::Banned(id, reason) => {
-                    println!("[p2p] peer {} diban: {}", id, reason);
+                    println!("[p2p] peer {} banned: {}", id, reason);
                 }
                 _ => {}
             }
