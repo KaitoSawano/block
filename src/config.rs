@@ -21,7 +21,7 @@ impl Config {
             rpc_addr: "127.0.0.1:8332".to_string(),
             rpc_user: "zenachain".to_string(),
             rpc_password: "rahasia".to_string(),
-            listen_addr: "/ip4/0.0.0.0/tcp/8333".to_string(),
+            listen_addr: "0.0.0.0:8333".to_string(),
             bootstrap: Vec::new(),
             mining_address: "ZENAMINERDEFAULT".to_string(),
             created_at: crate::utils::now_millis(),
@@ -65,8 +65,8 @@ impl Config {
                 "rpcbind" => cfg.rpc_addr = value.to_string(),
                 "rpcuser" => cfg.rpc_user = value.to_string(),
                 "rpcpassword" => cfg.rpc_password = value.to_string(),
-                "port" => cfg.listen_addr = format!("/ip4/0.0.0.0/tcp/{}", value),
-                "listen" => cfg.listen_addr = value.to_string(),
+                "port" => cfg.listen_addr = format!("0.0.0.0:{}", value),
+                "listen" => cfg.listen_addr = normalize_listen_addr(value),
                 "bootstrap" => cfg.bootstrap.push(value.to_string()),
                 "miningaddress" => cfg.mining_address = value.to_string(),
                 _ => {}
@@ -104,4 +104,28 @@ impl Default for Config {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Normalisasi alamat listen. Kalau masih dalam format multiaddr libp2p
+/// (`/ip4/0.0.0.0/tcp/8333`), ubah ke SocketAddr (`0.0.0.0:8333`).
+/// Kalau sudah SocketAddr, kembalikan apa adanya.
+fn normalize_listen_addr(value: &str) -> String {
+    if value.starts_with('/') {
+        // Format multiaddr: /ip4/<ip>/tcp/<port> atau /ip6/<ip>/tcp/<port>
+        let parts: Vec<&str> = value.trim_start_matches('/').split('/').collect();
+        if parts.len() >= 4 {
+            let proto = parts[0];
+            let ip = parts[1];
+            let port = parts[3];
+            if (proto == "ip4" || proto == "ip6") && parts[2] == "tcp" {
+                if proto == "ip6" {
+                    return format!("[{}]:{}", ip, port);
+                }
+                return format!("{}:{}", ip, port);
+            }
+        }
+        // Fallback kalau format tidak dikenal
+        return "0.0.0.0:8333".to_string();
+    }
+    value.to_string()
 }
