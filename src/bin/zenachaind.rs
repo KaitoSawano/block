@@ -12,17 +12,6 @@ use zenachain::rpc::RpcServer;
 
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let is_daemon = args.iter().any(|a| a == "--daemon" || a == "-d");
-
-    // Jika dijalankan sebagai daemon, lepaskan dari terminal.
-    // Ini persis seperti `bitcoind -daemon`.
-    if is_daemon {
-        unsafe {
-            libc::daemon(0, 0);
-        }
-    }
-
     let mut chain = Blockchain::new();
 
     println!("ZenaChain server starting");
@@ -57,7 +46,7 @@ async fn main() {
                     println!("[signal] SIGTERM diabaikan. Gunakan `./zenachain stop` untuk berhenti.");
                 }
                 _ = sighup.recv() => {
-                    println!("[signal] SIGHUP (terminal ditutup) diabaikan. Node tetap jalan.");
+                    println!("[signal] SIGHUP diabaikan. Node tetap jalan.");
                 }
                 _ = sigquit.recv() => {
                     println!("[signal] SIGQUIT diabaikan. Gunakan `./zenachain stop` untuk berhenti.");
@@ -116,59 +105,71 @@ async fn main() {
 
     let blocks_topic = gossipsub::IdentTopic::new(p2p::TOPIC_BLOCKS);
 
-    while let Some(event) = swarm.next().await {
-        match event {
-            libp2p::swarm::SwarmEvent::Behaviour(
-                p2p::behaviour::ZenaBehaviourEvent::Identify(identify::Event::Received {
-                    peer_id,
-                    ..
-                }),
-            ) => {
-                if !requested_headers.contains(&peer_id) {
-                    requested_headers.insert(peer_id);
+    // Loop utama. Node tidak akan pernah keluar dari sini 
+    // kecuali ada sinyal panik atau dimatikan paksa oleh OS.
+    loop {
+        match swarm.next().await {
+            Some(event) => {
+                match event {
+                    libp2p::swarm::SwarmEvent::Behaviour(
+                        p2p::behaviour::ZenaBehaviourEvent::Identify(identify::Event::Received {
+                            peer_id,
+                            ..
+                        }),
+                    ) => {
+                        if !requested_headers.contains(&peer_id) {
+                            requested_headers.insert(peer_id);
 
-                    let msg = sync_state.make_get_headers(&chain);
-                    let request_id =
-                        swarm.behaviour_mut().sync.send_request(&peer_id, msg.to_bytes());
+                            let msg = sync_state.make_get_headers(&chain);
+                            let request_id =
+                                swarm.behaviour_mut().sync.send_request(&peer_id, msg.to_bytes());
 
-                    println!(
-                        "[p2p] minta header dari {} (request {:?})",
-                        peer_id, request_id
-                    );
+                            println!(
+                                "[p2p] minta header dari {} (request {:?})",
+                                peer_id, request_id
+                            );
+                        }
+                    }
+
+                    libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Sync(
+                        RrEvent::Message { peer, message, .. },
+                    )) => match message {
+                        RrMessage::Response { response, .. } => {
+                            if let Some(msg) = SyncMessage::from_bytes(&response) {
+                                handle_sync_message(&mut swarm, &mut chain, &mut sync_state, peer, msg);
+                            }
+                        }
+                        RrMessage::Request { request, channel, .. } => {
+                            if let Some(msg) = SyncMessage::from_bytes(&request) {
+                                let reply = handle_sync_request(&chain, msg);
+                                let _ = swarm
+                                    .behaviour_mut()
+                                    .sync
+                                    .send_response(channel, reply.to_bytes());
+                            }
+                        }
+                    },
+
+                    libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Gossipsub(
+                        gossipsub::Event::Message { message, .. },
+                    )) if message.topic == blocks_topic.hash() => {
+                        if let Ok(block) = serde_json::from_slice::<Block>(&message.data) {
+                            match SyncState::accept_block(&mut chain, block) {
+                                Ok(_) => println!("[p2p] blok diterima dari gossip"),
+                                Err(e) => println!("[p2p] blok gossip ditolak: {}", e),
+                            }
+                        }
+                    }
+
+                    _ => {}
                 }
             }
-
-            libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Sync(
-                RrEvent::Message { peer, message, .. },
-            )) => match message {
-                RrMessage::Response { response, .. } => {
-                    if let Some(msg) = SyncMessage::from_bytes(&response) {
-                        handle_sync_message(&mut swarm, &mut chain, &mut sync_state, peer, msg);
-                    }
-                }
-                RrMessage::Request { request, channel, .. } => {
-                    if let Some(msg) = SyncMessage::from_bytes(&request) {
-                        let reply = handle_sync_request(&chain, msg);
-                        let _ = swarm
-                            .behaviour_mut()
-                            .sync
-                            .send_response(channel, reply.to_bytes());
-                    }
-                }
-            },
-
-            libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Gossipsub(
-                gossipsub::Event::Message { message, .. },
-            )) if message.topic == blocks_topic.hash() => {
-                if let Ok(block) = serde_json::from_slice::<Block>(&message.data) {
-                    match SyncState::accept_block(&mut chain, block) {
-                        Ok(_) => println!("[p2p] blok diterima dari gossip"),
-                        Err(e) => println!("[p2p] blok gossip ditolak: {}", e),
-                    }
-                }
+            None => {
+                // Swarm berhenti. Di libp2p ini sangat jarang terjadi, 
+                // tapi kalau terjadi, kita cegah program keluar.
+                println!("[p2p] swarm berhenti. Menunggu...");
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
-
-            _ => {}
         }
     }
 }
