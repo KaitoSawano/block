@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Chain synchronization logic for the ZenaChain peer-to-peer network.
+
 use crate::block::Block;
 use crate::blockchain::Blockchain;
 use crate::validation;
@@ -26,25 +28,27 @@ impl SyncState {
         self.best_known_height <= chain.height()
     }
 
+    /// Validate a block received from a peer and append it to the chain.
+    /// The difficulty is adjusted after the block is appended.
     pub fn accept_block(chain: &mut Blockchain, block: Block) -> Result<(), String> {
         let prev = match chain.chain.last() {
             Some(p) => p.clone(),
-            None => return Err("chain kosong".into()),
+            None => return Err("chain is empty".into()),
         };
 
         if block.index != prev.index + 1 {
             return Err(format!(
-                "blok index {} tidak nyambung dengan tip {}",
+                "block index {} does not follow tip {}",
                 block.index, prev.index
             ));
         }
 
         if block.previous_hash != prev.hash {
-            return Err(format!("blok {} previous_hash tidak cocok", block.index));
+            return Err(format!("block {} previous_hash mismatch", block.index));
         }
 
         if let Err(e) = validation::validate_block(chain, &prev, &block) {
-            return Err(format!("blok {} ditolak: {}", block.index, e));
+            return Err(format!("block {} rejected: {}", block.index, e));
         }
 
         chain.chain.push(block);
