@@ -1,4 +1,7 @@
-//! Konstanta aturan validasi konsensus ZenaChain.
+// Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
 
 pub const COINBASE_MATURITY: u64 = 100;
 pub const ADDRESS_PREFIX: &str = "ZENA";
