@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Mempool representation.
+
 use crate::transaction::Transaction;
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +18,7 @@ impl Mempool {
         Mempool { txs: Vec::new() }
     }
 
+    /// Add a transaction to the mempool if it is valid.
     pub fn add(&mut self, tx: Transaction) -> bool {
         if tx.is_valid() {
             self.txs.push(tx);
@@ -25,6 +28,7 @@ impl Mempool {
         }
     }
 
+    /// Remove and return all transactions from the mempool.
     pub fn drain(&mut self) -> Vec<Transaction> {
         std::mem::take(&mut self.txs)
     }
@@ -32,6 +36,7 @@ impl Mempool {
     pub fn len(&self) -> usize {
         self.txs.len()
     }
+
     pub fn is_empty(&self) -> bool {
         self.txs.is_empty()
     }
