@@ -241,12 +241,15 @@ impl RpcHandler {
             "getbalance" => self.m_getbalance(req),
             "getblockhash" => self.m_getblockhash(req),
             "getblock" => self.m_getblock(req),
+            "getblockheader" => self.m_getblockheader(req),
             "getblockcount" => self.m_getblockcount(),
             "getbestblockhash" => self.m_getbestblockhash(),
+            "getdifficulty" => self.m_getdifficulty(),
+            "getchaintips" => self.m_getchaintips(),
             "verifychain" => self.m_verifychain(),
             "getgenesishash" => self.m_getgenesishash(),
             "getgenesis" => self.m_getgenesis(),
-            "getlistwallet" => m_getlistwallet(),
+            "getlistwallet" => m_getlistwallet(self.state.chain.clone()),
             "dumpprivkey" => m_dumpprivkey(req),
             "importprivkey" => m_importprivkey(req),
             "getnewwallet" => m_getnewwallet(),
@@ -264,9 +267,6 @@ impl RpcHandler {
             "listunspent" => self.m_listunspent(req),
             "getmempoolinfo" => self.m_getmempoolinfo(),
             "validatemempool" => self.m_validatemempool(),
-            "getdifficulty" => self.m_getdifficulty(),
-            "getblockheader" => self.m_getblockheader(req),
-            "getchaintips" => self.m_getchaintips(),
             _ => RpcResponse::err("unknown method"),
         }
     }
@@ -494,6 +494,37 @@ impl RpcHandler {
         }))
     }
 
+    fn m_getblockheader(&self, req: &RpcRequest) -> RpcResponse {
+        let hash = match req.params.first().and_then(|v| v.as_str()) {
+            Some(h) => h,
+            None => return RpcResponse::err("getblockheader requires a hash"),
+        };
+
+        let chain = self.state.chain.blocking_read();
+        let block = match chain.chain.iter().find(|b| b.hash == hash) {
+            Some(b) => b,
+            None => return RpcResponse::err("block not found"),
+        };
+
+        RpcResponse::ok(json!({
+            "hash": block.hash,
+            "confirmations": chain.height() - block.index + 1,
+            "height": block.index,
+            "version": block.nversion,
+            "merkleroot": block.merkle_root,
+            "time": block.timestamp,
+            "mediantime": block.timestamp,
+            "nonce": block.nonce,
+            "bits": format!("{:#010x}", block.nbits),
+            "previousblockhash": block.previous_hash,
+            "nextblockhash": if block.index + 1 < chain.chain.len() as u64 {
+                Some(chain.chain[(block.index + 1) as usize].hash.clone())
+            } else {
+                None
+            }
+        }))
+    }
+
     fn m_getblockcount(&self) -> RpcResponse {
         let chain = self.state.chain.blocking_read();
         RpcResponse::ok(json!(chain.chain.len() as u64))
@@ -502,6 +533,39 @@ impl RpcHandler {
     fn m_getbestblockhash(&self) -> RpcResponse {
         let chain = self.state.chain.blocking_read();
         RpcResponse::ok(json!(chain.chain.last().unwrap().hash))
+    }
+
+    fn m_getdifficulty(&self) -> RpcResponse {
+        let chain = self.state.chain.blocking_read();
+        let target = pow::nbits_to_target(chain.nbits);
+        let max_target = pow::nbits_to_target(0x1d00ffff);
+        let mut diff = 0.0;
+        
+        let mut max_u64 = [0u8; 8];
+        max_u64.copy_from_slice(&max_target[24..32]);
+        let max_val = u64::from_be_bytes(max_u64);
+
+        let mut cur_u64 = [0u8; 8];
+        cur_u64.copy_from_slice(&target[24..32]);
+        let cur_val = u64::from_be_bytes(cur_u64);
+
+        if cur_val > 0 {
+            diff = max_val as f64 / cur_val as f64;
+        }
+
+        RpcResponse::ok(json!(diff))
+    }
+
+    fn m_getchaintips(&self) -> RpcResponse {
+        let chain = self.state.chain.blocking_read();
+        let tip = chain.chain.last().unwrap();
+        
+        RpcResponse::ok(json!([{
+            "height": chain.height(),
+            "hash": tip.hash,
+            "branchlen": 0,
+            "status": "active"
+        }]))
     }
 
     fn m_getgenesishash(&self) -> RpcResponse {
@@ -984,72 +1048,6 @@ impl RpcHandler {
             "mempool_len": chain.mempool.len(),
         }))
     }
-
-    fn m_getdifficulty(&self) -> RpcResponse {
-        let chain = self.state.chain.blocking_read();
-        let target = pow::nbits_to_target(chain.nbits);
-        // Difficulty is the ratio between the maximum target (0x00000000FFFF0000...) and the current target.
-        // For simplicity, we compare the first 4 bytes.
-        let max_target = pow::nbits_to_target(0x1d00ffff); // Bitcoin's max target
-        let mut diff = 0.0;
-        
-        let mut max_u64 = [0u8; 8];
-        max_u64.copy_from_slice(&max_target[24..32]);
-        let max_val = u64::from_be_bytes(max_u64);
-
-        let mut cur_u64 = [0u8; 8];
-        cur_u64.copy_from_slice(&target[24..32]);
-        let cur_val = u64::from_be_bytes(cur_u64);
-
-        if cur_val > 0 {
-            diff = max_val as f64 / cur_val as f64;
-        }
-
-        RpcResponse::ok(json!(diff))
-    }
-
-    fn m_getblockheader(&self, req: &RpcRequest) -> RpcResponse {
-        let hash = match req.params.first().and_then(|v| v.as_str()) {
-            Some(h) => h,
-            None => return RpcResponse::err("getblockheader requires a hash"),
-        };
-
-        let chain = self.state.chain.blocking_read();
-        let block = match chain.chain.iter().find(|b| b.hash == hash) {
-            Some(b) => b,
-            None => return RpcResponse::err("block not found"),
-        };
-
-        RpcResponse::ok(json!({
-            "hash": block.hash,
-            "confirmations": chain.height() - block.index + 1,
-            "height": block.index,
-            "version": block.nversion,
-            "merkleroot": block.merkle_root,
-            "time": block.timestamp,
-            "mediantime": block.timestamp, // Simplified
-            "nonce": block.nonce,
-            "bits": format!("{:#010x}", block.nbits),
-            "previousblockhash": block.previous_hash,
-            "nextblockhash": if block.index + 1 < chain.chain.len() as u64 {
-                Some(chain.chain[(block.index + 1) as usize].hash.clone())
-            } else {
-                None
-            }
-        }))
-    }
-
-    fn m_getchaintips(&self) -> RpcResponse {
-        let chain = self.state.chain.blocking_read();
-        let tip = chain.chain.last().unwrap();
-        
-        RpcResponse::ok(json!([{
-            "height": chain.height(),
-            "hash": tip.hash,
-            "branchlen": 0,
-            "status": "active"
-        }]))
-    }
 }
 
 fn m_getcheckpoints() -> RpcResponse {
@@ -1073,23 +1071,44 @@ fn m_getnetworkinfo() -> RpcResponse {
     }))
 }
 
-fn m_getlistwallet() -> RpcResponse {
-    match Wallet::load_default() {
-        Ok(w) => {
-            let addresses: Vec<Value> = w.entries.iter().map(|e| json!({
-                "address": e.address,
-                "public_key": e.public_key,
-                "label": e.label,
-                "created_at": e.created_at,
-            })).collect();
-            
-            RpcResponse::ok(json!({
-                "addresses": addresses,
-                "count": w.entries.len(),
-            }))
-        },
-        Err(_) => RpcResponse::err("wallet not found"),
+fn m_getlistwallet(chain_arc: Arc<RwLock<Blockchain>>) -> RpcResponse {
+    let w = match Wallet::load_default() {
+        Ok(w) => w,
+        Err(_) => return RpcResponse::err("wallet not found"),
+    };
+
+    let chain = chain_arc.blocking_read();
+    let current_height = chain.height();
+
+    let mut addresses = Vec::new();
+    let mut total_mature: u64 = 0;
+    let mut total_immature: u64 = 0;
+
+    for entry in &w.entries {
+        let mature = validation::mature_balance(&chain, &entry.address);
+        let immature = validation::immature_balance(&chain, &entry.address);
+        
+        total_mature = total_mature.saturating_add(mature);
+        total_immature = total_immature.saturating_add(immature);
+
+        addresses.push(json!({
+            "address": entry.address,
+            "public_key": entry.public_key,
+            "label": entry.label,
+            "created_at": entry.created_at,
+            "balance_mature": to_coin(mature),
+            "balance_immature": to_coin(immature),
+        }));
     }
+
+    RpcResponse::ok(json!({
+        "addresses": addresses,
+        "count": w.entries.len(),
+        "total_mature": to_coin(total_mature),
+        "total_immature": to_coin(total_immature),
+        "wallet_total_balance": to_coin(total_mature.saturating_add(total_immature)),
+        "blockchain_height": current_height,
+    }))
 }
 
 fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
