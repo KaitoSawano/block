@@ -3,6 +3,15 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Consensus module for ZenaChain.
+//!
+//! Every parameter that binds the chain validation rules is defined here.
+//! If any parameter in this module is changed, the genesis hash changes
+//! and all previous chains become invalid.
+//!
+//! Network parameters (peer bootstrap, DNS seeds, P2P port) are not
+//! defined here. They are defined in `src/p2p/peers.rs`.
+
 pub mod genesis;
 pub mod pow;
 pub mod rules;
@@ -10,6 +19,9 @@ pub mod spec;
 
 use crate::utils::sha3_256_hex;
 
+/// Compute the consensus fingerprint. The fingerprint is the SHA3-256
+/// digest of all consensus parameters, and it binds the genesis block to
+/// the current parameter set.
 pub fn consensus_fingerprint() -> String {
     let payload = format!(
         "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
@@ -45,6 +57,8 @@ pub fn consensus_fingerprint() -> String {
     sha3_256_hex(payload.as_bytes())
 }
 
+/// Compute the genesis coinbase transaction ID from the consensus
+/// fingerprint, the genesis timestamp, and the genesis nBits.
 pub fn genesis_coinbase_txid() -> String {
     let fp = consensus_fingerprint();
     let payload = format!(
