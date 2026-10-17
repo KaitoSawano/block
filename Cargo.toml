@@ -1,10 +1,20 @@
+# Copyright (c) 2026 Aldianokto
+# Copyright (c) 2026-present Zenachain Core developers
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or https://opensource.org/license/mit.
+
 [package]
 name = "zenachain"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.75"
 description = "ZenaChain (ZENAC) node, CLI, and miner"
 license = "MIT"
-rust-version = "1.75"
+repository = "https://github.com/KaitoSawano/block"
+homepage = "https://github.com/KaitoSawano/block"
+documentation = "https://docs.rs/zenachain"
+keywords = ["blockchain", "cryptocurrency", "p2p", "secp256k1"]
+categories = ["cryptography::cryptocurrencies", "network-programming"]
 
 [lib]
 name = "zenachain"
@@ -33,7 +43,15 @@ serde_json = "1.0"
 hex = "0.4"
 rand = "0.8"
 secp256k1 = { version = "0.29", features = ["rand", "recovery"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "signal", "sync", "io-util"] }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "time",
+    "signal",
+    "sync",
+    "io-util",
+] }
 futures = "0.3"
 
 [dev-dependencies]
@@ -46,3 +64,13 @@ lto = true
 codegen-units = 1
 strip = "symbols"
 debug = false
+
+[profile.dev]
+opt-level = 0
+debug = true
+incremental = true
+
+[profile.test]
+opt-level = 0
+debug = true
+incremental = true
