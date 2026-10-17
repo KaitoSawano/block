@@ -323,6 +323,7 @@ impl RpcHandler {
             "height": c.height(),
             "chain_len": c.chain.len(),
             "nbits": format!("{:#010x}", c.nbits),
+            "difficulty": pow::nbits_to_difficulty(c.nbits),
             "pow_limit": consensus::pow_limit(),
             "circulating": to_coin(c.circulating_supply()),
             "max_supply": to_coin(consensus::max_supply()),
@@ -351,6 +352,7 @@ impl RpcHandler {
             "headers": c.height(),
             "bestblockhash": tip.hash,
             "nbits": format!("{:#010x}", c.nbits),
+            "difficulty": pow::nbits_to_difficulty(c.nbits),
             "pow_limit": consensus::pow_limit(),
             "mediantime": tip.timestamp,
             "verificationprogress": 1.0,
@@ -537,22 +539,7 @@ impl RpcHandler {
 
     fn m_getdifficulty(&self) -> RpcResponse {
         let chain = self.state.chain.blocking_read();
-        let target = pow::nbits_to_target(chain.nbits);
-        let max_target = pow::nbits_to_target(0x1d00ffff);
-        let mut diff = 0.0;
-        
-        let mut max_u64 = [0u8; 8];
-        max_u64.copy_from_slice(&max_target[24..32]);
-        let max_val = u64::from_be_bytes(max_u64);
-
-        let mut cur_u64 = [0u8; 8];
-        cur_u64.copy_from_slice(&target[24..32]);
-        let cur_val = u64::from_be_bytes(cur_u64);
-
-        if cur_val > 0 {
-            diff = max_val as f64 / cur_val as f64;
-        }
-
+        let diff = pow::nbits_to_difficulty(chain.nbits);
         RpcResponse::ok(json!(diff))
     }
 
