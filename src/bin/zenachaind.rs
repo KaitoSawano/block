@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 
 use zenachain::blockchain::Blockchain;
 use zenachain::config::Config;
-use zenachain::p2p::network::{spawn, NetworkConfig};
+use zenachain::p2p::network::{NetworkConfig, spawn};
 use zenachain::rpc::RpcServer;
 use zenachain::storage;
 
@@ -14,6 +14,7 @@ use zenachain::storage;
 async fn main() {
     println!("ZenaChain server starting");
     println!("Gunakan `./zenachain stop` untuk menghentikan node.");
+    println!("Ctrl+C tidak mematikan node (sama seperti Bitcoin).");
 
     let config = Config::load_or_default();
     println!("[config] network      : {}", config.network);
@@ -67,6 +68,18 @@ async fn main() {
     };
 
     let net_handle = spawn(net_config, chain.clone());
+
+    // Abaikan SIGINT (Ctrl+C) agar node tetap jalan.
+    // Hanya RPC `stop` yang mematikan node.
+    tokio::spawn(async move {
+        loop {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                println!();
+                println!("[signal] Ctrl+C diterima. Node tetap berjalan di background.");
+                println!("[signal] Gunakan `./zenachain stop` untuk mematikan node.");
+            }
+        }
+    });
 
     loop {
         if rpc_shutdown.load(Ordering::SeqCst) {
