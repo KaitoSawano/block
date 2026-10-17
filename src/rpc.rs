@@ -49,8 +49,14 @@ impl RpcResponse {
     }
 }
 
+/// Ambil alamat RPC dari `zenachain.conf`. Kalau tidak ada, pakai default.
+pub fn get_rpc_addr() -> String {
+    Config::load_or_default().rpc_addr
+}
+
 pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
-    call_at(DEFAULT_RPC_ADDR, method, params)
+    let addr = get_rpc_addr();
+    call_at(&addr, method, params)
 }
 
 pub fn call_at(addr: &str, method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
@@ -68,7 +74,8 @@ pub fn call_at(addr: &str, method: &str, params: Vec<Value>) -> std::io::Result<
     let mut buf = String::new();
     reader.read_line(&mut buf)?;
 
-    let resp: RpcResponse = serde_json::from_str(buf.trim()).map_err(std::io::Error::other)?;
+    let resp: RpcResponse =
+        serde_json::from_str(buf.trim()).map_err(std::io::Error::other)?;
     Ok(resp)
 }
 
@@ -881,7 +888,8 @@ pub fn call_and_print(method: &str, params: Vec<Value>) {
         Err(e) => {
             println!(
                 "[rpc] tidak dapat menghubungi node di {}: {}",
-                DEFAULT_RPC_ADDR, e
+                get_rpc_addr(),
+                e
             );
             println!("[rpc] jalankan zenachaind terlebih dahulu.");
         }
