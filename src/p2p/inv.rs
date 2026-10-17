@@ -3,11 +3,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Inventory management for the ZenaChain peer-to-peer network.
+
 use std::collections::HashSet;
 
 use crate::p2p::message::{InvType, Inventory};
 
-/// Menyimpan hash blok/tx yang sudah pernah dikirim/diterima.
+/// Tracks block and transaction hashes that have already been seen.
 #[derive(Debug, Default)]
 pub struct InventoryManager {
     known_blocks: HashSet<String>,
@@ -38,7 +40,7 @@ impl InventoryManager {
         self.known_txs.insert(txid.to_string())
     }
 
-    /// Tambah inventory. Return `true` jika belum pernah dikenal.
+    /// Add an inventory item. Return `true` if the item was not seen before.
     pub fn add(&mut self, inv: &Inventory) -> bool {
         match inv.inv_type {
             InvType::Block => self.add_block(&inv.hash),
@@ -46,7 +48,7 @@ impl InventoryManager {
         }
     }
 
-    /// Filter inventory yang belum dikenal.
+    /// Filter the given items and return only those that have not been seen.
     pub fn filter_new(&self, items: &[Inventory]) -> Vec<Inventory> {
         items
             .iter()
