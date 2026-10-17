@@ -103,6 +103,7 @@ fn to_coin(satoshi: u64) -> String {
 pub struct RpcServer {
     chain: Arc<RwLock<Blockchain>>,
     shutdown: Arc<AtomicBool>,
+    interrupt: Arc<AtomicBool>,
     rpc_addr: String,
     rpc_user: String,
     rpc_password: String,
@@ -113,6 +114,7 @@ impl RpcServer {
         RpcServer {
             chain,
             shutdown: Arc::new(AtomicBool::new(false)),
+            interrupt: Arc::new(AtomicBool::new(false)),
             rpc_addr: cfg.rpc_addr.clone(),
             rpc_user: cfg.rpc_user.clone(),
             rpc_password: cfg.rpc_password.clone(),
@@ -239,6 +241,7 @@ impl RpcServer {
         println!("[node] Mematikan node sedang berjalan. Mohon tunggu...");
         println!("[node] Menyimpan data blockchain...");
 
+        self.interrupt.store(true, Ordering::SeqCst);
         self.shutdown.store(true, Ordering::SeqCst);
 
         let chain = self.chain.blocking_read();
@@ -712,10 +715,16 @@ impl RpcServer {
             return RpcResponse::err("format alamat tidak valid");
         }
 
+        self.interrupt.store(false, Ordering::SeqCst);
+
         let mut hashes: Vec<String> = Vec::new();
 
         for _ in 0..n {
-            // Ambil lock hanya sebentar untuk membaca state.
+            if self.interrupt.load(Ordering::SeqCst) {
+                println!("[rpc] generatetoaddress dihentikan oleh stop");
+                break;
+            }
+
             let (prev, reward, nbits, txs) = {
                 let mut chain = self.chain.blocking_write();
                 let prev = chain.chain.last().unwrap().clone();
@@ -745,7 +754,6 @@ impl RpcServer {
                 (prev, reward, chain.nbits, txs)
             };
 
-            // Mining di luar lock, agar RPC lain (termasuk stop) tetap responsif.
             let mut block = crate::block::Block::new_for(
                 prev.index + 1,
                 prev.hash.clone(),
@@ -754,11 +762,12 @@ impl RpcServer {
                 txs,
                 addr.clone(),
             );
-            if !pow::mine(&mut block, nbits) {
-                return RpcResponse::err("mining gagal: nonce habis");
+
+            if !pow::mine_interruptible(&mut block, nbits, Some(&self.interrupt)) {
+                println!("[rpc] mining diinterupsi di height {}", block.index);
+                break;
             }
 
-            // Simpan blok ke chain.
             {
                 let mut chain = self.chain.blocking_write();
                 chain.chain.push(block.clone());
