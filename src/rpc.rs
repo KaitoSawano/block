@@ -14,7 +14,7 @@ use crate::storage;
 use crate::transaction::Transaction;
 use crate::utils::zenac_to_satoshi;
 use crate::validation;
-use crate::wallet::{Wallet, WalletEntry};
+use crate::wallet::Wallet;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
