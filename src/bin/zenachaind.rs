@@ -9,6 +9,7 @@ use zenachain::config::Config;
 use zenachain::datadir;
 use zenachain::p2p::{self, SyncMessage, SyncState};
 use zenachain::rpc::RpcServer;
+use zenachain::storage;
 
 #[tokio::main]
 async fn main() {
@@ -16,6 +17,7 @@ async fn main() {
 
     println!("ZenaChain server starting");
     println!("Gunakan `./zenachain stop` untuk menghentikan node.");
+    println!("Tekan Ctrl+C untuk melepas terminal (node tetap berjalan di background).");
 
     let config = Config::load_or_default();
     println!("[config] network      : {}", config.network);
@@ -29,31 +31,6 @@ async fn main() {
         let _ = config.save_default();
         println!("[config] file config dibuat di {}", Config::default_path());
     }
-
-    // Tangkap semua sinyal agar node tidak mati kecuali via RPC stop.
-    let mut sigint = signal(SignalKind::interrupt()).expect("gagal daftar SIGINT");
-    let mut sigterm = signal(SignalKind::terminate()).expect("gagal daftar SIGTERM");
-    let mut sighup = signal(SignalKind::hangup()).expect("gagal daftar SIGHUP");
-    let mut sigquit = signal(SignalKind::quit()).expect("gagal daftar SIGQUIT");
-
-    tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                _ = sigint.recv() => {
-                    println!("[signal] SIGINT (Ctrl+C) diabaikan. Gunakan `./zenachain stop` untuk berhenti.");
-                }
-                _ = sigterm.recv() => {
-                    println!("[signal] SIGTERM diabaikan. Gunakan `./zenachain stop` untuk berhenti.");
-                }
-                _ = sighup.recv() => {
-                    println!("[signal] SIGHUP diabaikan. Node tetap jalan.");
-                }
-                _ = sigquit.recv() => {
-                    println!("[signal] SIGQUIT diabaikan. Gunakan `./zenachain stop` untuk berhenti.");
-                }
-            }
-        }
-    });
 
     let peer_id_path = datadir::as_str(&datadir::peer_id_path());
     let keypair = p2p::swarm::load_or_generate_keypair(&peer_id_path);
@@ -105,8 +82,24 @@ async fn main() {
 
     let blocks_topic = gossipsub::IdentTopic::new(p2p::TOPIC_BLOCKS);
 
-    // Loop utama. Node tidak akan pernah keluar dari sini 
-    // kecuali ada sinyal panik atau dimatikan paksa oleh OS.
+    // Penangkap Ctrl+C (SIGINT)
+    let mut sigint = signal(SignalKind::interrupt()).expect("gagal daftar SIGINT");
+    
+    tokio::spawn(async move {
+        loop {
+            sigint.recv().await;
+            println!("\n[signal] Ctrl+C diterima. Melepas terminal...");
+            println!("[signal] Node tetap berjalan di background.");
+            println!("[signal] Gunakan `./zenachain stop` untuk mematikan node.");
+            
+            // Lepas proses dari terminal (menjadi daemon di background)
+            unsafe {
+                libc::daemon(0, 0);
+            }
+        }
+    });
+
+    // Loop utama P2P
     loop {
         match swarm.next().await {
             Some(event) => {
@@ -165,8 +158,6 @@ async fn main() {
                 }
             }
             None => {
-                // Swarm berhenti. Di libp2p ini sangat jarang terjadi, 
-                // tapi kalau terjadi, kita cegah program keluar.
                 println!("[p2p] swarm berhenti. Menunggu...");
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
