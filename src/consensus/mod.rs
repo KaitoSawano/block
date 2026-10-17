@@ -1,11 +1,7 @@
-//! Modul konsensus ZenaChain.
-//!
-//! Semua parameter yang mengikat aturan validasi chain berada di sini.
-//! Kalau ada parameter di sini yang diubah, genesis hash berubah,
-//! dan seluruh chain lama menjadi tidak valid.
-//!
-//! Parameter jaringan (peer bootstrap, DNS seed, port P2P) TIDAK
-//! di sini. Itu ada di `src/p2p/peers.rs`.
+// Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
 
 pub mod genesis;
 pub mod pow;
