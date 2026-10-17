@@ -4,9 +4,6 @@
 // file LICENSE or https://opensource.org/license/mit.
 
 //! Command-line interface for ZenaChain.
-//!
-//! This binary parses the command line, forwards the request to the
-//! running node through the RPC client, and prints the JSON response.
 
 use serde_json::json;
 use zenachain::rpc;
@@ -34,13 +31,21 @@ fn main() {
         "getgenesishash" => rpc::call_and_print("getgenesishash", vec![]),
         "getgenesis" => rpc::call_and_print("getgenesis", vec![]),
         "getwallet" => rpc::call_and_print("getwallet", vec![]),
-        "getprivkey" => {
+        "dumpprivkey" => {
             if args.len() < 3 {
                 println!("an address argument is required");
-                println!("usage: zenachain getprivkey \"<address>\"");
+                println!("usage: zenachain dumpprivkey \"<address>\"");
                 return;
             }
-            rpc::call_and_print("getprivkey", vec![json!(args[2])]);
+            rpc::call_and_print("dumpprivkey", vec![json!(args[2])]);
+        }
+        "importprivkey" => {
+            if args.len() < 3 {
+                println!("a private key argument is required");
+                println!("usage: zenachain importprivkey \"<privkey>\"");
+                return;
+            }
+            rpc::call_and_print("importprivkey", vec![json!(args[2])]);
         }
         "getnewwallet" => rpc::call_and_print("getnewwallet", vec![]),
         "getaddtowallet" => rpc::call_and_print("getaddtowallet", vec![]),
@@ -104,7 +109,7 @@ fn main() {
         }
         "sendtoaddress" => {
             if args.len() < 4 {
-                println!("usage: zenachain sendtoaddress <amount> \"<address>\"");
+                println!("usage: zenachain sendtoaddress <amount> \"<address>\" [\"<from_address>\"]");
                 return;
             }
             let amount: f64 = match args[2].parse() {
@@ -114,7 +119,11 @@ fn main() {
                     return;
                 }
             };
-            rpc::call_and_print("sendtoaddress", vec![json!(amount), json!(args[3])]);
+            let mut params = vec![json!(amount), json!(args[3])];
+            if args.len() >= 5 {
+                params.push(json!(args[4]));
+            }
+            rpc::call_and_print("sendtoaddress", params);
         }
         "getbalance" => {
             let params = if args.len() >= 3 {
@@ -123,13 +132,6 @@ fn main() {
                 vec![]
             };
             rpc::call_and_print("getbalance", params);
-        }
-        "dumpprivkey" => {
-            if args.len() < 3 {
-                println!("usage: zenachain dumpprivkey \"<privkey>\"");
-                return;
-            }
-            rpc::call_and_print("dumpprivkey", vec![json!(args[2])]);
         }
         _ => {
             println!("unknown command: {}", args[1]);
@@ -150,33 +152,23 @@ fn print_help() {
     println!("  zenachain getblocktemplate                    block template for miners");
     println!("  zenachain getblockcount                       number of blocks in the chain");
     println!("  zenachain getbestblockhash                    hash of the latest block");
-    println!(
-        "  zenachain verifychain                         verify the integrity of the entire chain"
-    );
-    println!(
-        "  zenachain validatemempool                     validate every transaction in the mempool"
-    );
+    println!("  zenachain verifychain                         verify the integrity of the entire chain");
+    println!("  zenachain validatemempool                     validate every transaction in the mempool");
     println!("  zenachain getgenesishash                      genesis block hash");
     println!("  zenachain getgenesis                          genesis block details");
-    println!(
-        "  zenachain getblockhash <height>               hash of the block at the given height"
-    );
+    println!("  zenachain getblockhash <height>               hash of the block at the given height");
     println!("  zenachain getblock \"<hash>\"                   block details for the given hash");
-    println!(
-        "  zenachain getrawtransaction \"<txid>\"          transaction details for the given txid"
-    );
+    println!("  zenachain getrawtransaction \"<txid>\"          transaction details for the given txid");
     println!("  zenachain listunspent [address]               list wallet UTXOs");
     println!("  zenachain getmempoolinfo                      mempool summary");
-    println!("  zenachain getwallet                           open the stored wallet");
-    println!("  zenachain getnewwallet                        create a new wallet");
-    println!("  zenachain getaddtowallet                      use the wallet address as the mining target");
+    println!("  zenachain getwallet                           list all addresses in the wallet");
+    println!("  zenachain getnewwallet                        create a new address in the wallet");
+    println!("  zenachain getaddtowallet                      use the default wallet address as the mining target");
     println!("  zenachain getaddtoaddress \"<address>\"         set a manual mining address");
     println!("  zenachain generatetoaddress <n> \"<address>\"   mine n blocks directly to the given address");
-    println!("  zenachain sendtoaddress <amount> \"<address>\"  send coins from the wallet to the destination");
-    println!("  zenachain getprivkey \"<address>\"              display the public key for the given address");
-    println!(
-        "  zenachain dumpprivkey \"<privkey>\"             restore a wallet from a private key"
-    );
+    println!("  zenachain sendtoaddress <amount> \"<address>\" [\"<from>\"] send coins from the wallet to the destination");
+    println!("  zenachain dumpprivkey \"<address>\"             display the private key for the given address");
+    println!("  zenachain importprivkey \"<privkey>\"           import a private key into the wallet");
     println!("  zenachain getbalance [address]                compute the wallet balance");
     println!();
     println!("daemon:");
