@@ -495,10 +495,7 @@ pub fn rule_genesis_pow(block: &Block) -> Result<(), ValidationError> {
 }
 
 pub fn is_special_tx(tx: &Transaction) -> bool {
-    tx.from == "COINBASE"
-        || tx.from == "GENESIS"
-        || tx.from == "NETWORK"
-        || tx.from == "MEMPOOL"
+    tx.from == "COINBASE" || tx.from == "GENESIS" || tx.from == "NETWORK" || tx.from == "MEMPOOL"
 }
 
 pub fn is_valid_address(addr: &str) -> bool {

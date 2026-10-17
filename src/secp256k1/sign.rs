@@ -27,8 +27,8 @@ pub fn sign(secret_key: &[u8], message_hash: &[u8]) -> Result<Vec<u8>, String> {
     let secp = Secp256k1::new();
     let secret =
         SecretKey::from_slice(secret_key).map_err(|e| format!("invalid secret key: {}", e))?;
-    let msg = Message::from_digest_slice(message_hash)
-        .map_err(|e| format!("invalid message: {}", e))?;
+    let msg =
+        Message::from_digest_slice(message_hash).map_err(|e| format!("invalid message: {}", e))?;
 
     let sig = secp.sign_ecdsa(&msg, &secret);
     Ok(sig.serialize_der().to_vec())

@@ -150,13 +150,21 @@ fn print_help() {
     println!("  zenachain getblocktemplate                    block template for miners");
     println!("  zenachain getblockcount                       number of blocks in the chain");
     println!("  zenachain getbestblockhash                    hash of the latest block");
-    println!("  zenachain verifychain                         verify the integrity of the entire chain");
-    println!("  zenachain validatemempool                     validate every transaction in the mempool");
+    println!(
+        "  zenachain verifychain                         verify the integrity of the entire chain"
+    );
+    println!(
+        "  zenachain validatemempool                     validate every transaction in the mempool"
+    );
     println!("  zenachain getgenesishash                      genesis block hash");
     println!("  zenachain getgenesis                          genesis block details");
-    println!("  zenachain getblockhash <height>               hash of the block at the given height");
+    println!(
+        "  zenachain getblockhash <height>               hash of the block at the given height"
+    );
     println!("  zenachain getblock \"<hash>\"                   block details for the given hash");
-    println!("  zenachain getrawtransaction \"<txid>\"          transaction details for the given txid");
+    println!(
+        "  zenachain getrawtransaction \"<txid>\"          transaction details for the given txid"
+    );
     println!("  zenachain listunspent [address]               list wallet UTXOs");
     println!("  zenachain getmempoolinfo                      mempool summary");
     println!("  zenachain getwallet                           open the stored wallet");
@@ -166,7 +174,9 @@ fn print_help() {
     println!("  zenachain generatetoaddress <n> \"<address>\"   mine n blocks directly to the given address");
     println!("  zenachain sendtoaddress <amount> \"<address>\"  send coins from the wallet to the destination");
     println!("  zenachain getprivkey \"<address>\"              display the public key for the given address");
-    println!("  zenachain dumpprivkey \"<privkey>\"             restore a wallet from a private key");
+    println!(
+        "  zenachain dumpprivkey \"<privkey>\"             restore a wallet from a private key"
+    );
     println!("  zenachain getbalance [address]                compute the wallet balance");
     println!();
     println!("daemon:");

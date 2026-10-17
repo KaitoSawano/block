@@ -74,11 +74,7 @@ pub fn mine(block: &mut Block, nbits: u32) -> bool {
 
 /// Mine the block until the hash meets the target, the nonce is exhausted,
 /// or the interrupt flag is set. Return `true` on success.
-pub fn mine_interruptible(
-    block: &mut Block,
-    nbits: u32,
-    interrupt: Option<&AtomicBool>,
-) -> bool {
+pub fn mine_interruptible(block: &mut Block, nbits: u32, interrupt: Option<&AtomicBool>) -> bool {
     let target = nbits_to_target(nbits);
     loop {
         if let Some(flag) = interrupt {

@@ -22,7 +22,8 @@ impl Wallet {
     /// Create a new wallet with a freshly generated key pair.
     pub fn new() -> Self {
         let kp = KeyPair::generate().expect("keypair generation failed");
-        let addr = address::address_from_public_key(&kp.public_key).expect("address generation failed");
+        let addr =
+            address::address_from_public_key(&kp.public_key).expect("address generation failed");
 
         Wallet {
             address: addr,

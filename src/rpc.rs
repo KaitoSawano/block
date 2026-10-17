@@ -284,7 +284,10 @@ impl RpcHandler {
                     chain.nbits
                 );
                 println!("[node]   mempool    : {} transactions", chain.mempool.len());
-                println!("[node]   location   : {}", datadir::as_str(&datadir::datadir()));
+                println!(
+                    "[node]   location   : {}",
+                    datadir::as_str(&datadir::datadir())
+                );
                 println!("[node] Blockchain data saved successfully.");
             }
             Err(e) => {
@@ -1047,10 +1050,7 @@ pub fn call_and_print(method: &str, params: Vec<Value>) {
         }
         Err(e) => {
             let cfg = Config::load_or_default();
-            println!(
-                "[rpc] cannot connect to node at {}: {}",
-                cfg.rpc_addr, e
-            );
+            println!("[rpc] cannot connect to node at {}: {}", cfg.rpc_addr, e);
             println!("[rpc] start zenachaind first.");
         }
     }
