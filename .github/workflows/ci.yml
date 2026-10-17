@@ -1,3 +1,8 @@
+# Copyright (c) 2026 Aldianokto
+# Copyright (c) 2026-present Zenachain Core developers
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or https://opensource.org/license/mit.
+
 name: CI
 
 on:
@@ -5,6 +10,13 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,28 +26,40 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Check format
+      - name: Check formatting
         run: cargo fmt --all -- --check
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Build release
+        run: cargo build --release --locked --workspace
+
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --workspace --all-targets
+
+      - name: Documentation tests
+        run: cargo test --workspace --doc
 
   build:
     name: Build ${{ matrix.target }}
     needs: test
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +86,8 @@ jobs:
             ext: ".exe"
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -70,7 +96,7 @@ jobs:
 
       - name: Install cross
         if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        run: cargo install cross --locked --version 0.2.5
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -79,18 +105,19 @@ jobs:
 
       - name: Build (native)
         if: matrix.target != 'aarch64-unknown-linux-gnu'
-        run: cargo build --release --target ${{ matrix.target }} -p zenachain --bin zenachain --bin zenachaind
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin zenachain --bin zenachaind --bin zenachain-miner --bin zenachain-genesis
 
       - name: Build (cross)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: cross build --release --target ${{ matrix.target }} -p zenachain --bin zenachain --bin zenachaind
+        run: cross build --release --locked --target ${{ matrix.target }} --bin zenachain --bin zenachaind --bin zenachain-miner --bin zenachain-genesis
 
       - name: Prepare artifact directory
         shell: bash
         run: |
           mkdir -p artifact
-          cp target/${{ matrix.target }}/release/zenachain${{ matrix.ext }} artifact/ || true
-          cp target/${{ matrix.target }}/release/zenachaind${{ matrix.ext }} artifact/ || true
+          for bin in zenachain zenachaind zenachain-miner zenachain-genesis; do
+            cp "target/${{ matrix.target }}/release/${bin}${{ matrix.ext }}" artifact/
+          done
           ls -la artifact/
 
       - name: Upload artifact
