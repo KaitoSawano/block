@@ -1,6 +1,8 @@
-//! Parameter PoW konsensus ZenaChain.
+// Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
 
-/// nBits genesis. Sama dengan Litecoin: 0x1e0ffff0.
 pub const GENESIS_NBITS: u32 = 0x1e0ffff0;
 
 /// powLimit. Sama dengan Litecoin:
