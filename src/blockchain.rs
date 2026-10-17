@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Blockchain state and consensus-related operations.
+
 use crate::block::Block;
 use crate::consensus::{self, genesis, pow as cpow, rules, spec};
 use crate::pow;
@@ -45,8 +47,8 @@ pub mod checkpoint {
 }
 
 pub mod network {
-    /// Magic bytes ZenaChain: "ZENA" dalam ASCII hex.
-    /// Menggantikan magic Bitcoin (0xf9beb4d9) agar tidak bentrok.
+    /// Magic bytes for ZenaChain: "ZENA" in ASCII hexadecimal.
+    /// This value replaces the Bitcoin magic (0xf9beb4d9) to avoid conflicts.
     pub const NETWORK_MAGIC: [u8; 4] = [0x5a, 0x45, 0x4e, 0x41];
     pub const NETWORK_NAME: &str = "main";
     pub const DEFAULT_PORT: u16 = 8333;
@@ -163,7 +165,7 @@ impl Blockchain {
         let txs = std::mem::take(&mut self.mempool);
         let mut new_block = Block::new(next_index, prev.hash.clone(), reward, self.nbits, txs);
         if !pow::mine(&mut new_block, self.nbits) {
-            return Err("mining gagal: nonce habis".into());
+            return Err("mining failed: nonce exhausted".into());
         }
         let nonce = new_block.nonce;
         self.chain.push(new_block);
