@@ -63,11 +63,7 @@ pub fn mine(block: &mut Block, nbits: u32) -> bool {
 }
 
 /// Versi `mine` yang bisa diinterupsi lewat `AtomicBool`.
-pub fn mine_interruptible(
-    block: &mut Block,
-    nbits: u32,
-    interrupt: Option<&AtomicBool>,
-) -> bool {
+pub fn mine_interruptible(block: &mut Block, nbits: u32, interrupt: Option<&AtomicBool>) -> bool {
     let target = nbits_to_target(nbits);
     loop {
         if let Some(flag) = interrupt {

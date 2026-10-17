@@ -257,7 +257,10 @@ impl RpcServer {
                     chain.nbits
                 );
                 println!("[node]   mempool    : {} transaksi", chain.mempool.len());
-                println!("[node]   lokasi     : {}", datadir::as_str(&datadir::datadir()));
+                println!(
+                    "[node]   lokasi     : {}",
+                    datadir::as_str(&datadir::datadir())
+                );
                 println!("[node] Data blockchain berhasil disimpan.");
             }
             Err(e) => {
