@@ -6,7 +6,7 @@
 //! Proof-of-work primitives.
 
 use crate::block::Block;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use crate::consensus::pow::{GENESIS_NBITS, POW_LIMIT};
 
@@ -67,6 +67,7 @@ pub fn hash_meets_nbits(hash_hex: &str, nbits: u32) -> bool {
 }
 
 /// Mine the block until the hash meets the target or the nonce is exhausted.
+/// Return `true` on success and `false` if the nonce is exhausted.
 pub fn mine(block: &mut Block, nbits: u32) -> bool {
     mine_interruptible(block, nbits, None)
 }
@@ -78,34 +79,27 @@ pub fn mine_interruptible(
     nbits: u32,
     interrupt: Option<&AtomicBool>,
 ) -> bool {
-    // During tests, skip the actual mining loop to prevent the test suite
-    // from hanging. We simply calculate the hash once and return success.
-    #[cfg(test)]
-    {
-        let _ = nbits;
-        let _ = interrupt;
+    // If ZENAC_SKIP_POW is set, bypass the proof-of-work loop.
+    // This is used by the test suite to avoid CPU-intensive mining.
+    if std::env::var("ZENAC_SKIP_POW").is_ok() {
         block.hash = block.calculate_hash();
         return true;
     }
 
-    #[cfg(not(test))]
-    {
-        use std::sync::atomic::Ordering;
-        let target = nbits_to_target(nbits);
-        loop {
-            if let Some(flag) = interrupt {
-                if flag.load(Ordering::SeqCst) {
-                    return false;
-                }
-            }
-            block.hash = block.calculate_hash();
-            if hash_le_target(&block.hash, &target) {
-                return true;
-            }
-            if block.nonce == u64::MAX {
+    let target = nbits_to_target(nbits);
+    loop {
+        if let Some(flag) = interrupt {
+            if flag.load(Ordering::SeqCst) {
                 return false;
             }
-            block.nonce = block.nonce.wrapping_add(1);
         }
+        block.hash = block.calculate_hash();
+        if hash_le_target(&block.hash, &target) {
+            return true;
+        }
+        if block.nonce == u64::MAX {
+            return false;
+        }
+        block.nonce = block.nonce.wrapping_add(1);
     }
 }
