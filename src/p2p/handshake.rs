@@ -1,6 +1,5 @@
 // Copyright (c) 2026 Aldianokto
 // Copyright (c) 2026-present Zenachain Core developers
-// SPDX-License-Identifier: MIT
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
