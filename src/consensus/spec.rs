@@ -3,6 +3,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Economic consensus parameters for ZenaChain.
+//!
+//! Every parameter in this module is included in `consensus_fingerprint`.
+
 pub const COIN_NAME: &str = "ZenaChain";
 pub const SYMBOL: &str = "ZENAC";
 pub const VERSION: &str = "0.1.0";
