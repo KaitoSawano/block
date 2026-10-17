@@ -148,11 +148,13 @@ impl Block {
     /// regenerate the `EXPECTED_GENESIS_*` constants after a consensus
     /// parameter change.
     pub fn genesis_unchecked() -> Self {
-        Self::genesis_mined()
+        Self::genesis_mined(true)
     }
 
     /// Mine the genesis block using the genesis consensus parameters.
-    fn genesis_mined() -> Self {
+    /// If `force_mine` is false and the code is compiled for tests,
+    /// the expensive proof-of-work is bypassed.
+    fn genesis_mined(force_mine: bool) -> Self {
         let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
         let genesis_output_script = genesis::GENESIS_OUTPUT_SCRIPT.to_string();
@@ -190,6 +192,12 @@ impl Block {
             transactions,
         };
 
+        if cfg!(test) && !force_mine {
+            b.hash = genesis::EXPECTED_GENESIS_HASH.to_string();
+            b.nonce = genesis::EXPECTED_GENESIS_NONCE;
+            return b;
+        }
+
         if !pow::mine(&mut b, nbits) {
             panic!("genesis mining failed: nonce exhausted");
         }
@@ -202,7 +210,7 @@ impl Block {
     /// constants do not match, the function prints the new values and
     /// terminates the process.
     pub fn genesis() -> Self {
-        let b = Self::genesis_mined();
+        let b = Self::genesis_mined(false);
 
         let hash_ok = b.hash == genesis::EXPECTED_GENESIS_HASH;
         let merkle_ok = b.merkle_root == genesis::EXPECTED_GENESIS_MERKLE_ROOT;
