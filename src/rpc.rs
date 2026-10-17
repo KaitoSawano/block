@@ -56,20 +56,17 @@ pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
 
 pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     let mut stream = TcpStream::connect(&cfg.rpc_addr)?;
-
+    
     let auth = format!("{}:{}", cfg.rpc_user, cfg.rpc_password);
     let req = RpcRequest {
         method: method.to_string(),
         params,
     };
     let body = serde_json::to_string(&req).unwrap();
-
+    
     let request = format!(
         "POST / HTTP/1.1\r\nHost: {}\r\nAuthorization: {}\r\nContent-Length: {}\r\n\r\n{}",
-        cfg.rpc_addr,
-        auth,
-        body.len(),
-        body
+        cfg.rpc_addr, auth, body.len(), body
     );
 
     stream.write_all(request.as_bytes())?;
@@ -77,7 +74,7 @@ pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Resul
 
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
-
+    
     loop {
         line.clear();
         reader.read_line(&mut line)?;
@@ -85,11 +82,12 @@ pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Resul
             break;
         }
     }
-
+    
     let mut buf = String::new();
     reader.read_line(&mut buf)?;
 
-    let resp: RpcResponse = serde_json::from_str(buf.trim()).map_err(std::io::Error::other)?;
+    let resp: RpcResponse = serde_json::from_str(buf.trim())
+        .map_err(std::io::Error::other)?;
     Ok(resp)
 }
 
@@ -131,8 +129,6 @@ impl RpcServer {
 
         loop {
             if self.shutdown.load(Ordering::SeqCst) {
-                let _ = storage::save_chain(&self.chain);
-                println!("[rpc] node berhenti.");
                 break;
             }
 
@@ -151,7 +147,7 @@ impl RpcServer {
     fn handle(&mut self, stream: TcpStream) -> std::io::Result<()> {
         let mut reader = BufReader::new(stream.try_clone()?);
         let mut line = String::new();
-
+        
         let mut auth_header = String::new();
         let mut content_length = 0;
 
@@ -165,11 +161,7 @@ impl RpcServer {
                 auth_header = line.trim_start_matches("Authorization:").trim().to_string();
             }
             if line.starts_with("Content-Length:") {
-                content_length = line
-                    .trim_start_matches("Content-Length:")
-                    .trim()
-                    .parse()
-                    .unwrap_or(0);
+                content_length = line.trim_start_matches("Content-Length:").trim().parse().unwrap_or(0);
             }
         }
 
@@ -231,15 +223,38 @@ impl RpcServer {
     }
 
     fn m_stop(&mut self) -> RpcResponse {
-        if let Err(e) = storage::save_chain(&self.chain) {
-            return RpcResponse::err(&format!("gagal simpan chain: {}", e));
+        println!();
+        println!("[node] Mematikan node sedang berjalan. Mohon tunggu...");
+        
+        // Simpan blocks, chainstate, dan mempool
+        match storage::save_chain(&self.chain) {
+            Ok(_) => {
+                println!("[node] Menyimpan data blockchain...");
+                println!("[node]   blocks     : {}", self.chain.chain.len());
+                println!("[node]   chainstate : height={} difficulty/nbits={:#010x}", self.chain.height(), self.chain.nbits);
+                println!("[node]   mempool    : {} transaksi", self.chain.mempool.len());
+                println!("[node]   lokasi     : {}", datadir::as_str(&datadir::datadir()));
+                println!("[node] Data blockchain berhasil disimpan.");
+            }
+            Err(e) => {
+                println!("[node] GAGAL menyimpan blockchain: {}", e);
+                return RpcResponse::err(&format!("gagal simpan chain: {}", e));
+            }
         }
+
+        println!("[node] Menutup koneksi P2P dan RPC...");
         self.shutdown.store(true, Ordering::SeqCst);
+
+        println!("[node] Shutdown berhasil.");
+        println!();
+
         RpcResponse::ok(json!({
             "stopping": true,
+            "message": "Mematikan node sedang berjalan. Mohon tunggu...",
             "height": self.chain.height(),
             "chain_len": self.chain.chain.len(),
             "saved": true,
+            "status": "Shutdown berhasil",
         }))
     }
 
@@ -914,19 +929,12 @@ fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
     }
 }
 
-fn write_http_response(
-    mut stream: TcpStream,
-    status: u16,
-    resp: &RpcResponse,
-) -> std::io::Result<()> {
+fn write_http_response(mut stream: TcpStream, status: u16, resp: &RpcResponse) -> std::io::Result<()> {
     let body = serde_json::to_string(resp).unwrap();
     let status_text = if status == 200 { "OK" } else { "Error" };
     let response = format!(
         "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-        status,
-        status_text,
-        body.len(),
-        body
+        status, status_text, body.len(), body
     );
     stream.write_all(response.as_bytes())?;
     stream.flush()
@@ -943,10 +951,7 @@ pub fn call_and_print(method: &str, params: Vec<Value>) {
         }
         Err(e) => {
             let cfg = Config::load_or_default();
-            println!(
-                "[rpc] tidak dapat menghubungi node di {}: {}",
-                cfg.rpc_addr, e
-            );
+            println!("[rpc] tidak dapat menghubungi node di {}: {}", cfg.rpc_addr, e);
             println!("[rpc] jalankan zenachaind terlebih dahulu.");
         }
     }
