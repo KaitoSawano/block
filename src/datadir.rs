@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Data directory layout and path helpers.
+
 use std::path::{Path, PathBuf};
 
 pub const DATADIR_NAME: &str = ".zenachain";
@@ -16,7 +18,8 @@ pub const DEBUG_LOG: &str = "debug.log";
 pub const BLOCK_FILE_PREFIX: &str = "blk";
 pub const PEER_ID_FILE: &str = "peer_id";
 
-/// Datadir default. Bisa dioverride lewat env `ZENAC_DATADIR`.
+/// Return the default data directory. The `ZENAC_DATADIR` environment
+/// variable overrides the default.
 pub fn datadir() -> PathBuf {
     if let Ok(custom) = std::env::var("ZENAC_DATADIR") {
         return PathBuf::from(custom);
@@ -58,6 +61,7 @@ pub fn chainstate_file() -> PathBuf {
     chainstate_dir().join("state.json")
 }
 
+/// Create the data directories if they do not exist.
 pub fn ensure_dirs() -> std::io::Result<()> {
     std::fs::create_dir_all(datadir())?;
     std::fs::create_dir_all(blocks_dir())?;
@@ -65,14 +69,17 @@ pub fn ensure_dirs() -> std::io::Result<()> {
     Ok(())
 }
 
+/// Return whether the data directory exists.
 pub fn exists() -> bool {
     datadir().exists()
 }
 
+/// Convert a path to a string.
 pub fn as_str(p: &Path) -> String {
     p.to_string_lossy().to_string()
 }
 
+/// Append a line to the debug log.
 pub fn append_debug_log(line: &str) {
     let _ = ensure_dirs();
     let path = debug_log_path();
