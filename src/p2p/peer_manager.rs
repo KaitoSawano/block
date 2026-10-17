@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Peer management for the ZenaChain peer-to-peer network.
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
@@ -113,6 +115,8 @@ impl PeerManager {
         self.events.push(event);
     }
 
+    /// Check for timeouts and schedule pings. This method should be called
+    /// periodically by the network loop.
     pub fn tick(&mut self) {
         let now = Instant::now();
         let mut to_remove = Vec::new();
