@@ -250,6 +250,9 @@ impl RpcHandler {
             "dumpprivkey" => m_dumpprivkey(req),
             "importprivkey" => m_importprivkey(req),
             "getnewwallet" => m_getnewwallet(),
+            "getaddressinfo" => m_getaddressinfo(req),
+            "setlabel" => m_setlabel(req),
+            "backupwallet" => m_backupwallet(req),
             "getaddtowallet" => m_getaddtowallet(),
             "getaddtoaddress" => m_getaddtoaddress(req),
             "generatetoaddress" => self.m_generatetoaddress(req),
@@ -1010,6 +1013,91 @@ fn m_getnewwallet() -> RpcResponse {
             "created_at": entry.created_at,
         })),
         Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
+    }
+}
+
+fn m_getaddressinfo(req: &RpcRequest) -> RpcResponse {
+    let target = match req.params.first().and_then(|v| v.as_str()) {
+        Some(a) => a.to_string(),
+        None => return RpcResponse::err("getaddressinfo requires an address"),
+    };
+
+    let w = match Wallet::load_default() {
+        Ok(w) => w,
+        Err(_) => return RpcResponse::err("wallet not found"),
+    };
+
+    let entry = w.get_entry(&target);
+
+    RpcResponse::ok(json!({
+        "address": target,
+        "ismine": entry.is_some(),
+        "label": entry.map(|e| e.label.clone()).unwrap_or_default(),
+        "public_key": entry.map(|e| e.public_key.clone()).unwrap_or_default(),
+        "created_at": entry.map(|e| e.created_at).unwrap_or(0),
+    }))
+}
+
+fn m_setlabel(req: &RpcRequest) -> RpcResponse {
+    if req.params.len() < 2 {
+        return RpcResponse::err("setlabel requires an address and a label");
+    }
+    let target = match req.params[0].as_str() {
+        Some(a) => a.to_string(),
+        None => return RpcResponse::err("invalid address"),
+    };
+    let label = match req.params[1].as_str() {
+        Some(l) => l.to_string(),
+        None => return RpcResponse::err("invalid label"),
+    };
+
+    let mut w = match Wallet::load_default() {
+        Ok(w) => w,
+        Err(_) => return RpcResponse::err("wallet not found"),
+    };
+
+    let mut found = false;
+    for e in w.entries.iter_mut() {
+        if e.address == target {
+            e.label = label.clone();
+            found = true;
+            break;
+        }
+    }
+
+    if !found {
+        return RpcResponse::err("address not found in wallet");
+    }
+
+    match w.save_default() {
+        Ok(_) => RpcResponse::ok(json!({
+            "address": target,
+            "label": label,
+            "message": "label updated successfully",
+        })),
+        Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
+    }
+}
+
+fn m_backupwallet(req: &RpcRequest) -> RpcResponse {
+    let dest = match req.params.first().and_then(|v| v.as_str()) {
+        Some(d) => d.to_string(),
+        None => return RpcResponse::err("backupwallet requires a destination path"),
+    };
+
+    let src = datadir::as_str(&datadir::wallet_path());
+    
+    if !std::path::Path::new(&src).exists() {
+        return RpcResponse::err("wallet file not found");
+    }
+
+    match std::fs::copy(&src, &dest) {
+        Ok(_) => RpcResponse::ok(json!({
+            "source": src,
+            "destination": dest,
+            "message": "wallet backed up successfully",
+        })),
+        Err(e) => RpcResponse::err(&format!("failed to backup wallet: {}", e)),
     }
 }
 
