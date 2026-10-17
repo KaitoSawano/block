@@ -14,7 +14,7 @@ use zenachain::storage;
 async fn main() {
     println!("ZenaChain server starting");
     println!("Gunakan `./zenachain stop` untuk menghentikan node.");
-    println!("Ctrl+C tidak mematikan node (sama seperti Bitcoin).");
+    println!("Ctrl+C, kill, SIGHUP tidak mematikan node (sama seperti Bitcoin).");
 
     let config = Config::load_or_default();
     println!("[config] network      : {}", config.network);
@@ -69,17 +69,9 @@ async fn main() {
 
     let net_handle = spawn(net_config, chain.clone());
 
-    // Abaikan SIGINT (Ctrl+C) agar node tetap jalan.
+    // Abaikan semua sinyal terminasi dari terminal.
     // Hanya RPC `stop` yang mematikan node.
-    tokio::spawn(async move {
-        loop {
-            if tokio::signal::ctrl_c().await.is_ok() {
-                println!();
-                println!("[signal] Ctrl+C diterima. Node tetap berjalan di background.");
-                println!("[signal] Gunakan `./zenachain stop` untuk mematikan node.");
-            }
-        }
-    });
+    install_signal_handlers();
 
     loop {
         if rpc_shutdown.load(Ordering::SeqCst) {
@@ -101,4 +93,36 @@ async fn main() {
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     println!("[node] shutdown selesai");
+}
+
+/// Pasang handler untuk SIGINT, SIGTERM, SIGHUP, SIGQUIT agar
+/// tidak mematikan proses. Hanya RPC `stop` yang boleh menghentikan node.
+fn install_signal_handlers() {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let kinds = [
+        (SignalKind::interrupt(), "SIGINT (Ctrl+C)"),
+        (SignalKind::terminate(), "SIGTERM (kill)"),
+        (SignalKind::hangup(), "SIGHUP (terminal ditutup)"),
+        (SignalKind::quit(), "SIGQUIT (Ctrl+\\)"),
+    ];
+
+    for (kind, name) in kinds {
+        match signal(kind) {
+            Ok(mut sig) => {
+                tokio::spawn(async move {
+                    loop {
+                        if sig.recv().await.is_some() {
+                            println!();
+                            println!("[signal] {} diterima. Node tetap berjalan.", name);
+                            println!("[signal] Gunakan `./zenachain stop` untuk mematikan node.");
+                        }
+                    }
+                });
+            }
+            Err(e) => {
+                eprintln!("[signal] gagal pasang handler {}: {}", name, e);
+            }
+        }
+    }
 }
