@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
+
 use secp256k1::{Message, Secp256k1, SecretKey};
 
 /// Tanda tangani hash 32-byte dengan secret key secp256k1.
