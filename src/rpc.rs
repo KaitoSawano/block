@@ -108,7 +108,6 @@ fn to_coin(satoshi: u64) -> String {
     format!("{}.{:08}", whole, frac)
 }
 
-/// Shared state for all RPC handler threads.
 struct RpcState {
     chain: Arc<RwLock<Blockchain>>,
     shutdown: Arc<AtomicBool>,
@@ -141,9 +140,6 @@ impl RpcServer {
         self.state.shutdown.clone()
     }
 
-    /// Run the RPC server. Each connection is handled in a separate thread,
-    /// so that a long-running method such as `generatetoaddress` does not
-    /// block `stop` or any other method.
     pub fn listen(&mut self) {
         let listener = match TcpListener::bind(&self.rpc_addr) {
             Ok(l) => l,
@@ -180,7 +176,6 @@ impl RpcServer {
     }
 }
 
-/// Per-connection handler. Holds a shared reference to `RpcState`.
 struct RpcHandler {
     state: Arc<RpcState>,
 }
@@ -252,8 +247,8 @@ impl RpcHandler {
             "getgenesishash" => self.m_getgenesishash(),
             "getgenesis" => self.m_getgenesis(),
             "getwallet" => m_getwallet(),
-            "getprivkey" => m_getprivkey(req),
             "dumpprivkey" => m_dumpprivkey(req),
+            "importprivkey" => m_importprivkey(req),
             "getnewwallet" => m_getnewwallet(),
             "getaddtowallet" => m_getaddtowallet(),
             "getaddtoaddress" => m_getaddtoaddress(req),
@@ -739,10 +734,6 @@ impl RpcHandler {
         }))
     }
 
-    /// Generate `n` blocks to `addr`. This method is interruptible: when
-    /// `stop` is called, the `interrupt` flag is set, and the mining loop
-    /// exits at the next nonce iteration. The block that was being mined
-    /// is discarded, exactly as Bitcoin Core does when shutdown is requested.
     fn m_generatetoaddress(&mut self, req: &RpcRequest) -> RpcResponse {
         let n = match req.params.first().and_then(|v| v.as_u64()) {
             Some(n) => n,
@@ -767,9 +758,6 @@ impl RpcHandler {
                 break;
             }
 
-            // Phase 1: acquire the write lock briefly to read the current
-            // state and prepare the transaction list. The lock is released
-            // before mining starts.
             let (next_index, prev_hash, reward, nbits, txs) = {
                 let mut chain = self.state.chain.blocking_write();
                 let prev = chain.chain.last().unwrap().clone();
@@ -799,9 +787,6 @@ impl RpcHandler {
                 (next_index, prev.hash, reward, chain.nbits, txs)
             };
 
-            // Phase 2: mine without holding the lock. The `stop` method can
-            // acquire the read lock at any time, and `mine_interruptible`
-            // will observe the interrupt flag at the next nonce iteration.
             let mut block = crate::block::Block::new_for(
                 next_index,
                 prev_hash,
@@ -816,7 +801,6 @@ impl RpcHandler {
                 break;
             }
 
-            // Phase 3: reacquire the write lock to store the completed block.
             {
                 let mut chain = self.state.chain.blocking_write();
                 chain.chain.push(block.clone());
@@ -860,7 +844,6 @@ impl RpcHandler {
             Err(_) => return RpcResponse::err("wallet not found"),
         };
 
-        // Optional 3rd parameter: specific from_address
         let from_address = if req.params.len() >= 3 {
             req.params[2].as_str().unwrap_or("").to_string()
         } else {
@@ -951,10 +934,11 @@ fn m_getwallet() -> RpcResponse {
     }
 }
 
-fn m_getprivkey(req: &RpcRequest) -> RpcResponse {
+fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
+    // dumpprivkey <address> -> melihat private key dari alamat
     let target = match req.params.first().and_then(|v| v.as_str()) {
         Some(a) => a.to_string(),
-        None => return RpcResponse::err("address parameter is required"),
+        None => return RpcResponse::err("dumpprivkey requires an address"),
     };
 
     let w = match Wallet::load_default() {
@@ -964,21 +948,20 @@ fn m_getprivkey(req: &RpcRequest) -> RpcResponse {
 
     let entry = match w.get_entry(&target) {
         Some(e) => e,
-        None => return RpcResponse::err("address does not match any stored wallet entry"),
+        None => return RpcResponse::err("address not found in wallet"),
     };
 
     RpcResponse::ok(json!({
         "address": entry.address,
-        "public_key": entry.public_key,
-        "secret": entry.secret,
-        "created_at": entry.created_at,
+        "privkey": entry.secret,
     }))
 }
 
-fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
+fn m_importprivkey(req: &RpcRequest) -> RpcResponse {
+    // importprivkey <privkey> -> menambahkan private key ke wallet
     let secret = match req.params.first().and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
-        None => return RpcResponse::err("dumpprivkey requires a private key"),
+        None => return RpcResponse::err("importprivkey requires a private key"),
     };
 
     if secret.len() != 64 || !secret.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -1003,7 +986,7 @@ fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
         Ok(_) => RpcResponse::ok(json!({
             "address": entry.address,
             "public_key": entry.public_key,
-            "created_at": entry.created_at,
+            "message": "private key imported successfully",
         })),
         Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
     }
