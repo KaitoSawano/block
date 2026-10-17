@@ -84,14 +84,14 @@ async fn main() {
 
     // Penangkap Ctrl+C (SIGINT)
     let mut sigint = signal(SignalKind::interrupt()).expect("gagal daftar SIGINT");
-    
+
     tokio::spawn(async move {
         loop {
             sigint.recv().await;
             println!("\n[signal] Ctrl+C diterima. Melepas terminal...");
             println!("[signal] Node tetap berjalan di background.");
             println!("[signal] Gunakan `./zenachain stop` untuk mematikan node.");
-            
+
             // Lepas proses dari terminal (menjadi daemon di background)
             unsafe {
                 libc::daemon(0, 0);
@@ -102,61 +102,66 @@ async fn main() {
     // Loop utama P2P
     loop {
         match swarm.next().await {
-            Some(event) => {
-                match event {
-                    libp2p::swarm::SwarmEvent::Behaviour(
-                        p2p::behaviour::ZenaBehaviourEvent::Identify(identify::Event::Received {
-                            peer_id,
-                            ..
-                        }),
-                    ) => {
-                        if !requested_headers.contains(&peer_id) {
-                            requested_headers.insert(peer_id);
+            Some(event) => match event {
+                libp2p::swarm::SwarmEvent::Behaviour(
+                    p2p::behaviour::ZenaBehaviourEvent::Identify(identify::Event::Received {
+                        peer_id,
+                        ..
+                    }),
+                ) => {
+                    if !requested_headers.contains(&peer_id) {
+                        requested_headers.insert(peer_id);
 
-                            let msg = sync_state.make_get_headers(&chain);
-                            let request_id =
-                                swarm.behaviour_mut().sync.send_request(&peer_id, msg.to_bytes());
+                        let msg = sync_state.make_get_headers(&chain);
+                        let request_id = swarm
+                            .behaviour_mut()
+                            .sync
+                            .send_request(&peer_id, msg.to_bytes());
 
-                            println!(
-                                "[p2p] minta header dari {} (request {:?})",
-                                peer_id, request_id
-                            );
-                        }
+                        println!(
+                            "[p2p] minta header dari {} (request {:?})",
+                            peer_id, request_id
+                        );
                     }
-
-                    libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Sync(
-                        RrEvent::Message { peer, message, .. },
-                    )) => match message {
-                        RrMessage::Response { response, .. } => {
-                            if let Some(msg) = SyncMessage::from_bytes(&response) {
-                                handle_sync_message(&mut swarm, &mut chain, &mut sync_state, peer, msg);
-                            }
-                        }
-                        RrMessage::Request { request, channel, .. } => {
-                            if let Some(msg) = SyncMessage::from_bytes(&request) {
-                                let reply = handle_sync_request(&chain, msg);
-                                let _ = swarm
-                                    .behaviour_mut()
-                                    .sync
-                                    .send_response(channel, reply.to_bytes());
-                            }
-                        }
-                    },
-
-                    libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Gossipsub(
-                        gossipsub::Event::Message { message, .. },
-                    )) if message.topic == blocks_topic.hash() => {
-                        if let Ok(block) = serde_json::from_slice::<Block>(&message.data) {
-                            match SyncState::accept_block(&mut chain, block) {
-                                Ok(_) => println!("[p2p] blok diterima dari gossip"),
-                                Err(e) => println!("[p2p] blok gossip ditolak: {}", e),
-                            }
-                        }
-                    }
-
-                    _ => {}
                 }
-            }
+
+                libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Sync(
+                    RrEvent::Message { peer, message, .. },
+                )) => match message {
+                    RrMessage::Response { response, .. } => {
+                        if let Some(msg) = SyncMessage::from_bytes(&response) {
+                            handle_sync_message(&mut swarm, &mut chain, &mut sync_state, peer, msg);
+                        }
+                    }
+                    RrMessage::Request {
+                        request, channel, ..
+                    } => {
+                        if let Some(msg) = SyncMessage::from_bytes(&request) {
+                            let reply = handle_sync_request(&chain, msg);
+                            let _ = swarm
+                                .behaviour_mut()
+                                .sync
+                                .send_response(channel, reply.to_bytes());
+                        }
+                    }
+                },
+
+                libp2p::swarm::SwarmEvent::Behaviour(
+                    p2p::behaviour::ZenaBehaviourEvent::Gossipsub(gossipsub::Event::Message {
+                        message,
+                        ..
+                    }),
+                ) if message.topic == blocks_topic.hash() => {
+                    if let Ok(block) = serde_json::from_slice::<Block>(&message.data) {
+                        match SyncState::accept_block(&mut chain, block) {
+                            Ok(_) => println!("[p2p] blok diterima dari gossip"),
+                            Err(e) => println!("[p2p] blok gossip ditolak: {}", e),
+                        }
+                    }
+                }
+
+                _ => {}
+            },
             None => {
                 println!("[p2p] swarm berhenti. Menunggu...");
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
