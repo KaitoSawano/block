@@ -40,7 +40,9 @@ pub mod checkpoint {
 }
 
 pub mod network {
-    pub const NETWORK_MAGIC: [u8; 4] = [0xf9, 0xbe, 0xb4, 0xd9];
+    /// Magic bytes ZenaChain: "ZENA" dalam ASCII hex.
+    /// Menggantikan magic Bitcoin (0xf9beb4d9) agar tidak bentrok.
+    pub const NETWORK_MAGIC: [u8; 4] = [0x5a, 0x45, 0x4e, 0x41];
     pub const NETWORK_NAME: &str = "main";
     pub const DEFAULT_PORT: u16 = 8333;
     pub const PRUNE_AFTER_HEIGHT: u64 = 100_000;
@@ -160,6 +162,7 @@ impl Blockchain {
         }
         let nonce = new_block.nonce;
         self.chain.push(new_block);
+        self.adjust_difficulty();
         Ok(nonce)
     }
 
@@ -182,7 +185,7 @@ impl Blockchain {
         }
 
         let current_target = pow::nbits_to_target(self.nbits);
-        let scale = (expected_time_secs as u128) * 256 / (actual_time_secs as u128);
+        let scale = (actual_time_secs as u128) * 256 / (expected_time_secs as u128);
         let new_target = scale_target(&current_target, scale);
         let new_nbits = target_to_nbits(&new_target);
 
