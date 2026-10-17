@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Peer state for the ZenaChain peer-to-peer network.
+
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
@@ -72,6 +74,7 @@ impl Peer {
         self.state == PeerState::Handshaking
     }
 
+    /// Add a misbehavior score. Return `true` if the peer must be banned.
     pub fn add_misbehavior(&mut self, score: u32) -> bool {
         self.misbehavior = self.misbehavior.saturating_add(score);
         if self.misbehavior >= MAX_MISBEHAVIOR {
