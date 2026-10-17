@@ -20,7 +20,6 @@ use crate::p2p::framing::{read_message, write_message};
 use crate::p2p::handshake;
 use crate::p2p::inv::InventoryManager;
 use crate::p2p::message::{BlockLocator, Inventory, InvType, Message};
-use crate::p2p::peer::PeerState;
 use crate::p2p::peer_manager::{PeerEvent, PeerManager};
 use crate::p2p::peers;
 use crate::storage;
@@ -176,9 +175,7 @@ impl Network {
         if !self.peer_manager.can_add_outbound() {
             return;
         }
-        let candidates = self
-            .addr_book
-            .candidates(Duration::from_secs(60), 4);
+        let candidates = self.addr_book.candidates(Duration::from_secs(60), 4);
         if candidates.is_empty() {
             self.next_connect_at = Instant::now() + self.config.connect_interval;
             return;
@@ -513,7 +510,6 @@ impl Network {
                     }]);
                 }
             }
-            Message::GetHeaders(_) => {}
             Message::Reject {
                 command,
                 code,
@@ -531,7 +527,7 @@ impl Network {
         if headers.is_empty() {
             return;
         }
-        let mut chain = self.chain.lock().await;
+        let chain = self.chain.lock().await;
         let tip = match chain.chain.last() {
             Some(b) => b.clone(),
             None => return,
