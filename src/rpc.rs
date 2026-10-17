@@ -69,7 +69,7 @@ pub fn call_at(addr: &str, method: &str, params: Vec<Value>) -> std::io::Result<
     reader.read_line(&mut buf)?;
 
     let resp: RpcResponse = serde_json::from_str(buf.trim())
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
     Ok(resp)
 }
 
