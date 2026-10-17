@@ -3,14 +3,20 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! One-shot binary that computes the ZenaChain genesis block.
+//!
+//! Run `./zenachain-genesis` whenever a consensus parameter is changed.
+//! The binary prints the new hash, merkle root, timestamp, and nonce.
+//! Copy the four values into `src/consensus/genesis.rs`.
+
 use zenachain::block::Block;
 
 fn main() {
-    let b = Block::genesis();
+    let b = Block::genesis_unchecked();
 
     println!();
     println!("============================================================");
-    println!("  GENESIS ZENACHAIN (salin ke src/consensus/genesis.rs)");
+    println!("  ZENACHAIN GENESIS (copy into src/consensus/genesis.rs)");
     println!("============================================================");
     println!("  pub const EXPECTED_GENESIS_HASH: &str =");
     println!("      \"{}\";", b.hash);
