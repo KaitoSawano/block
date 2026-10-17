@@ -1,6 +1,13 @@
 // Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
+
+//! Peer bootstrap parameters for ZenaChain.
+//!
+//! The default values in this module are used when `zenachain.conf`
+//! does not provide an override. Change the values through the
+//! configuration file, not by editing this module.
 
 pub const DEFAULT_LISTEN_ADDR: &str = "0.0.0.0:8333";
 pub const DEFAULT_BOOTSTRAP: &[&str] = &[];
