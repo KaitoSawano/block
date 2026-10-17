@@ -1,3 +1,7 @@
+// Copyright (c) 2026 Aldianokto
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
+
 pub mod block;
 pub mod blockchain;
 pub mod config;
