@@ -3,24 +3,29 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! ZenaChain standalone miner.
+//!
+//! This binary requests a block template from the node, mines the block,
+//! and submits it back to the node through the RPC interface.
+
 use zenachain::block::Block;
 use zenachain::rpc;
 use zenachain::transaction::Transaction;
 
 fn main() {
-    println!("[miner] zenachain-miner dijalankan.");
-    println!("[miner] terhubung ke node di {}.", rpc::DEFAULT_RPC_ADDR);
+    println!("[miner] zenachain-miner started");
+    println!("[miner] connecting to the node at {}", rpc::DEFAULT_RPC_ADDR);
 
     loop {
         let template = match rpc::call("getblocktemplate", vec![]) {
             Ok(r) if r.ok => r.result,
             Ok(r) => {
-                println!("[miner] node menolak: {}", r.error);
+                println!("[miner] node rejected the request: {}", r.error);
                 std::thread::sleep(std::time::Duration::from_secs(5));
                 continue;
             }
             Err(e) => {
-                println!("[miner] tidak dapat hubungi node: {}", e);
+                println!("[miner] cannot reach the node: {}", e);
                 std::thread::sleep(std::time::Duration::from_secs(5));
                 continue;
             }
@@ -35,6 +40,12 @@ fn main() {
 
         let target_address =
             std::env::var("ZENAC_MINE_FOR").unwrap_or_else(|_| "UNKNOWN".to_string());
+
+        if target_address == "UNKNOWN" {
+            println!("[miner] ZENAC_MINE_FOR is not set. Set it to a valid ZENA address.");
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            continue;
+        }
 
         let reward = zenachain::blockchain::Blockchain::calculate_reward(height);
 
@@ -57,6 +68,8 @@ fn main() {
         );
 
         if !zenachain::pow::mine(&mut block, nbits) {
+            println!("[miner] mining failed: nonce exhausted");
+            std::thread::sleep(std::time::Duration::from_secs(1));
             continue;
         }
 
@@ -64,12 +77,18 @@ fn main() {
         match rpc::call("submitblock", vec![block_json]) {
             Ok(r) if r.ok => {
                 println!(
-                    "[miner] blok diterima: {}",
+                    "[miner] block accepted: {}",
                     serde_json::to_string(&r.result).unwrap()
                 );
             }
-            Ok(r) => println!("[miner] blok ditolak: {}", r.error),
-            Err(e) => println!("[miner] gagal submit: {}", e),
+            Ok(r) => {
+                println!("[miner] block rejected: {}", r.error);
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+            Err(e) => {
+                println!("[miner] submission failed: {}", e);
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
         }
     }
 }
