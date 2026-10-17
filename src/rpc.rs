@@ -241,6 +241,9 @@ impl RpcServer {
         println!("[node] Mematikan node sedang berjalan. Mohon tunggu...");
         println!("[node] Menyimpan data blockchain...");
 
+        // Set interrupt DULU, sebelum menunggu lock.
+        // Mining yang sedang berjalan akan melihat flag ini di iterasi
+        // berikutnya dan langsung berhenti (blok yang diinterupsi dibuang).
         self.interrupt.store(true, Ordering::SeqCst);
         self.shutdown.store(true, Ordering::SeqCst);
 
@@ -725,7 +728,9 @@ impl RpcServer {
                 break;
             }
 
-            let (prev, reward, nbits, txs) = {
+            // FASE 1: ambil lock sebentar untuk baca state + siapkan transaksi.
+            // Lock DILEPAS sebelum mining.
+            let (next_index, prev_hash, reward, nbits, txs) = {
                 let mut chain = self.chain.blocking_write();
                 let prev = chain.chain.last().unwrap().clone();
                 let next_index = prev.index + 1;
@@ -751,12 +756,15 @@ impl RpcServer {
                     format!("height={} target={}", next_index, addr),
                 ));
 
-                (prev, reward, chain.nbits, txs)
+                (next_index, prev.hash, reward, chain.nbits, txs)
             };
 
+            // FASE 2: mining TANPA memegang lock.
+            // `stop` bisa mengambil lock kapan saja, dan `mine_interruptible`
+            // akan melihat `interrupt` flag di iterasi berikutnya.
             let mut block = crate::block::Block::new_for(
-                prev.index + 1,
-                prev.hash.clone(),
+                next_index,
+                prev_hash,
                 reward,
                 nbits,
                 txs,
@@ -764,10 +772,14 @@ impl RpcServer {
             );
 
             if !pow::mine_interruptible(&mut block, nbits, Some(&self.interrupt)) {
-                println!("[rpc] mining diinterupsi di height {}", block.index);
+                // Blok yang diinterupsi DIBUANG (tidak di-push ke chain).
+                // Ini persis perilaku Bitcoin: nonce yang belum selesai
+                // tidak menghasilkan blok.
+                println!("[rpc] mining diinterupsi di height {}", next_index);
                 break;
             }
 
+            // FASE 3: ambil lock lagi untuk menyimpan blok yang sudah selesai.
             {
                 let mut chain = self.chain.blocking_write();
                 chain.chain.push(block.clone());
