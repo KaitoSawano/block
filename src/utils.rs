@@ -3,14 +3,18 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Utility functions shared across the crate.
+
 use sha3::{Digest, Sha3_256};
 
+/// Compute the SHA3-256 digest of `data` and return it as a lowercase hex string.
 pub fn sha3_256_hex(data: &[u8]) -> String {
     let mut hasher = Sha3_256::new();
     hasher.update(data);
     hex::encode(hasher.finalize())
 }
 
+/// Return the current Unix timestamp in milliseconds.
 pub fn now_millis() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -18,22 +22,25 @@ pub fn now_millis() -> u128 {
         .as_millis()
 }
 
-/// Konversi satoshi ke string ZENAC dengan 8 desimal.
-/// 1 ZENAC = 100.000.000 satoshi.
-/// Contoh: 1 -> "0.00000001"
-///         100000000 -> "1.00000000"
-///         10102000000 -> "101.02000000"
+/// Convert an amount in satoshis to a ZENAC string with eight decimal places.
+///
+/// One ZENAC equals 100,000,000 satoshis.
+/// Examples:
+///   1           -> "0.00000001"
+///   100000000   -> "1.00000000"
+///   10102000000 -> "101.02000000"
 pub fn satoshi_to_zenac(satoshi: u64) -> String {
     let whole = satoshi / 100_000_000;
     let frac = satoshi % 100_000_000;
     format!("{}.{:08}", whole, frac)
 }
 
+/// Convert an amount in ZENAC to satoshis.
 pub fn zenac_to_satoshi(zenac: f64) -> u64 {
     (zenac * 100_000_000.0) as u64
 }
 
-/// Format Unix millis menjadi "YYYY-MM-DD HH:MM:SS" UTC.
+/// Format a Unix timestamp in milliseconds as "YYYY-MM-DD HH:MM:SS" in UTC.
 pub fn format_datetime(millis: u128) -> String {
     let secs = (millis / 1000) as i64;
     let (year, month, day, hour, minute, second) = civil_from_unix(secs);
@@ -43,6 +50,7 @@ pub fn format_datetime(millis: u128) -> String {
     )
 }
 
+/// Convert a Unix timestamp in seconds to a civil date and time in UTC.
 fn civil_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     let days = secs.div_euclid(86_400);
     let secs_of_day = secs.rem_euclid(86_400);
