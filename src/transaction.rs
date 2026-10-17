@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Transaction structure and signature operations.
+
 use crate::utils::sha3_256_hex;
 use serde::{Deserialize, Serialize};
 
