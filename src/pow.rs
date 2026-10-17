@@ -3,11 +3,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Proof-of-work primitives.
+
 use crate::block::Block;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use crate::consensus::pow::{GENESIS_NBITS, POW_LIMIT};
 
+/// Convert a compact nBits value into a 256-bit big-endian target.
 pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
     let exponent = (nbits >> 24) as usize;
     let mantissa = nbits & 0x007fffff;
@@ -39,6 +42,7 @@ pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
     target
 }
 
+/// Return whether `hash_hex` is less than or equal to `target`.
 pub fn hash_le_target(hash_hex: &str, target: &[u8; 32]) -> bool {
     let hash_bytes = match hex::decode(hash_hex) {
         Ok(b) if b.len() == 32 => b,
@@ -56,19 +60,25 @@ pub fn hash_le_target(hash_hex: &str, target: &[u8; 32]) -> bool {
     true
 }
 
+/// Return whether `hash_hex` meets the target encoded by `nbits`.
 pub fn hash_meets_nbits(hash_hex: &str, nbits: u32) -> bool {
     let target = nbits_to_target(nbits);
     hash_le_target(hash_hex, &target)
 }
 
-/// Mine blok sampai hash memenuhi target atau `interrupt` di-set.
-/// Return `true` jika berhasil, `false` jika diinterupsi atau nonce habis.
+/// Mine the block until the hash meets the target or the nonce is exhausted.
+/// Return `true` on success and `false` if the nonce is exhausted.
 pub fn mine(block: &mut Block, nbits: u32) -> bool {
     mine_interruptible(block, nbits, None)
 }
 
-/// Versi `mine` yang bisa diinterupsi lewat `AtomicBool`.
-pub fn mine_interruptible(block: &mut Block, nbits: u32, interrupt: Option<&AtomicBool>) -> bool {
+/// Mine the block until the hash meets the target, the nonce is exhausted,
+/// or the interrupt flag is set. Return `true` on success.
+pub fn mine_interruptible(
+    block: &mut Block,
+    nbits: u32,
+    interrupt: Option<&AtomicBool>,
+) -> bool {
     let target = nbits_to_target(nbits);
     loop {
         if let Some(flag) = interrupt {
