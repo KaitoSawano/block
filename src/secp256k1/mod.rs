@@ -1,9 +1,7 @@
-//! Modul secp256k1 untuk ZenaChain.
-//!
-//! Menggunakan crate `secp256k1` (rust-bitcoin), wrapper atas
-//! libsecp256k1 yang dipakai Bitcoin Core.
-//!
-//! Parameter: ECDSA di kurva secp256k1.
+// Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
 
 pub mod address;
 pub mod keypair;
