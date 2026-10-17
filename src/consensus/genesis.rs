@@ -1,9 +1,7 @@
-//! Parameter genesis konsensus ZenaChain.
-//!
-//! Nilai `EXPECTED_*` di bawah adalah sidik jari genesis yang sudah final.
-//! Kalau `Block::genesis()` menghitung genesis dengan hash atau merkle
-//! root yang berbeda, `zenachaind` akan mencetak nilai genesis yang baru,
-//! lalu keluar. Anda salin ke file ini, build ulang, jalankan lagi.
+// Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
 
 pub const GENESIS_MESSAGE: &str = "ZenaChain Genesis - 2026";
 pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
