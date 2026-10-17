@@ -1,6 +1,4 @@
 //! Parameter ekonomi konsensus ZenaChain.
-//!
-//! Semua parameter di sini masuk ke `consensus_fingerprint`.
 
 pub const COIN_NAME: &str = "ZenaChain";
 pub const SYMBOL: &str = "ZENAC";
@@ -23,7 +21,7 @@ pub const SUBSIDY_HALVING_INTERVAL: u64 = 280_000_000;
 pub const MAX_HALVINGS: u32 = 64;
 
 pub const POW_TARGET_SPACING_SECS: u64 = 15;
-pub const POW_TARGET_TIMESPAN_SECS: u64 = 259_200;
+pub const POW_TARGET_TIMESPAN_SECS: u64 = DIFFICULTY_ADJUST_INTERVAL * POW_TARGET_SPACING_SECS;
 pub const MINER_CONFIRMATION_WINDOW: u64 = 69_120;
 pub const DIFFICULTY_ADJUST_INTERVAL: u64 = 69_120;
 
