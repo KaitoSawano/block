@@ -3,6 +3,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Message framing for the ZenaChain peer-to-peer protocol.
+//!
+//! The frame layout follows Bitcoin:
+//! [magic: 4][command: 12][length: 4 LE][checksum: 4][payload: length]
+//!
+//! The checksum is the first four bytes of double-SHA3-256(payload),
+//! the analogue of Bitcoin's double-SHA256 checksum.
+
 use crate::blockchain::network::NETWORK_MAGIC;
 use crate::utils::sha3_256_hex;
 use std::io::{self, Read, Write};
@@ -11,16 +19,20 @@ pub const COMMAND_LEN: usize = 12;
 pub const HEADER_LEN: usize = 4 + COMMAND_LEN + 4 + 4;
 pub const MAX_PAYLOAD_LEN: usize = 32 * 1024 * 1024;
 
+/// Compute the four-byte checksum of the payload:
+/// SHA3-256(SHA3-256(payload))[..4].
 pub fn checksum(payload: &[u8]) -> [u8; 4] {
     let first = sha3_256_hex(payload);
-    let first_bytes = hex::decode(&first).expect("sha3 hex selalu valid");
+    let first_bytes = hex::decode(&first).expect("sha3 hex is always valid");
     let second = sha3_256_hex(&first_bytes);
-    let second_bytes = hex::decode(&second).expect("sha3 hex selalu valid");
+    let second_bytes = hex::decode(&second).expect("sha3 hex is always valid");
     let mut out = [0u8; 4];
     out.copy_from_slice(&second_bytes[..4]);
     out
 }
 
+/// Read a complete message from the stream.
+/// Return `(command, payload)`.
 pub fn read_message<R: Read>(reader: &mut R) -> io::Result<(String, Vec<u8>)> {
     let mut header = [0u8; HEADER_LEN];
     reader.read_exact(&mut header)?;
@@ -29,7 +41,7 @@ pub fn read_message<R: Read>(reader: &mut R) -> io::Result<(String, Vec<u8>)> {
     if magic != NETWORK_MAGIC {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("magic tidak cocok: {:02x?}", magic),
+            format!("magic mismatch: {:02x?}", magic),
         ));
     }
 
@@ -45,7 +57,7 @@ pub fn read_message<R: Read>(reader: &mut R) -> io::Result<(String, Vec<u8>)> {
     if length > MAX_PAYLOAD_LEN {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("payload terlalu besar: {} byte", length),
+            format!("payload too large: {} bytes", length),
         ));
     }
 
@@ -58,18 +70,19 @@ pub fn read_message<R: Read>(reader: &mut R) -> io::Result<(String, Vec<u8>)> {
     if actual_checksum != expected_checksum {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "checksum tidak cocok",
+            "checksum mismatch",
         ));
     }
 
     Ok((command, payload))
 }
 
+/// Write a complete message to the stream.
 pub fn write_message<W: Write>(writer: &mut W, command: &str, payload: &[u8]) -> io::Result<()> {
     if command.len() > COMMAND_LEN {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("command terlalu panjang: {}", command),
+            format!("command too long: {}", command),
         ));
     }
 
@@ -96,7 +109,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn roundtrip_pesan() {
+    fn roundtrip_message() {
         let mut buf = Vec::new();
         write_message(&mut buf, "ping", b"hello").unwrap();
 
@@ -107,14 +120,14 @@ mod tests {
     }
 
     #[test]
-    fn checksum_konsisten() {
+    fn checksum_is_consistent() {
         let a = checksum(b"zenachain");
         let b = checksum(b"zenachain");
         assert_eq!(a, b);
     }
 
     #[test]
-    fn magic_salah_ditolak() {
+    fn wrong_magic_is_rejected() {
         let mut buf = Vec::new();
         write_message(&mut buf, "ping", b"").unwrap();
         buf[0] = 0x00;
@@ -123,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn checksum_salah_ditolak() {
+    fn wrong_checksum_is_rejected() {
         let mut buf = Vec::new();
         write_message(&mut buf, "ping", b"data").unwrap();
         let last = buf.len() - 1;
