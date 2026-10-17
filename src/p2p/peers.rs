@@ -1,4 +1,6 @@
-//! Peer bootstrap ZenaChain.
+// Copyright (c) 2026 Aldianokto
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
 
 pub const DEFAULT_LISTEN_ADDR: &str = "0.0.0.0:8333";
 pub const DEFAULT_BOOTSTRAP: &[&str] = &[];
