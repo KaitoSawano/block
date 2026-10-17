@@ -12,6 +12,17 @@ use zenachain::rpc::RpcServer;
 
 #[tokio::main]
 async fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let is_daemon = args.iter().any(|a| a == "--daemon" || a == "-d");
+
+    // Jika dijalankan sebagai daemon, lepaskan dari terminal.
+    // Ini persis seperti `bitcoind -daemon`.
+    if is_daemon {
+        unsafe {
+            libc::daemon(0, 0);
+        }
+    }
+
     let mut chain = Blockchain::new();
 
     println!("ZenaChain server starting");
@@ -30,7 +41,7 @@ async fn main() {
         println!("[config] file config dibuat di {}", Config::default_path());
     }
 
-    // Tangkap semua sinyal yang bisa mematikan proses.
+    // Tangkap semua sinyal agar node tidak mati kecuali via RPC stop.
     let mut sigint = signal(SignalKind::interrupt()).expect("gagal daftar SIGINT");
     let mut sigterm = signal(SignalKind::terminate()).expect("gagal daftar SIGTERM");
     let mut sighup = signal(SignalKind::hangup()).expect("gagal daftar SIGHUP");
