@@ -106,6 +106,20 @@ fn main() {
             }
             rpc::call_and_print("getrawtransaction", vec![json!(args[2])]);
         }
+        "decoderawtransaction" => {
+            if args.len() < 3 {
+                println!("usage: zenachain decoderawtransaction \"<txid>\"");
+                return;
+            }
+            rpc::call_and_print("decoderawtransaction", vec![json!(args[2])]);
+        }
+        "testmempoolaccept" => {
+            if args.len() < 3 {
+                println!("usage: zenachain testmempoolaccept \"<txid>\"");
+                return;
+            }
+            rpc::call_and_print("testmempoolaccept", vec![json!(args[2])]);
+        }
         "listunspent" => {
             let params = if args.len() >= 3 {
                 vec![json!(args[2])]
@@ -181,6 +195,8 @@ fn print_help() {
     println!("  zenachain getblockhash <height>               hash of the block at the given height");
     println!("  zenachain getblock \"<hash>\"                   block details for the given hash");
     println!("  zenachain getrawtransaction \"<txid>\"          transaction details for the given txid");
+    println!("  zenachain decoderawtransaction \"<txid>\"       decode a transaction in a readable format");
+    println!("  zenachain testmempoolaccept \"<txid>\"          test whether a transaction would be accepted into the mempool");
     println!("  zenachain listunspent [address]               list wallet UTXOs");
     println!("  zenachain getmempoolinfo                      mempool summary");
     println!("  zenachain getlistwallet                       list all addresses in the wallet");
