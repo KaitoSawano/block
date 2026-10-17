@@ -1,6 +1,5 @@
 use crate::datadir;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -34,30 +33,8 @@ impl Config {
         datadir::as_str(&datadir::config_path())
     }
 
-    /// Cari file config: cek di home dulu, lalu di datadir.
-    pub fn find_config_path() -> Option<String> {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let home_conf = PathBuf::from(&home)
-            .join(".zenachain")
-            .join("zenachain.conf");
-        if home_conf.exists() {
-            return Some(home_conf.to_string_lossy().to_string());
-        }
-
-        let datadir_conf = datadir::config_path();
-        if datadir_conf.exists() {
-            return Some(datadir_conf.to_string_lossy().to_string());
-        }
-
-        None
-    }
-
     pub fn load_or_default() -> Self {
-        let path = match Self::find_config_path() {
-            Some(p) => p,
-            None => return Config::new(),
-        };
-
+        let path = Self::default_path();
         let data = match std::fs::read_to_string(&path) {
             Ok(d) => d,
             Err(_) => return Config::new(),
