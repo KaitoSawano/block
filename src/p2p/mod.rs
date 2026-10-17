@@ -3,6 +3,12 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Peer-to-peer networking for ZenaChain.
+//!
+//! The networking layer uses raw TCP with Bitcoin-style framing,
+//! Version/Verack handshaking, headers-first synchronization, and
+//! Inv/GetData relay. It does not depend on libp2p.
+
 pub mod addr_book;
 pub mod dns_seed;
 pub mod framing;
