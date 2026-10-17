@@ -42,6 +42,31 @@ pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
     target
 }
 
+/// Convert nBits to a floating-point difficulty value (similar to Bitcoin).
+pub fn nbits_to_difficulty(nbits: u32) -> f64 {
+    // Bitcoin's maximum target (0x1d00ffff) corresponds to difficulty 1.0.
+    let max_target = nbits_to_target(0x1d00ffff);
+    let target = nbits_to_target(nbits);
+
+    // Convert the 256-bit arrays to f64 by using the leading bytes.
+    // This is an approximation but sufficient for display purposes.
+    let mut max_val = 0.0f64;
+    for &b in max_target.iter() {
+        max_val = max_val * 256.0 + b as f64;
+    }
+
+    let mut cur_val = 0.0f64;
+    for &b in target.iter() {
+        cur_val = cur_val * 256.0 + b as f64;
+    }
+
+    if cur_val == 0.0 {
+        return 0.0;
+    }
+
+    max_val / cur_val
+}
+
 /// Return whether `hash_hex` is less than or equal to `target`.
 pub fn hash_le_target(hash_hex: &str, target: &[u8; 32]) -> bool {
     let hash_bytes = match hex::decode(hash_hex) {
