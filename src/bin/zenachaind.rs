@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 
 use zenachain::blockchain::Blockchain;
 use zenachain::config::Config;
-use zenachain::p2p::network::{NetworkConfig, spawn};
+use zenachain::p2p::network::{spawn, NetworkConfig};
 use zenachain::rpc::RpcServer;
 use zenachain::storage;
 

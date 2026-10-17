@@ -41,9 +41,7 @@ pub fn read_message<R: Read>(reader: &mut R) -> io::Result<(String, Vec<u8>)> {
         .unwrap_or(COMMAND_LEN);
     let command = String::from_utf8_lossy(&command_bytes[..command_end]).to_string();
 
-    let length = u32::from_le_bytes([
-        header[16], header[17], header[18], header[19],
-    ]) as usize;
+    let length = u32::from_le_bytes([header[16], header[17], header[18], header[19]]) as usize;
 
     if length > MAX_PAYLOAD_LEN {
         return Err(io::Error::new(

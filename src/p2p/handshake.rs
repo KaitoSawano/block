@@ -3,9 +3,7 @@
 use std::net::SocketAddr;
 
 use crate::blockchain::Blockchain;
-use crate::p2p::message::{
-    Message, NetAddr, VersionMessage, PROTOCOL_VERSION, USER_AGENT,
-};
+use crate::p2p::message::{Message, NetAddr, VersionMessage, PROTOCOL_VERSION, USER_AGENT};
 use crate::p2p::peer::{Peer, PeerState};
 
 pub fn build_version(chain: &Blockchain, peer: &Peer, local_addr: SocketAddr) -> Message {

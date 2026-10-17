@@ -19,7 +19,7 @@ use crate::p2p::dns_seed;
 use crate::p2p::framing::{read_message, write_message};
 use crate::p2p::handshake;
 use crate::p2p::inv::InventoryManager;
-use crate::p2p::message::{BlockLocator, Inventory, InvType, Message};
+use crate::p2p::message::{BlockLocator, InvType, Inventory, Message};
 use crate::p2p::peer_manager::{PeerEvent, PeerManager};
 use crate::p2p::peers;
 use crate::storage;
@@ -382,7 +382,8 @@ impl Network {
                         self.queue_message(id, &Message::Verack);
                     }
                     Err(e) => {
-                        self.disconnect(id, &format!("version ditolak: {}", e)).await;
+                        self.disconnect(id, &format!("version ditolak: {}", e))
+                            .await;
                     }
                 }
             }
@@ -447,9 +448,7 @@ impl Network {
                 for inv in &new_items {
                     if inv.inv_type == InvType::Block && !self.inv.has_block(&inv.hash) {
                         to_request.push(inv.clone());
-                    } else if inv.inv_type == InvType::Transaction
-                        && !self.inv.has_tx(&inv.hash)
-                    {
+                    } else if inv.inv_type == InvType::Transaction && !self.inv.has_tx(&inv.hash) {
                         if chain.mempool.iter().any(|t| t.txid == inv.hash) {
                             self.inv.add_tx(&inv.hash);
                         } else {
