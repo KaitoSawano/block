@@ -16,7 +16,7 @@ async fn main() {
     println!("ZenaChain server starting");
     println!("Gunakan `./zenachain stop` untuk menghentikan node.");
 
-    // Baca config dari .chain/zenachain.conf.
+    // Baca config dari .chain/zenachain.conf atau ~/.zenachain/zenachain.conf.
     let config = Config::load_or_default();
     println!("[config] network      : {}", config.network);
     println!("[config] rpc_addr     : {}", config.rpc_addr);
@@ -91,9 +91,9 @@ async fn main() {
 
     // RPC di task terpisah, pakai rpc_addr dari config.
     let chain_for_rpc = chain.clone();
-    let rpc_addr = config.rpc_addr.clone();
+    let cfg_for_rpc = config.clone();
     tokio::spawn(async move {
-        let mut server = RpcServer::new(chain_for_rpc, rpc_addr);
+        let mut server = RpcServer::new(chain_for_rpc, &cfg_for_rpc);
         server.listen();
     });
 
@@ -101,17 +101,18 @@ async fn main() {
 
     while let Some(event) = swarm.next().await {
         match event {
-            libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Identify(
-                identify::Event::Received { peer_id, .. },
-            )) => {
+            libp2p::swarm::SwarmEvent::Behaviour(
+                p2p::behaviour::ZenaBehaviourEvent::Identify(identify::Event::Received {
+                    peer_id,
+                    ..
+                }),
+            ) => {
                 if !requested_headers.contains(&peer_id) {
                     requested_headers.insert(peer_id);
 
                     let msg = sync_state.make_get_headers(&chain);
-                    let request_id = swarm
-                        .behaviour_mut()
-                        .sync
-                        .send_request(&peer_id, msg.to_bytes());
+                    let request_id =
+                        swarm.behaviour_mut().sync.send_request(&peer_id, msg.to_bytes());
 
                     println!(
                         "[p2p] minta header dari {} (request {:?})",
@@ -128,9 +129,7 @@ async fn main() {
                         handle_sync_message(&mut swarm, &mut chain, &mut sync_state, peer, msg);
                     }
                 }
-                RrMessage::Request {
-                    request, channel, ..
-                } => {
+                RrMessage::Request { request, channel, .. } => {
                     if let Some(msg) = SyncMessage::from_bytes(&request) {
                         let reply = handle_sync_request(&chain, msg);
                         let _ = swarm
@@ -141,12 +140,9 @@ async fn main() {
                 }
             },
 
-            libp2p::swarm::SwarmEvent::Behaviour(
-                p2p::behaviour::ZenaBehaviourEvent::Gossipsub(gossipsub::Event::Message {
-                    message,
-                    ..
-                }),
-            ) if message.topic == blocks_topic.hash() => {
+            libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Gossipsub(
+                gossipsub::Event::Message { message, .. },
+            )) if message.topic == blocks_topic.hash() => {
                 if let Ok(block) = serde_json::from_slice::<Block>(&message.data) {
                     match SyncState::accept_block(&mut chain, block) {
                         Ok(_) => println!("[p2p] blok diterima dari gossip"),
