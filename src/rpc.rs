@@ -246,7 +246,7 @@ impl RpcHandler {
             "verifychain" => self.m_verifychain(),
             "getgenesishash" => self.m_getgenesishash(),
             "getgenesis" => self.m_getgenesis(),
-            "getwallet" => m_getwallet(),
+            "getlistwallet" => m_getlistwallet(),
             "dumpprivkey" => m_dumpprivkey(req),
             "importprivkey" => m_importprivkey(req),
             "getnewwallet" => m_getnewwallet(),
@@ -915,7 +915,7 @@ fn m_getnetworkinfo() -> RpcResponse {
     }))
 }
 
-fn m_getwallet() -> RpcResponse {
+fn m_getlistwallet() -> RpcResponse {
     match Wallet::load_default() {
         Ok(w) => {
             let addresses: Vec<Value> = w.entries.iter().map(|e| json!({
@@ -935,7 +935,6 @@ fn m_getwallet() -> RpcResponse {
 }
 
 fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
-    // dumpprivkey <address> -> melihat private key dari alamat
     let target = match req.params.first().and_then(|v| v.as_str()) {
         Some(a) => a.to_string(),
         None => return RpcResponse::err("dumpprivkey requires an address"),
@@ -958,7 +957,6 @@ fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
 }
 
 fn m_importprivkey(req: &RpcRequest) -> RpcResponse {
-    // importprivkey <privkey> -> menambahkan private key ke wallet
     let secret = match req.params.first().and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
         None => return RpcResponse::err("importprivkey requires a private key"),
