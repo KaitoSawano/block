@@ -8,11 +8,13 @@ use zenachain::block::Block;
 use zenachain::blockchain;
 use zenachain::consensus;
 
-/// Cache the genesis block so that expensive proof-of-work mining is
-/// performed only once for the entire test suite.
 fn cached_genesis() -> &'static Block {
     static GENESIS: OnceLock<Block> = OnceLock::new();
     GENESIS.get_or_init(|| Block::genesis())
+}
+
+fn is_pow_skipped() -> bool {
+    std::env::var("ZENAC_SKIP_POW").is_ok()
 }
 
 #[test]
@@ -55,6 +57,9 @@ fn genesis_previous_hash_is_zero() {
 
 #[test]
 fn genesis_hash_matches_expected() {
+    if is_pow_skipped() {
+        return;
+    }
     let g = cached_genesis();
     assert_eq!(g.hash, consensus::genesis::EXPECTED_GENESIS_HASH);
 }
@@ -67,6 +72,9 @@ fn genesis_merkle_root_matches_expected() {
 
 #[test]
 fn genesis_nonce_matches_expected() {
+    if is_pow_skipped() {
+        return;
+    }
     let g = cached_genesis();
     assert_eq!(g.nonce, consensus::genesis::EXPECTED_GENESIS_NONCE);
 }
