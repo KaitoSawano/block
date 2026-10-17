@@ -1,23 +1,18 @@
-use futures::StreamExt;
-use libp2p::request_response::{Event as RrEvent, Message as RrMessage};
-use libp2p::{gossipsub, identify, Multiaddr, PeerId};
-use std::collections::HashSet;
-use tokio::signal::unix::{signal, SignalKind};
-use zenachain::block::Block;
+use std::sync::Arc;
+use std::time::Duration;
+
+use tokio::sync::Mutex;
+
 use zenachain::blockchain::Blockchain;
 use zenachain::config::Config;
-use zenachain::datadir;
-use zenachain::p2p::{self, SyncMessage, SyncState};
+use zenachain::p2p::network::{NetworkConfig, spawn};
 use zenachain::rpc::RpcServer;
 use zenachain::storage;
 
 #[tokio::main]
 async fn main() {
-    let mut chain = Blockchain::new();
-
     println!("ZenaChain server starting");
     println!("Gunakan `./zenachain stop` untuk menghentikan node.");
-    println!("Tekan Ctrl+C untuk melepas terminal (node tetap berjalan di background).");
 
     let config = Config::load_or_default();
     println!("[config] network      : {}", config.network);
@@ -32,222 +27,62 @@ async fn main() {
         println!("[config] file config dibuat di {}", Config::default_path());
     }
 
-    let peer_id_path = datadir::as_str(&datadir::peer_id_path());
-    let keypair = p2p::swarm::load_or_generate_keypair(&peer_id_path);
+    let chain = Arc::new(Mutex::new(
+        storage::load_chain().unwrap_or_else(|_| Blockchain::new()),
+    ));
 
-    let mut swarm = match p2p::build_swarm(keypair).await {
-        Ok(s) => s,
-        Err(e) => {
-            println!("[p2p] gagal bikin swarm: {}", e);
-            return;
-        }
-    };
-
-    let listen_addr: Multiaddr = match config.listen_addr.parse() {
+    let listen_addr = match config.listen_addr.parse() {
         Ok(a) => a,
         Err(e) => {
-            println!("[p2p] alamat listen tidak valid: {}", e);
+            eprintln!("[p2p] alamat listen tidak valid: {}", e);
             return;
         }
     };
 
-    if let Err(e) = swarm.listen_on(listen_addr) {
-        println!("[p2p] gagal listen {}: {}", config.listen_addr, e);
-    }
-
-    for addr in &config.bootstrap {
-        match addr.parse::<Multiaddr>() {
-            Ok(ma) => {
-                if let Err(e) = swarm.dial(ma) {
-                    println!("[p2p] gagal dial {}: {}", addr, e);
-                }
-            }
-            Err(e) => println!("[p2p] alamat bootstrap tidak valid {}: {}", addr, e),
+    let mut bootstrap = Vec::new();
+    for b in &config.bootstrap {
+        if let Ok(sa) = b.parse() {
+            bootstrap.push(sa);
+        } else {
+            eprintln!("[p2p] bootstrap tidak valid: {}", b);
         }
     }
 
-    if let Err(e) = swarm.behaviour_mut().kademlia.bootstrap() {
-        println!("[p2p] kademlia bootstrap gagal: {}", e);
-    }
-
-    let mut sync_state = SyncState::new();
-    let mut requested_headers: HashSet<PeerId> = HashSet::new();
+    let net_config = NetworkConfig {
+        listen_addr,
+        bootstrap,
+        ..Default::default()
+    };
 
     let chain_for_rpc = chain.clone();
     let cfg_for_rpc = config.clone();
     tokio::spawn(async move {
-        let mut server = RpcServer::new(chain_for_rpc, &cfg_for_rpc);
+        let chain_guard = chain_for_rpc.lock().await.clone();
+        let mut server = RpcServer::new(chain_guard, &cfg_for_rpc);
         server.listen();
     });
 
-    let blocks_topic = gossipsub::IdentTopic::new(p2p::TOPIC_BLOCKS);
+    let net_handle = spawn(net_config, chain.clone());
 
-    // Penangkap Ctrl+C (SIGINT)
-    let mut sigint = signal(SignalKind::interrupt()).expect("gagal daftar SIGINT");
-
-    tokio::spawn(async move {
-        loop {
-            sigint.recv().await;
-            println!("\n[signal] Ctrl+C diterima. Melepas terminal...");
-            println!("[signal] Node tetap berjalan di background.");
-            println!("[signal] Gunakan `./zenachain stop` untuk mematikan node.");
-
-            // Lepas proses dari terminal (menjadi daemon di background)
-            unsafe {
-                libc::daemon(0, 0);
+    tokio::select! {
+        res = net_handle => {
+            match res {
+                Ok(Ok(())) => println!("[p2p] network berhenti"),
+                Ok(Err(e)) => eprintln!("[p2p] network error: {}", e),
+                Err(e) => eprintln!("[p2p] task error: {}", e),
             }
         }
-    });
-
-    // Loop utama P2P
-    loop {
-        match swarm.next().await {
-            Some(event) => match event {
-                libp2p::swarm::SwarmEvent::Behaviour(
-                    p2p::behaviour::ZenaBehaviourEvent::Identify(identify::Event::Received {
-                        peer_id,
-                        ..
-                    }),
-                ) => {
-                    if !requested_headers.contains(&peer_id) {
-                        requested_headers.insert(peer_id);
-
-                        let msg = sync_state.make_get_headers(&chain);
-                        let request_id = swarm
-                            .behaviour_mut()
-                            .sync
-                            .send_request(&peer_id, msg.to_bytes());
-
-                        println!(
-                            "[p2p] minta header dari {} (request {:?})",
-                            peer_id, request_id
-                        );
-                    }
-                }
-
-                libp2p::swarm::SwarmEvent::Behaviour(p2p::behaviour::ZenaBehaviourEvent::Sync(
-                    RrEvent::Message { peer, message, .. },
-                )) => match message {
-                    RrMessage::Response { response, .. } => {
-                        if let Some(msg) = SyncMessage::from_bytes(&response) {
-                            handle_sync_message(&mut swarm, &mut chain, &mut sync_state, peer, msg);
-                        }
-                    }
-                    RrMessage::Request {
-                        request, channel, ..
-                    } => {
-                        if let Some(msg) = SyncMessage::from_bytes(&request) {
-                            let reply = handle_sync_request(&chain, msg);
-                            let _ = swarm
-                                .behaviour_mut()
-                                .sync
-                                .send_response(channel, reply.to_bytes());
-                        }
-                    }
-                },
-
-                libp2p::swarm::SwarmEvent::Behaviour(
-                    p2p::behaviour::ZenaBehaviourEvent::Gossipsub(gossipsub::Event::Message {
-                        message,
-                        ..
-                    }),
-                ) if message.topic == blocks_topic.hash() => {
-                    if let Ok(block) = serde_json::from_slice::<Block>(&message.data) {
-                        match SyncState::accept_block(&mut chain, block) {
-                            Ok(_) => println!("[p2p] blok diterima dari gossip"),
-                            Err(e) => println!("[p2p] blok gossip ditolak: {}", e),
-                        }
-                    }
-                }
-
-                _ => {}
-            },
-            None => {
-                println!("[p2p] swarm berhenti. Menunggu...");
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        _ = tokio::signal::ctrl_c() => {
+            println!("\n[signal] Ctrl+C diterima. Menyimpan chain...");
+            let guard = chain.lock().await;
+            if let Err(e) = storage::save_chain(&guard) {
+                eprintln!("[node] gagal simpan chain: {}", e);
+            } else {
+                println!("[node] chain disimpan");
             }
         }
     }
-}
 
-fn handle_sync_message(
-    swarm: &mut libp2p::Swarm<p2p::behaviour::ZenaBehaviour>,
-    chain: &mut Blockchain,
-    sync_state: &mut SyncState,
-    peer: PeerId,
-    msg: SyncMessage,
-) {
-    match msg {
-        SyncMessage::Headers { headers } => {
-            if let Err(e) = sync_state.apply_headers(chain, &headers) {
-                println!("[p2p] header dari {} ditolak: {}", peer, e);
-                return;
-            }
-
-            println!("[p2p] {} header diterima dari {}", headers.len(), peer);
-
-            let hashes: Vec<String> = headers.iter().map(|h| h.hash.clone()).collect();
-            if !hashes.is_empty() {
-                let msg = SyncMessage::GetData { hashes };
-                swarm
-                    .behaviour_mut()
-                    .sync
-                    .send_request(&peer, msg.to_bytes());
-            }
-        }
-        SyncMessage::Block { raw, .. } => {
-            let block: Block = match serde_json::from_slice(&raw) {
-                Ok(b) => b,
-                Err(e) => {
-                    println!("[p2p] blok dari {} tidak bisa diparse: {}", peer, e);
-                    return;
-                }
-            };
-            match SyncState::accept_block(chain, block) {
-                Ok(_) => println!("[p2p] blok dari {} diterima", peer),
-                Err(e) => println!("[p2p] blok dari {} ditolak: {}", peer, e),
-            }
-        }
-        _ => {}
-    }
-}
-
-fn handle_sync_request(chain: &Blockchain, msg: SyncMessage) -> SyncMessage {
-    match msg {
-        SyncMessage::GetHeaders { from_height, max } => {
-            let mut headers = Vec::new();
-            let start = from_height as usize;
-            let end = (start + max as usize).min(chain.chain.len());
-
-            for block in &chain.chain[start..end] {
-                headers.push(p2p::BlockHeader {
-                    nversion: block.nversion,
-                    index: block.index,
-                    timestamp: block.timestamp,
-                    previous_hash: block.previous_hash.clone(),
-                    merkle_root: block.merkle_root.clone(),
-                    nonce: block.nonce,
-                    nbits: block.nbits,
-                    hash: block.hash.clone(),
-                    reward: block.reward,
-                });
-            }
-
-            SyncMessage::Headers { headers }
-        }
-        SyncMessage::GetData { hashes } => {
-            for hash in hashes {
-                if let Some(block) = chain.chain.iter().find(|b| b.hash == hash) {
-                    let raw = serde_json::to_vec(block).unwrap_or_default();
-                    return SyncMessage::Block {
-                        height: block.index,
-                        hash: block.hash.clone(),
-                        raw,
-                    };
-                }
-            }
-            SyncMessage::Pong
-        }
-        _ => SyncMessage::Pong,
-    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    println!("[node] shutdown selesai");
 }
