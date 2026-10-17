@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Consensus validation rule constants for ZenaChain.
+
 pub const COINBASE_MATURITY: u64 = 100;
 pub const ADDRESS_PREFIX: &str = "ZENA";
 pub const ADDRESS_HEX_LEN: usize = 40;
