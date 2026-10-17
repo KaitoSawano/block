@@ -1,8 +1,7 @@
-//! Framing pesan P2P ZenaChain, mengikuti format Bitcoin:
-//! [magic: 4][command: 12][length: 4 LE][checksum: 4][payload: length]
-//!
-//! Checksum memakai double-SHA3-256 (analog double-SHA256 Bitcoin),
-//! ambil 4 byte pertama.
+// Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
 
 use crate::blockchain::network::NETWORK_MAGIC;
 use crate::utils::sha3_256_hex;
