@@ -3,6 +3,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Consensus validation rules for ZenaChain.
+//!
+//! This module contains every validation rule used by the consensus layer.
+//! Consensus constants are imported from `crate::consensus::rules`.
+
 use crate::block::Block;
 use crate::blockchain::Blockchain;
 use crate::consensus::rules;
@@ -48,7 +53,7 @@ pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
     if !addr.starts_with(ADDRESS_PREFIX) {
         return Err(ValidationError::new(
             "E001",
-            format!("alamat tidak diawali {}: {}", ADDRESS_PREFIX, addr),
+            format!("address does not start with {}: {}", ADDRESS_PREFIX, addr),
         ));
     }
     let hex_part = &addr[ADDRESS_PREFIX.len()..];
@@ -56,7 +61,7 @@ pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
         return Err(ValidationError::new(
             "E002",
             format!(
-                "panjang hex alamat harus {}, dapat {}",
+                "address hex part must be {} characters, got {}",
                 ADDRESS_HEX_LEN,
                 hex_part.len()
             ),
@@ -65,7 +70,7 @@ pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
     if !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(ValidationError::new(
             "E003",
-            format!("alamat mengandung karakter bukan hex: {}", addr),
+            format!("address contains a non-hexadecimal character: {}", addr),
         ));
     }
     Ok(())
@@ -75,7 +80,7 @@ pub fn rule_self_send(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.from == tx.to {
         return Err(ValidationError::new(
             "E004",
-            "alamat pengirim dan tujuan sama",
+            "sender and recipient addresses are identical",
         ));
     }
     Ok(())
@@ -83,7 +88,10 @@ pub fn rule_self_send(tx: &Transaction) -> Result<(), ValidationError> {
 
 pub fn rule_amount_nonzero(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.amount == 0 {
-        return Err(ValidationError::new("E005", "amount harus lebih dari nol"));
+        return Err(ValidationError::new(
+            "E005",
+            "amount must be greater than zero",
+        ));
     }
     Ok(())
 }
@@ -92,7 +100,7 @@ pub fn rule_note_length(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.note.len() > MAX_NOTE_LEN {
         return Err(ValidationError::new(
             "E006",
-            format!("note melebihi {} byte", MAX_NOTE_LEN),
+            format!("note exceeds {} bytes", MAX_NOTE_LEN),
         ));
     }
     Ok(())
@@ -102,7 +110,7 @@ pub fn rule_input_count(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.inputs.len() > MAX_INPUTS_PER_TX {
         return Err(ValidationError::new(
             "E007",
-            format!("input melebihi {}", MAX_INPUTS_PER_TX),
+            format!("input count exceeds {}", MAX_INPUTS_PER_TX),
         ));
     }
     Ok(())
@@ -113,20 +121,21 @@ pub fn rule_signature(tx: &Transaction) -> Result<(), ValidationError> {
         return Ok(());
     }
     if tx.public_key.is_empty() {
-        return Err(ValidationError::new("E010", "public key kosong"));
+        return Err(ValidationError::new("E010", "public key is empty"));
     }
     if tx.signature.is_empty() {
-        return Err(ValidationError::new("E010", "signature kosong"));
+        return Err(ValidationError::new("E010", "signature is empty"));
     }
     let pk = hex::decode(&tx.public_key)
-        .map_err(|_| ValidationError::new("E010", "public key bukan hex"))?;
+        .map_err(|_| ValidationError::new("E010", "public key is not hexadecimal"))?;
     let sig = hex::decode(&tx.signature)
-        .map_err(|_| ValidationError::new("E010", "signature bukan hex"))?;
-    let msg = hex::decode(&tx.txid).map_err(|_| ValidationError::new("E010", "txid bukan hex"))?;
+        .map_err(|_| ValidationError::new("E010", "signature is not hexadecimal"))?;
+    let msg = hex::decode(&tx.txid)
+        .map_err(|_| ValidationError::new("E010", "txid is not hexadecimal"))?;
     if !verify::verify(&pk, &msg, &sig) {
         return Err(ValidationError::new(
             "E010",
-            format!("signature tidak valid untuk txid {}", tx.txid),
+            format!("signature is invalid for txid {}", tx.txid),
         ));
     }
     Ok(())
@@ -137,16 +146,20 @@ pub fn rule_address_matches_pubkey(tx: &Transaction) -> Result<(), ValidationErr
         return Ok(());
     }
     if tx.public_key.is_empty() {
-        return Err(ValidationError::new("E011", "public key kosong"));
+        return Err(ValidationError::new("E011", "public key is empty"));
     }
     let pk = hex::decode(&tx.public_key)
-        .map_err(|_| ValidationError::new("E011", "public key bukan hex"))?;
-    let expected = address::address_from_public_key(&pk)
-        .map_err(|_| ValidationError::new("E011", "public key tidak dapat diturunkan ke alamat"))?;
+        .map_err(|_| ValidationError::new("E011", "public key is not hexadecimal"))?;
+    let expected = address::address_from_public_key(&pk).map_err(|_| {
+        ValidationError::new("E011", "public key cannot be converted to an address")
+    })?;
     if expected != tx.from {
         return Err(ValidationError::new(
             "E011",
-            format!("alamat {} tidak cocok dengan pubkey {}", tx.from, expected),
+            format!(
+                "address {} does not match the public key {}",
+                tx.from, expected
+            ),
         ));
     }
     Ok(())
@@ -156,7 +169,7 @@ pub fn rule_txid_consistent(tx: &Transaction) -> Result<(), ValidationError> {
     if tx.txid != tx.compute_txid() {
         return Err(ValidationError::new(
             "E012",
-            format!("txid {} tidak cocok dengan hitungan", tx.txid),
+            format!("txid {} does not match the computed value", tx.txid),
         ));
     }
     Ok(())
@@ -199,7 +212,7 @@ pub fn rule_no_double_spend(chain: &Blockchain, tx: &Transaction) -> Result<(), 
     if !conflicts.is_empty() {
         return Err(ValidationError::new(
             "E020",
-            format!("input sudah dipakai: {}", conflicts.join(",")),
+            format!("inputs already spent: {}", conflicts.join(",")),
         ));
     }
     Ok(())
@@ -255,7 +268,7 @@ pub fn rule_sufficient_balance(
         return Err(ValidationError::new(
             "E021",
             format!(
-                "saldo tidak cukup: butuh {} sat, tersedia {} sat",
+                "insufficient balance: required {} sat, available {} sat",
                 need, balance
             ),
         ));
@@ -268,8 +281,8 @@ pub fn rule_block_version(block: &Block) -> Result<(), ValidationError> {
         return Err(ValidationError::new(
             "E028",
             format!(
-                "nversion blok {} tidak didukung: dapat {}, harap {}",
-                block.index, block.nversion, BLOCK_VERSION
+                "unsupported block version {} at index {}: expected {}",
+                block.nversion, block.index, BLOCK_VERSION
             ),
         ));
     }
@@ -281,7 +294,7 @@ pub fn rule_block_tx_count(block: &Block) -> Result<(), ValidationError> {
         return Err(ValidationError::new(
             "E030",
             format!(
-                "blok berisi {} transaksi, melebihi batas {}",
+                "block contains {} transactions, exceeding the limit of {}",
                 block.transactions.len(),
                 MAX_TX_PER_BLOCK
             ),
@@ -296,7 +309,7 @@ pub fn rule_block_reward(block: &Block) -> Result<(), ValidationError> {
         return Err(ValidationError::new(
             "E031",
             format!(
-                "reward blok {} tidak sesuai era: dapat {}, seharusnya {}",
+                "reward for block {} does not match the era: got {}, expected {}",
                 block.index, block.reward, expected
             ),
         ));
@@ -309,7 +322,7 @@ pub fn rule_block_timestamp_monotonic(prev: &Block, cur: &Block) -> Result<(), V
         return Err(ValidationError::new(
             "E032",
             format!(
-                "timestamp blok {} mundur dari blok {}",
+                "timestamp of block {} is earlier than block {}",
                 cur.index, prev.index
             ),
         ));
@@ -322,7 +335,7 @@ pub fn rule_block_nbits(chain: &Blockchain, block: &Block) -> Result<(), Validat
         return Err(ValidationError::new(
             "E033",
             format!(
-                "nbits blok {:#010x} tidak sesuai chain {:#010x}",
+                "nbits of block {:#010x} does not match chain nbits {:#010x}",
                 block.nbits, chain.nbits
             ),
         ));
@@ -334,7 +347,10 @@ pub fn rule_block_hash_consistent(block: &Block) -> Result<(), ValidationError> 
     if block.hash != block.calculate_hash() {
         return Err(ValidationError::new(
             "E034",
-            format!("hash blok {} tidak konsisten dengan isi", block.index),
+            format!(
+                "hash of block {} is not consistent with its contents",
+                block.index
+            ),
         ));
     }
     Ok(())
@@ -345,7 +361,7 @@ pub fn rule_block_previous_hash(prev: &Block, cur: &Block) -> Result<(), Validat
         return Err(ValidationError::new(
             "E035",
             format!(
-                "previous_hash blok {} tidak cocok dengan hash blok {}",
+                "previous_hash of block {} does not match the hash of block {}",
                 cur.index, prev.index
             ),
         ));
@@ -358,7 +374,7 @@ pub fn rule_block_index_sequential(prev: &Block, cur: &Block) -> Result<(), Vali
         return Err(ValidationError::new(
             "E036",
             format!(
-                "index blok {} tidak berurutan setelah {}",
+                "index of block {} is not sequential after block {}",
                 cur.index, prev.index
             ),
         ));
@@ -371,7 +387,7 @@ pub fn rule_block_pow(block: &Block) -> Result<(), ValidationError> {
         return Err(ValidationError::new(
             "E037",
             format!(
-                "hash blok {} tidak memenuhi target nbits {:#010x}",
+                "hash of block {} does not meet the target nbits {:#010x}",
                 block.index, block.nbits
             ),
         ));
@@ -383,7 +399,7 @@ pub fn rule_block_checkpoint(block: &Block) -> Result<(), ValidationError> {
     if !crate::blockchain::checkpoint::verify(block.index, &block.hash) {
         return Err(ValidationError::new(
             "E038",
-            format!("blok {} melanggar checkpoint", block.index),
+            format!("block {} violates a checkpoint", block.index),
         ));
     }
     Ok(())
@@ -391,12 +407,15 @@ pub fn rule_block_checkpoint(block: &Block) -> Result<(), ValidationError> {
 
 pub fn rule_genesis(block: &Block) -> Result<(), ValidationError> {
     if block.index != 0 {
-        return Err(ValidationError::new("E039", "genesis block harus index 0"));
+        return Err(ValidationError::new(
+            "E039",
+            "the genesis block must have index 0",
+        ));
     }
     if block.previous_hash != ZERO_HASH {
         return Err(ValidationError::new(
             "E039",
-            "genesis previous_hash harus nol",
+            "the genesis block previous_hash must be zero",
         ));
     }
     Ok(())
@@ -408,7 +427,10 @@ pub fn rule_total_supply(chain: &Blockchain) -> Result<(), ValidationError> {
     if total > max {
         return Err(ValidationError::new(
             "E041",
-            format!("total supply {} sat melebihi max {} sat", total, max),
+            format!(
+                "total supply {} sat exceeds the maximum of {} sat",
+                total, max
+            ),
         ));
     }
     Ok(())
@@ -420,7 +442,7 @@ pub fn rule_genesis_fingerprint(block: &Block) -> Result<(), ValidationError> {
         return Err(ValidationError::new(
             "E042",
             format!(
-                "genesis coinbase_txid tidak cocok dengan fingerprint konsensus: dapat {}, seharusnya {}",
+                "genesis coinbase_txid does not match the consensus fingerprint: got {}, expected {}",
                 block.coinbase_txid, expected_txid
             ),
         ));
@@ -434,7 +456,7 @@ pub fn rule_block_merkle_root(block: &Block) -> Result<(), ValidationError> {
         return Err(ValidationError::new(
             "E043",
             format!(
-                "merkle root blok {} tidak cocok: dapat {}, seharusnya {}",
+                "merkle root of block {} does not match: got {}, expected {}",
                 block.index, block.merkle_root, expected
             ),
         ));
@@ -451,7 +473,7 @@ pub fn rule_genesis_output_script(block: &Block) -> Result<(), ValidationError> 
         return Err(ValidationError::new(
             "E044",
             format!(
-                "genesis output script tidak cocok: dapat {}, seharusnya {}",
+                "genesis output script does not match: got {}, expected {}",
                 block.genesis_output_script, expected
             ),
         ));
@@ -464,7 +486,7 @@ pub fn rule_genesis_pow(block: &Block) -> Result<(), ValidationError> {
         return Err(ValidationError::new(
             "E045",
             format!(
-                "genesis hash tidak memenuhi target nbits {:#010x}",
+                "genesis hash does not meet the target nbits {:#010x}",
                 block.nbits
             ),
         ));
@@ -473,7 +495,10 @@ pub fn rule_genesis_pow(block: &Block) -> Result<(), ValidationError> {
 }
 
 pub fn is_special_tx(tx: &Transaction) -> bool {
-    tx.from == "COINBASE" || tx.from == "GENESIS" || tx.from == "NETWORK" || tx.from == "MEMPOOL"
+    tx.from == "COINBASE"
+        || tx.from == "GENESIS"
+        || tx.from == "NETWORK"
+        || tx.from == "MEMPOOL"
 }
 
 pub fn is_valid_address(addr: &str) -> bool {
@@ -530,7 +555,7 @@ pub fn validate_block(
 
 pub fn validate_chain(chain: &Blockchain) -> Result<(), ValidationError> {
     if chain.chain.is_empty() {
-        return Err(ValidationError::new("E040", "chain kosong"));
+        return Err(ValidationError::new("E040", "chain is empty"));
     }
 
     let genesis = &chain.chain[0];
