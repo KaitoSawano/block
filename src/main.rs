@@ -30,6 +30,8 @@ fn main() {
         "validatemempool" => rpc::call_and_print("validatemempool", vec![]),
         "getgenesishash" => rpc::call_and_print("getgenesishash", vec![]),
         "getgenesis" => rpc::call_and_print("getgenesis", vec![]),
+        "getdifficulty" => rpc::call_and_print("getdifficulty", vec![]),
+        "getchaintips" => rpc::call_and_print("getchaintips", vec![]),
         "getlistwallet" => rpc::call_and_print("getlistwallet", vec![]),
         "getaddressinfo" => {
             if args.len() < 3 {
@@ -91,6 +93,13 @@ fn main() {
                 }
             };
             rpc::call_and_print("getblockhash", vec![json!(h)]);
+        }
+        "getblockheader" => {
+            if args.len() < 3 {
+                println!("usage: zenachain getblockheader \"<hash>\"");
+                return;
+            }
+            rpc::call_and_print("getblockheader", vec![json!(args[2])]);
         }
         "getblock" => {
             if args.len() < 3 {
@@ -188,11 +197,14 @@ fn print_help() {
     println!("  zenachain getblocktemplate                    block template for miners");
     println!("  zenachain getblockcount                       number of blocks in the chain");
     println!("  zenachain getbestblockhash                    hash of the latest block");
+    println!("  zenachain getdifficulty                       current proof-of-work difficulty");
+    println!("  zenachain getchaintips                        information about chain tips");
     println!("  zenachain verifychain                         verify the integrity of the entire chain");
     println!("  zenachain validatemempool                     validate every transaction in the mempool");
     println!("  zenachain getgenesishash                      genesis block hash");
     println!("  zenachain getgenesis                          genesis block details");
     println!("  zenachain getblockhash <height>               hash of the block at the given height");
+    println!("  zenachain getblockheader \"<hash>\"             block header details for the given hash");
     println!("  zenachain getblock \"<hash>\"                   block details for the given hash");
     println!("  zenachain getrawtransaction \"<txid>\"          transaction details for the given txid");
     println!("  zenachain decoderawtransaction \"<txid>\"       decode a transaction in a readable format");
