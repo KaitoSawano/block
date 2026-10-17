@@ -31,6 +31,28 @@ fn main() {
         "getgenesishash" => rpc::call_and_print("getgenesishash", vec![]),
         "getgenesis" => rpc::call_and_print("getgenesis", vec![]),
         "getlistwallet" => rpc::call_and_print("getlistwallet", vec![]),
+        "getaddressinfo" => {
+            if args.len() < 3 {
+                println!("an address argument is required");
+                println!("usage: zenachain getaddressinfo \"<address>\"");
+                return;
+            }
+            rpc::call_and_print("getaddressinfo", vec![json!(args[2])]);
+        }
+        "setlabel" => {
+            if args.len() < 4 {
+                println!("usage: zenachain setlabel \"<address>\" \"<label>\"");
+                return;
+            }
+            rpc::call_and_print("setlabel", vec![json!(args[2]), json!(args[3])]);
+        }
+        "backupwallet" => {
+            if args.len() < 3 {
+                println!("usage: zenachain backupwallet \"<destination_path>\"");
+                return;
+            }
+            rpc::call_and_print("backupwallet", vec![json!(args[2])]);
+        }
         "dumpprivkey" => {
             if args.len() < 3 {
                 println!("an address argument is required");
@@ -162,6 +184,9 @@ fn print_help() {
     println!("  zenachain listunspent [address]               list wallet UTXOs");
     println!("  zenachain getmempoolinfo                      mempool summary");
     println!("  zenachain getlistwallet                       list all addresses in the wallet");
+    println!("  zenachain getaddressinfo \"<address>\"          get detailed information for an address");
+    println!("  zenachain setlabel \"<address>\" \"<label>\"      set a label for a wallet address");
+    println!("  zenachain backupwallet \"<destination>\"        backup the wallet.dat file");
     println!("  zenachain getnewwallet                        create a new address in the wallet");
     println!("  zenachain getaddtowallet                      use the default wallet address as the mining target");
     println!("  zenachain getaddtoaddress \"<address>\"         set a manual mining address");
