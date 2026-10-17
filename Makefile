@@ -1,17 +1,75 @@
-.PHONY: all build clean test
+# Copyright (c) 2026 Aldianokto
+# Copyright (c) 2026-present Zenachain Core developers
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or https://opensource.org/license/mit.
+
+SHELL := /bin/bash
+CARGO ?= cargo
+TARGET ?=
+
+.DEFAULT_GOAL := all
+.PHONY: all build test fmt fmt-check clippy check audit clean help
+
+ifneq ($(TARGET),)
+CARGO_TARGET := --target $(TARGET)
+BIN_DIR := target/$(TARGET)/release
+else
+CARGO_TARGET :=
+BIN_DIR := target/release
+endif
+
+BINARIES := zenachain zenachaind zenachain-miner zenachain-genesis
 
 all: build
 
-build:
-	cargo build --release
-	cp target/release/zenachain ./zenachain
-	cp target/release/zenachaind ./zenachaind
-	cp target/release/zenachain-miner ./zenachain-miner
-	chmod +x ./zenachain ./zenachaind ./zenachain-miner
+check-cargo:
+	@command -v $(CARGO) >/dev/null 2>&1 || { \
+		echo "cargo not found. Install Rust from https://rustup.rs/"; \
+		exit 1; \
+	}
 
-test:
-	cargo test
+build: check-cargo
+	$(CARGO) build --release --locked --bins $(CARGO_TARGET)
+	@for bin in $(BINARIES); do \
+		cp "$(BIN_DIR)/$$bin" "./$$bin"; \
+		chmod +x "./$$bin"; \
+	done
+	@echo "Binaries ready: $(BINARIES)"
+
+test: check-cargo
+	$(CARGO) test --workspace --all-targets
+	$(CARGO) test --workspace --doc
+
+fmt: check-cargo
+	$(CARGO) fmt --all
+
+fmt-check: check-cargo
+	$(CARGO) fmt --all -- --check
+
+clippy: check-cargo
+	$(CARGO) clippy --workspace --all-targets -- -D warnings
+
+check: check-cargo
+	$(CARGO) check --workspace --all-targets
+
+audit: check-cargo
+	$(CARGO) audit
+
+ci: fmt-check clippy test
 
 clean:
-	cargo clean
-	rm -f ./zenachain ./zenachaind ./zenachain-miner
+	$(CARGO) clean
+	@rm -f $(BINARIES)
+
+help:
+	@echo "Available targets:"
+	@echo "  all        - build all binaries (default)"
+	@echo "  build      - build release binaries and copy them to the repository root"
+	@echo "  test       - run all tests, including documentation tests"
+	@echo "  fmt        - format the source code"
+	@echo "  fmt-check  - check formatting without modifying files"
+	@echo "  clippy     - run clippy with warnings treated as errors"
+	@echo "  check      - run cargo check on all targets"
+	@echo "  audit      - run cargo audit"
+	@echo "  ci         - run fmt-check, clippy, and test"
+	@echo "  clean      - remove the target directory and the copied binaries"
