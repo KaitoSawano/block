@@ -6,7 +6,7 @@
 //! Proof-of-work primitives.
 
 use crate::block::Block;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 pub use crate::consensus::pow::{GENESIS_NBITS, POW_LIMIT};
 
@@ -67,7 +67,6 @@ pub fn hash_meets_nbits(hash_hex: &str, nbits: u32) -> bool {
 }
 
 /// Mine the block until the hash meets the target or the nonce is exhausted.
-/// Return `true` on success and `false` if the nonce is exhausted.
 pub fn mine(block: &mut Block, nbits: u32) -> bool {
     mine_interruptible(block, nbits, None)
 }
@@ -83,12 +82,15 @@ pub fn mine_interruptible(
     // from hanging. We simply calculate the hash once and return success.
     #[cfg(test)]
     {
+        let _ = nbits;
+        let _ = interrupt;
         block.hash = block.calculate_hash();
         return true;
     }
 
     #[cfg(not(test))]
     {
+        use std::sync::atomic::Ordering;
         let target = nbits_to_target(nbits);
         loop {
             if let Some(flag) = interrupt {
