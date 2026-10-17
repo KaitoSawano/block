@@ -15,6 +15,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 
 pub const DEFAULT_RPC_ADDR: &str = "127.0.0.1:8332";
 pub const DEFAULT_FEE_SATOSHI: u64 = 100_000;
@@ -100,7 +101,7 @@ fn to_coin(satoshi: u64) -> String {
 }
 
 pub struct RpcServer {
-    chain: Blockchain,
+    chain: Arc<RwLock<Blockchain>>,
     shutdown: Arc<AtomicBool>,
     rpc_addr: String,
     rpc_user: String,
@@ -108,7 +109,7 @@ pub struct RpcServer {
 }
 
 impl RpcServer {
-    pub fn new(chain: Blockchain, cfg: &Config) -> Self {
+    pub fn new(chain: Arc<RwLock<Blockchain>>, cfg: &Config) -> Self {
         RpcServer {
             chain,
             shutdown: Arc::new(AtomicBool::new(false)),
@@ -116,6 +117,10 @@ impl RpcServer {
             rpc_user: cfg.rpc_user.clone(),
             rpc_password: cfg.rpc_password.clone(),
         }
+    }
+
+    pub fn shutdown_flag(&self) -> Arc<AtomicBool> {
+        self.shutdown.clone()
     }
 
     pub fn listen(&mut self) {
@@ -128,6 +133,7 @@ impl RpcServer {
         };
 
         let _ = listener.set_nonblocking(true);
+        println!("[rpc] listen di {}", self.rpc_addr);
 
         loop {
             if self.shutdown.load(Ordering::SeqCst) {
@@ -232,24 +238,18 @@ impl RpcServer {
         println!();
         println!("[node] Mematikan node sedang berjalan. Mohon tunggu...");
 
-        // Simpan blocks, chainstate, dan mempool
-        match storage::save_chain(&self.chain) {
+        let chain = self.chain.blocking_read();
+        match storage::save_chain(&chain) {
             Ok(_) => {
                 println!("[node] Menyimpan data blockchain...");
-                println!("[node]   blocks     : {}", self.chain.chain.len());
+                println!("[node]   blocks     : {}", chain.chain.len());
                 println!(
                     "[node]   chainstate : height={} difficulty/nbits={:#010x}",
-                    self.chain.height(),
-                    self.chain.nbits
+                    chain.height(),
+                    chain.nbits
                 );
-                println!(
-                    "[node]   mempool    : {} transaksi",
-                    self.chain.mempool.len()
-                );
-                println!(
-                    "[node]   lokasi     : {}",
-                    datadir::as_str(&datadir::datadir())
-                );
+                println!("[node]   mempool    : {} transaksi", chain.mempool.len());
+                println!("[node]   lokasi     : {}", datadir::as_str(&datadir::datadir()));
                 println!("[node] Data blockchain berhasil disimpan.");
             }
             Err(e) => {
@@ -257,25 +257,24 @@ impl RpcServer {
                 return RpcResponse::err(&format!("gagal simpan chain: {}", e));
             }
         }
+        drop(chain);
 
-        println!("[node] Menutup koneksi P2P dan RPC...");
         self.shutdown.store(true, Ordering::SeqCst);
 
+        println!("[node] Menutup koneksi P2P dan RPC...");
         println!("[node] Shutdown berhasil.");
         println!();
 
         RpcResponse::ok(json!({
             "stopping": true,
             "message": "Mematikan node sedang berjalan. Mohon tunggu...",
-            "height": self.chain.height(),
-            "chain_len": self.chain.chain.len(),
             "saved": true,
             "status": "Shutdown berhasil",
         }))
     }
 
     fn m_getinfo(&self) -> RpcResponse {
-        let c = &self.chain;
+        let c = self.chain.blocking_read();
         RpcResponse::ok(json!({
             "coin_name": consensus::coin_name(),
             "symbol": consensus::symbol(),
@@ -306,7 +305,7 @@ impl RpcServer {
     }
 
     fn m_getblockchaininfo(&self) -> RpcResponse {
-        let c = &self.chain;
+        let c = self.chain.blocking_read();
         let tip = c.chain.last().unwrap();
         RpcResponse::ok(json!({
             "chain": "main",
@@ -334,7 +333,7 @@ impl RpcServer {
     }
 
     fn m_getblocktemplate(&self) -> RpcResponse {
-        let c = &self.chain;
+        let c = self.chain.blocking_read();
         let next_height = c.height() + 1;
         let reward = Blockchain::calculate_reward(next_height);
         let prev_hash = c.chain.last().unwrap().hash.clone();
@@ -343,6 +342,7 @@ impl RpcServer {
             "previous_hash": prev_hash,
             "nbits": c.nbits,
             "reward": to_coin(reward),
+            "reward_satoshi": reward,
             "mempool": c.mempool,
         }))
     }
@@ -356,18 +356,20 @@ impl RpcServer {
             Err(e) => return RpcResponse::err(&format!("blok tidak valid: {}", e)),
         };
 
-        let prev = self.chain.chain.last().unwrap().clone();
+        let mut chain = self.chain.blocking_write();
+        let prev = chain.chain.last().unwrap().clone();
 
-        if let Err(e) = validation::validate_block(&self.chain, &prev, &block) {
+        if let Err(e) = validation::validate_block(&chain, &prev, &block) {
             return RpcResponse::err(&format!("blok ditolak: {}", e));
         }
 
-        self.chain.chain.push(block.clone());
-        self.chain.mempool.clear();
+        chain.chain.push(block.clone());
+        chain.adjust_difficulty();
+        chain.mempool.clear();
 
         block.log_add_to_wallet();
 
-        if let Err(e) = storage::save_chain(&self.chain) {
+        if let Err(e) = storage::save_chain(&chain) {
             return RpcResponse::err(&format!("gagal simpan chain: {}", e));
         }
 
@@ -396,8 +398,9 @@ impl RpcServer {
             return RpcResponse::err("format alamat tidak valid");
         }
 
-        let mature = validation::mature_balance(&self.chain, &addr);
-        let immature = validation::immature_balance(&self.chain, &addr);
+        let chain = self.chain.blocking_read();
+        let mature = validation::mature_balance(&chain, &addr);
+        let immature = validation::immature_balance(&chain, &addr);
 
         RpcResponse::ok(json!({
             "address": addr,
@@ -412,10 +415,11 @@ impl RpcServer {
             Some(h) => h,
             None => return RpcResponse::err("getblockhash butuh height"),
         };
-        if height as usize >= self.chain.chain.len() {
+        let chain = self.chain.blocking_read();
+        if height as usize >= chain.chain.len() {
             return RpcResponse::err("height di luar rentang chain");
         }
-        RpcResponse::ok(json!(self.chain.chain[height as usize].hash))
+        RpcResponse::ok(json!(chain.chain[height as usize].hash))
     }
 
     fn m_getblock(&self, req: &RpcRequest) -> RpcResponse {
@@ -423,7 +427,8 @@ impl RpcServer {
             Some(h) => h,
             None => return RpcResponse::err("getblock butuh hash"),
         };
-        let block = match self.chain.chain.iter().find(|b| b.hash == hash) {
+        let chain = self.chain.blocking_read();
+        let block = match chain.chain.iter().find(|b| b.hash == hash) {
             Some(b) => b,
             None => return RpcResponse::err("blok tidak ditemukan"),
         };
@@ -449,22 +454,26 @@ impl RpcServer {
     }
 
     fn m_getblockcount(&self) -> RpcResponse {
-        RpcResponse::ok(json!(self.chain.chain.len() as u64))
+        let chain = self.chain.blocking_read();
+        RpcResponse::ok(json!(chain.chain.len() as u64))
     }
 
     fn m_getbestblockhash(&self) -> RpcResponse {
-        RpcResponse::ok(json!(self.chain.chain.last().unwrap().hash))
+        let chain = self.chain.blocking_read();
+        RpcResponse::ok(json!(chain.chain.last().unwrap().hash))
     }
 
     fn m_getgenesishash(&self) -> RpcResponse {
-        match self.chain.chain.first() {
+        let chain = self.chain.blocking_read();
+        match chain.chain.first() {
             Some(g) => RpcResponse::ok(json!(g.hash)),
             None => RpcResponse::err("chain kosong"),
         }
     }
 
     fn m_getgenesis(&self) -> RpcResponse {
-        match self.chain.chain.first() {
+        let chain = self.chain.blocking_read();
+        match chain.chain.first() {
             Some(g) => RpcResponse::ok(json!({
                 "nversion": g.nversion,
                 "hash": g.hash,
@@ -487,12 +496,13 @@ impl RpcServer {
     }
 
     fn m_verifychain(&self) -> RpcResponse {
-        match validation::validate_chain(&self.chain) {
+        let chain = self.chain.blocking_read();
+        match validation::validate_chain(&chain) {
             Ok(_) => RpcResponse::ok(json!({
                 "valid": true,
-                "blocks_checked": self.chain.chain.len(),
-                "height": self.chain.height(),
-                "nbits": format!("{:#010x}", self.chain.nbits),
+                "blocks_checked": chain.chain.len(),
+                "height": chain.height(),
+                "nbits": format!("{:#010x}", chain.nbits),
                 "pow_limit": consensus::pow_limit(),
                 "signature_algo": consensus::signature_algo(),
                 "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
@@ -502,8 +512,8 @@ impl RpcServer {
                 "valid": false,
                 "code": e.code,
                 "message": e.message,
-                "blocks_checked": self.chain.chain.len(),
-                "height": self.chain.height(),
+                "blocks_checked": chain.chain.len(),
+                "height": chain.height(),
             })),
         }
     }
@@ -514,7 +524,8 @@ impl RpcServer {
             None => return RpcResponse::err("getrawtransaction butuh txid"),
         };
 
-        for block in &self.chain.chain {
+        let chain = self.chain.blocking_read();
+        for block in &chain.chain {
             for tx in &block.transactions {
                 if tx.txid == txid {
                     return RpcResponse::ok(json!({
@@ -554,7 +565,7 @@ impl RpcServer {
             }
         }
 
-        for tx in &self.chain.mempool {
+        for tx in &chain.mempool {
             if tx.txid == txid {
                 return RpcResponse::ok(json!({
                     "txid": tx.txid,
@@ -590,11 +601,12 @@ impl RpcServer {
             return RpcResponse::err("format alamat tidak valid");
         }
 
-        let spent = validation::spent_inputs(&self.chain);
-        let current_height = self.chain.height();
+        let chain = self.chain.blocking_read();
+        let spent = validation::spent_inputs(&chain);
+        let current_height = chain.height();
         let mut entries: Vec<Value> = Vec::new();
 
-        for block in &self.chain.chain {
+        for block in &chain.chain {
             for tx in &block.transactions {
                 if tx.to == addr {
                     let outpoint = format!("{}:0", tx.txid);
@@ -645,7 +657,8 @@ impl RpcServer {
     }
 
     fn m_getmempoolinfo(&self) -> RpcResponse {
-        let txs = &self.chain.mempool;
+        let chain = self.chain.blocking_read();
+        let txs = &chain.mempool;
         let count = txs.len();
         let mut total_amount: u64 = 0;
         let mut total_fee: u64 = 0;
@@ -672,14 +685,15 @@ impl RpcServer {
     }
 
     fn m_validatemempool(&self) -> RpcResponse {
-        let errors = validation::validate_mempool(&self.chain);
+        let chain = self.chain.blocking_read();
+        let errors = validation::validate_mempool(&chain);
         let items: Vec<Value> = errors
             .iter()
             .map(|e| json!({"code": e.code, "message": e.message}))
             .collect();
         RpcResponse::ok(json!({
             "valid": items.is_empty(),
-            "mempool_len": self.chain.mempool.len(),
+            "mempool_len": chain.mempool.len(),
             "errors": items,
         }))
     }
@@ -698,18 +712,19 @@ impl RpcServer {
             return RpcResponse::err("format alamat tidak valid");
         }
 
+        let mut chain = self.chain.blocking_write();
         let mut hashes: Vec<String> = Vec::new();
 
         for _ in 0..n {
-            let prev = self.chain.chain.last().unwrap().clone();
+            let prev = chain.chain.last().unwrap().clone();
             let next_index = prev.index + 1;
             let reward = Blockchain::calculate_reward(next_index);
 
-            if self.chain.circulating_supply().saturating_add(reward) > consensus::max_supply() {
+            if chain.circulating_supply().saturating_add(reward) > consensus::max_supply() {
                 return RpcResponse::err("max supply reached");
             }
 
-            let mut txs = std::mem::take(&mut self.chain.mempool);
+            let mut txs = std::mem::take(&mut chain.mempool);
             txs.push(Transaction::new(
                 "NETWORK",
                 &addr,
@@ -729,22 +744,22 @@ impl RpcServer {
                 next_index,
                 prev.hash.clone(),
                 reward,
-                self.chain.nbits,
+                chain.nbits,
                 txs,
                 addr.clone(),
             );
-            if !pow::mine(&mut block, self.chain.nbits) {
+            if !pow::mine(&mut block, chain.nbits) {
                 return RpcResponse::err("mining gagal: nonce habis");
             }
 
             let hash = block.hash.clone();
-            self.chain.chain.push(block.clone());
-            self.chain.adjust_difficulty();
+            chain.chain.push(block.clone());
+            chain.adjust_difficulty();
             block.log_add_to_wallet();
             hashes.push(hash);
         }
 
-        if let Err(e) = storage::save_chain(&self.chain) {
+        if let Err(e) = storage::save_chain(&chain) {
             return RpcResponse::err(&format!("gagal simpan chain: {}", e));
         }
 
@@ -778,207 +793,4 @@ impl RpcServer {
             Err(_) => return RpcResponse::err("wallet tidak ditemukan"),
         };
 
-        let amount_sat = zenac_to_satoshi(amount_zenac);
-        if amount_sat == 0 {
-            return RpcResponse::err("jumlah terlalu kecil");
-        }
-
-        let mut tx = Transaction::new(&wallet.address, &to, amount_sat, DEFAULT_FEE_SATOSHI);
-
-        if let Err(e) = tx.sign(&wallet.secret) {
-            return RpcResponse::err(&format!("gagal tanda tangan: {}", e));
-        }
-
-        if let Err(e) = validation::validate_transaction(&self.chain, &tx) {
-            return RpcResponse::err(&format!("transaksi tidak valid: {}", e));
-        }
-
-        let txid = tx.txid.clone();
-        self.chain.mempool.push(tx);
-
-        if let Err(e) = storage::save_chain(&self.chain) {
-            return RpcResponse::err(&format!("gagal simpan chain: {}", e));
-        }
-
-        RpcResponse::ok(json!({
-            "txid": txid,
-            "from": wallet.address,
-            "to": to,
-            "amount_satoshi": amount_sat,
-            "amount_zenac": to_coin(amount_sat),
-            "fee_satoshi": DEFAULT_FEE_SATOSHI,
-            "fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
-            "mempool_len": self.chain.mempool.len(),
-        }))
-    }
-}
-
-fn m_getcheckpoints() -> RpcResponse {
-    let items: Vec<Value> = blockchain::checkpoint::CHECKPOINTS
-        .iter()
-        .map(|c| json!({"height": c.height, "hash": c.hash}))
-        .collect();
-    RpcResponse::ok(json!(items))
-}
-
-fn m_getnetworkinfo() -> RpcResponse {
-    RpcResponse::ok(json!({
-        "network": blockchain::network::NETWORK_NAME,
-        "magic": blockchain::network::network_magic_hex(),
-        "default_port": blockchain::network::DEFAULT_PORT,
-        "prune_after_height": blockchain::network::PRUNE_AFTER_HEIGHT,
-        "assumed_blockchain_size_mb": blockchain::network::ASSUMED_BLOCKCHAIN_SIZE,
-        "assumed_chain_state_size_mb": blockchain::network::ASSUMED_CHAIN_STATE_SIZE,
-        "p2p_enabled": true,
-        "connection_count": 0,
-    }))
-}
-
-fn m_getwallet() -> RpcResponse {
-    match Wallet::load_default() {
-        Ok(w) => RpcResponse::ok(json!({
-            "address": w.address,
-            "public_key": w.public_key,
-            "secret": w.secret,
-            "created_at": w.created_at,
-        })),
-        Err(_) => RpcResponse::err("wallet tidak ditemukan"),
-    }
-}
-
-fn m_getprivkey(req: &RpcRequest) -> RpcResponse {
-    let target = match req.params.first().and_then(|v| v.as_str()) {
-        Some(a) => a.to_string(),
-        None => return RpcResponse::err("wajib memasukkan \"alamat tujuan\""),
-    };
-
-    let w = match Wallet::load_default() {
-        Ok(w) => w,
-        Err(_) => return RpcResponse::err("wallet tidak ditemukan"),
-    };
-
-    if w.address != target {
-        return RpcResponse::err("alamat tidak cocok dengan wallet tersimpan");
-    }
-
-    RpcResponse::ok(json!({
-        "address": w.address,
-        "public_key": w.public_key,
-        "privkey": w.secret,
-        "created_at": w.created_at,
-    }))
-}
-
-fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
-    let secret = match req.params.first().and_then(|v| v.as_str()) {
-        Some(s) => s.to_string(),
-        None => return RpcResponse::err("dumpprivkey butuh private key"),
-    };
-
-    if secret.len() != 64 || !secret.chars().all(|c| c.is_ascii_hexdigit()) {
-        return RpcResponse::err("private key harus 64 karakter hex");
-    }
-
-    let w = match Wallet::from_secret(&secret) {
-        Ok(w) => w,
-        Err(e) => return RpcResponse::err(&format!("private key tidak valid: {}", e)),
-    };
-
-    match w.save_default() {
-        Ok(_) => RpcResponse::ok(json!({
-            "address": w.address,
-            "public_key": w.public_key,
-            "created_at": w.created_at,
-        })),
-        Err(e) => RpcResponse::err(&format!("gagal simpan wallet: {}", e)),
-    }
-}
-
-fn m_getnewwallet() -> RpcResponse {
-    if let Err(e) = datadir::ensure_dirs() {
-        return RpcResponse::err(&format!("gagal siapkan .zenachain: {}", e));
-    }
-    let w = Wallet::new();
-    match w.save_default() {
-        Ok(_) => RpcResponse::ok(json!({
-            "address": w.address,
-            "public_key": w.public_key,
-            "secret": w.secret,
-            "created_at": w.created_at,
-        })),
-        Err(e) => RpcResponse::err(&format!("gagal simpan wallet: {}", e)),
-    }
-}
-
-fn m_getaddtowallet() -> RpcResponse {
-    let w = match Wallet::load_default() {
-        Ok(w) => w,
-        Err(_) => return RpcResponse::err("wallet tidak ditemukan"),
-    };
-    let mut cfg = Config::load_or_default();
-    cfg.mining_address = w.address.clone();
-    match cfg.save_default() {
-        Ok(_) => RpcResponse::ok(json!({
-            "mining_address": w.address,
-            "config_file": Config::default_path(),
-        })),
-        Err(e) => RpcResponse::err(&format!("gagal simpan config: {}", e)),
-    }
-}
-
-fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
-    let addr = match req.params.first().and_then(|v| v.as_str()) {
-        Some(a) => a.to_string(),
-        None => return RpcResponse::err("getaddtoaddress butuh alamat"),
-    };
-    if !validation::is_valid_address(&addr) {
-        return RpcResponse::err("format alamat tidak valid");
-    }
-    let mut cfg = Config::load_or_default();
-    cfg.mining_address = addr.clone();
-    match cfg.save_default() {
-        Ok(_) => RpcResponse::ok(json!({
-            "mining_address": addr,
-            "config_file": Config::default_path(),
-        })),
-        Err(e) => RpcResponse::err(&format!("gagal simpan config: {}", e)),
-    }
-}
-
-fn write_http_response(
-    mut stream: TcpStream,
-    status: u16,
-    resp: &RpcResponse,
-) -> std::io::Result<()> {
-    let body = serde_json::to_string(resp).unwrap();
-    let status_text = if status == 200 { "OK" } else { "Error" };
-    let response = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-        status,
-        status_text,
-        body.len(),
-        body
-    );
-    stream.write_all(response.as_bytes())?;
-    stream.flush()
-}
-
-pub fn call_and_print(method: &str, params: Vec<Value>) {
-    match call(method, params) {
-        Ok(resp) => {
-            if resp.ok {
-                println!("{}", serde_json::to_string_pretty(&resp.result).unwrap());
-            } else {
-                println!("error: {}", resp.error);
-            }
-        }
-        Err(e) => {
-            let cfg = Config::load_or_default();
-            println!(
-                "[rpc] tidak dapat menghubungi node di {}: {}",
-                cfg.rpc_addr, e
-            );
-            println!("[rpc] jalankan zenachaind terlebih dahulu.");
-        }
-    }
-}
+        let amount_sat = zenac
