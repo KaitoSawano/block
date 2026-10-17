@@ -68,8 +68,7 @@ pub fn call_at(addr: &str, method: &str, params: Vec<Value>) -> std::io::Result<
     let mut buf = String::new();
     reader.read_line(&mut buf)?;
 
-    let resp: RpcResponse = serde_json::from_str(buf.trim())
-        .map_err(std::io::Error::other)?;
+    let resp: RpcResponse = serde_json::from_str(buf.trim()).map_err(std::io::Error::other)?;
     Ok(resp)
 }
 
