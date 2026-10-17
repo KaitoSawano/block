@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! RPC server and client for ZenaChain.
+
 use crate::blockchain::{self, Blockchain};
 use crate::config::Config;
 use crate::consensus;
@@ -12,7 +14,7 @@ use crate::storage;
 use crate::transaction::Transaction;
 use crate::utils::zenac_to_satoshi;
 use crate::validation;
-use crate::wallet::Wallet;
+use crate::wallet::{Wallet, WalletEntry};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -284,10 +286,7 @@ impl RpcHandler {
                     chain.nbits
                 );
                 println!("[node]   mempool    : {} transactions", chain.mempool.len());
-                println!(
-                    "[node]   location   : {}",
-                    datadir::as_str(&datadir::datadir())
-                );
+                println!("[node]   location   : {}", datadir::as_str(&datadir::datadir()));
                 println!("[node] Blockchain data saved successfully.");
             }
             Err(e) => {
@@ -425,7 +424,10 @@ impl RpcHandler {
         let addr = match req.params.first().and_then(|v| v.as_str()) {
             Some(a) => a.to_string(),
             None => match Wallet::load_default() {
-                Ok(w) => w.address,
+                Ok(w) => match w.default_address() {
+                    Some(e) => e.address.clone(),
+                    None => return RpcResponse::err("wallet has no addresses"),
+                },
                 Err(_) => return RpcResponse::err("wallet not found"),
             },
         };
@@ -628,7 +630,10 @@ impl RpcHandler {
         let addr = match req.params.first().and_then(|v| v.as_str()) {
             Some(a) => a.to_string(),
             None => match Wallet::load_default() {
-                Ok(w) => w.address,
+                Ok(w) => match w.default_address() {
+                    Some(e) => e.address.clone(),
+                    None => return RpcResponse::err("wallet has no addresses"),
+                },
                 Err(_) => return RpcResponse::err("wallet not found"),
             },
         };
@@ -855,14 +860,29 @@ impl RpcHandler {
             Err(_) => return RpcResponse::err("wallet not found"),
         };
 
+        // Optional 3rd parameter: specific from_address
+        let from_address = if req.params.len() >= 3 {
+            req.params[2].as_str().unwrap_or("").to_string()
+        } else {
+            match wallet.default_address() {
+                Some(e) => e.address.clone(),
+                None => return RpcResponse::err("wallet has no addresses"),
+            }
+        };
+
+        let entry = match wallet.get_entry(&from_address) {
+            Some(e) => e,
+            None => return RpcResponse::err("from address not found in wallet"),
+        };
+
         let amount_sat = zenac_to_satoshi(amount_zenac);
         if amount_sat == 0 {
             return RpcResponse::err("amount too small");
         }
 
-        let mut tx = Transaction::new(&wallet.address, &to, amount_sat, DEFAULT_FEE_SATOSHI);
+        let mut tx = Transaction::new(&entry.address, &to, amount_sat, DEFAULT_FEE_SATOSHI);
 
-        if let Err(e) = tx.sign(&wallet.secret) {
+        if let Err(e) = tx.sign(&entry.secret) {
             return RpcResponse::err(&format!("failed to sign: {}", e));
         }
 
@@ -880,7 +900,7 @@ impl RpcHandler {
 
         RpcResponse::ok(json!({
             "txid": txid,
-            "from": wallet.address,
+            "from": entry.address,
             "to": to,
             "amount_satoshi": amount_sat,
             "amount_zenac": to_coin(amount_sat),
@@ -914,11 +934,19 @@ fn m_getnetworkinfo() -> RpcResponse {
 
 fn m_getwallet() -> RpcResponse {
     match Wallet::load_default() {
-        Ok(w) => RpcResponse::ok(json!({
-            "address": w.address,
-            "public_key": w.public_key,
-            "created_at": w.created_at,
-        })),
+        Ok(w) => {
+            let addresses: Vec<Value> = w.entries.iter().map(|e| json!({
+                "address": e.address,
+                "public_key": e.public_key,
+                "label": e.label,
+                "created_at": e.created_at,
+            })).collect();
+            
+            RpcResponse::ok(json!({
+                "addresses": addresses,
+                "count": w.entries.len(),
+            }))
+        },
         Err(_) => RpcResponse::err("wallet not found"),
     }
 }
@@ -934,14 +962,16 @@ fn m_getprivkey(req: &RpcRequest) -> RpcResponse {
         Err(_) => return RpcResponse::err("wallet not found"),
     };
 
-    if w.address != target {
-        return RpcResponse::err("address does not match the stored wallet");
-    }
+    let entry = match w.get_entry(&target) {
+        Some(e) => e,
+        None => return RpcResponse::err("address does not match any stored wallet entry"),
+    };
 
     RpcResponse::ok(json!({
-        "address": w.address,
-        "public_key": w.public_key,
-        "created_at": w.created_at,
+        "address": entry.address,
+        "public_key": entry.public_key,
+        "secret": entry.secret,
+        "created_at": entry.created_at,
     }))
 }
 
@@ -955,16 +985,25 @@ fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
         return RpcResponse::err("private key must be 64 hexadecimal characters");
     }
 
-    let w = match Wallet::from_secret(&secret) {
-        Ok(w) => w,
+    let entry = match Wallet::from_secret(&secret, "imported".to_string()) {
+        Ok(e) => e,
         Err(e) => return RpcResponse::err(&format!("invalid private key: {}", e)),
     };
 
+    let mut w = Wallet::load_default().unwrap_or_else(|_| Wallet {
+        entries: Vec::new(),
+        created_at: crate::utils::now_millis(),
+    });
+    
+    if w.get_entry(&entry.address).is_none() {
+        w.entries.push(entry.clone());
+    }
+
     match w.save_default() {
         Ok(_) => RpcResponse::ok(json!({
-            "address": w.address,
-            "public_key": w.public_key,
-            "created_at": w.created_at,
+            "address": entry.address,
+            "public_key": entry.public_key,
+            "created_at": entry.created_at,
         })),
         Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
     }
@@ -974,13 +1013,20 @@ fn m_getnewwallet() -> RpcResponse {
     if let Err(e) = datadir::ensure_dirs() {
         return RpcResponse::err(&format!("failed to prepare .zenachain: {}", e));
     }
-    let w = Wallet::new();
+    let mut w = Wallet::load_default().unwrap_or_else(|_| Wallet {
+        entries: Vec::new(),
+        created_at: crate::utils::now_millis(),
+    });
+    
+    let addr = w.add_new_address("default".to_string());
+    let entry = w.get_entry(&addr).unwrap().clone();
+
     match w.save_default() {
         Ok(_) => RpcResponse::ok(json!({
-            "address": w.address,
-            "public_key": w.public_key,
-            "secret": w.secret,
-            "created_at": w.created_at,
+            "address": entry.address,
+            "public_key": entry.public_key,
+            "secret": entry.secret,
+            "created_at": entry.created_at,
         })),
         Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
     }
@@ -991,11 +1037,15 @@ fn m_getaddtowallet() -> RpcResponse {
         Ok(w) => w,
         Err(_) => return RpcResponse::err("wallet not found"),
     };
+    let entry = match w.default_address() {
+        Some(e) => e,
+        None => return RpcResponse::err("wallet has no addresses"),
+    };
     let mut cfg = Config::load_or_default();
-    cfg.mining_address = w.address.clone();
+    cfg.mining_address = entry.address.clone();
     match cfg.save_default() {
         Ok(_) => RpcResponse::ok(json!({
-            "mining_address": w.address,
+            "mining_address": entry.address,
             "config_file": Config::default_path(),
         })),
         Err(e) => RpcResponse::err(&format!("failed to save config: {}", e)),
@@ -1050,7 +1100,10 @@ pub fn call_and_print(method: &str, params: Vec<Value>) {
         }
         Err(e) => {
             let cfg = Config::load_or_default();
-            println!("[rpc] cannot connect to node at {}: {}", cfg.rpc_addr, e);
+            println!(
+                "[rpc] cannot connect to node at {}: {}",
+                cfg.rpc_addr, e
+            );
             println!("[rpc] start zenachaind first.");
         }
     }
