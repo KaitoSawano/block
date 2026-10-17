@@ -30,7 +30,7 @@ fn main() {
         "validatemempool" => rpc::call_and_print("validatemempool", vec![]),
         "getgenesishash" => rpc::call_and_print("getgenesishash", vec![]),
         "getgenesis" => rpc::call_and_print("getgenesis", vec![]),
-        "getwallet" => rpc::call_and_print("getwallet", vec![]),
+        "getlistwallet" => rpc::call_and_print("getlistwallet", vec![]),
         "dumpprivkey" => {
             if args.len() < 3 {
                 println!("an address argument is required");
@@ -161,7 +161,7 @@ fn print_help() {
     println!("  zenachain getrawtransaction \"<txid>\"          transaction details for the given txid");
     println!("  zenachain listunspent [address]               list wallet UTXOs");
     println!("  zenachain getmempoolinfo                      mempool summary");
-    println!("  zenachain getwallet                           list all addresses in the wallet");
+    println!("  zenachain getlistwallet                       list all addresses in the wallet");
     println!("  zenachain getnewwallet                        create a new address in the wallet");
     println!("  zenachain getaddtowallet                      use the default wallet address as the mining target");
     println!("  zenachain getaddtoaddress \"<address>\"         set a manual mining address");
