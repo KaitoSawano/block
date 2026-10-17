@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Node state container.
+
 use crate::blockchain::Blockchain;
 use crate::config::Config;
 use crate::datadir;
@@ -14,6 +16,7 @@ pub struct Node {
 }
 
 impl Node {
+    /// Create a new node by loading the configuration and chain from disk.
     pub fn new() -> Self {
         let _ = datadir::ensure_dirs();
         let config = Config::load_or_default();
@@ -21,6 +24,7 @@ impl Node {
         Node { chain, config }
     }
 
+    /// Return the configured mining address.
     pub fn mining_address(&self) -> &str {
         &self.config.mining_address
     }
