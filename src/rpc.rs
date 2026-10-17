@@ -259,6 +259,8 @@ impl RpcHandler {
             "sendtoaddress" => self.m_sendtoaddress(req),
             "stop" => self.m_stop(),
             "getrawtransaction" => self.m_getrawtransaction(req),
+            "decoderawtransaction" => self.m_decoderawtransaction(req),
+            "testmempoolaccept" => self.m_testmempoolaccept(req),
             "listunspent" => self.m_listunspent(req),
             "getmempoolinfo" => self.m_getmempoolinfo(),
             "validatemempool" => self.m_validatemempool(),
@@ -622,6 +624,92 @@ impl RpcHandler {
         }
 
         RpcResponse::err("transaction not found")
+    }
+
+    fn m_decoderawtransaction(&self, req: &RpcRequest) -> RpcResponse {
+        let txid = match req.params.first().and_then(|v| v.as_str()) {
+            Some(t) => t.to_string(),
+            None => return RpcResponse::err("decoderawtransaction requires a txid"),
+        };
+
+        let chain = self.state.chain.blocking_read();
+        for block in &chain.chain {
+            for tx in &block.transactions {
+                if tx.txid == txid {
+                    return RpcResponse::ok(json!({
+                        "txid": tx.txid,
+                        "from": tx.from,
+                        "to": tx.to,
+                        "amount": to_coin(tx.amount),
+                        "fee": to_coin(tx.fee),
+                        "note": tx.note,
+                        "inputs": tx.inputs,
+                        "public_key": tx.public_key,
+                        "signature": tx.signature,
+                        "block_hash": block.hash,
+                        "block_height": block.index,
+                    }));
+                }
+            }
+        }
+
+        for tx in &chain.mempool {
+            if tx.txid == txid {
+                return RpcResponse::ok(json!({
+                    "txid": tx.txid,
+                    "from": tx.from,
+                    "to": tx.to,
+                    "amount": to_coin(tx.amount),
+                    "fee": to_coin(tx.fee),
+                    "note": tx.note,
+                    "inputs": tx.inputs,
+                    "public_key": tx.public_key,
+                    "signature": tx.signature,
+                    "in_mempool": true,
+                }));
+            }
+        }
+
+        RpcResponse::err("transaction not found")
+    }
+
+    fn m_testmempoolaccept(&self, req: &RpcRequest) -> RpcResponse {
+        let txid = match req.params.first().and_then(|v| v.as_str()) {
+            Some(t) => t.to_string(),
+            None => return RpcResponse::err("testmempoolaccept requires a txid"),
+        };
+
+        let chain = self.state.chain.blocking_read();
+        
+        // Cari transaksi di mempool atau blockchain
+        let tx = chain.mempool.iter().find(|t| t.txid == txid).cloned();
+        
+        if tx.is_none() {
+            return RpcResponse::ok(json!([{
+                "txid": txid,
+                "allowed": false,
+                "reject-reason": "transaction not found in mempool"
+            }]));
+        }
+
+        let tx = tx.unwrap();
+        
+        // Jika ada di mempool, coba validasi
+        match validation::validate_transaction(&chain, &tx) {
+            Ok(_) => RpcResponse::ok(json!([{
+                "txid": txid,
+                "allowed": true,
+                "vsize": 250, // placeholder
+                "fees": {
+                    "base": to_coin(tx.fee)
+                }
+            }])),
+            Err(e) => RpcResponse::ok(json!([{
+                "txid": txid,
+                "allowed": false,
+                "reject-reason": e.message
+            }])),
+        }
     }
 
     fn m_listunspent(&self, req: &RpcRequest) -> RpcResponse {
