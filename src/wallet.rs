@@ -11,46 +11,71 @@ use crate::utils::now_millis;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Wallet {
+pub struct WalletEntry {
     pub address: String,
     pub public_key: String,
     pub secret: String,
+    pub label: String,
+    pub created_at: u128,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Wallet {
+    pub entries: Vec<WalletEntry>,
     pub created_at: u128,
 }
 
 impl Wallet {
     /// Create a new wallet with a freshly generated key pair.
     pub fn new() -> Self {
-        let kp = KeyPair::generate().expect("keypair generation failed");
-        let addr =
-            address::address_from_public_key(&kp.public_key).expect("address generation failed");
-
-        Wallet {
-            address: addr,
-            public_key: kp.public_key_hex(),
-            secret: kp.secret_key_hex(),
+        let mut w = Wallet {
+            entries: Vec::new(),
             created_at: now_millis(),
-        }
+        };
+        w.add_new_address("default".to_string());
+        w
     }
 
-    /// Restore a wallet from a hexadecimal private key.
-    pub fn from_secret(secret_hex: &str) -> Result<Self, String> {
+    /// Add a new address to the wallet.
+    pub fn add_new_address(&mut self, label: String) -> String {
+        let kp = KeyPair::generate().expect("keypair generation failed");
+        let addr = address::address_from_public_key(&kp.public_key).expect("address generation failed");
+        
+        let entry = WalletEntry {
+            address: addr.clone(),
+            public_key: kp.public_key_hex(),
+            secret: kp.secret_key_hex(),
+            label,
+            created_at: now_millis(),
+        };
+        
+        self.entries.push(entry);
+        addr
+    }
+
+    /// Get a specific entry by address.
+    pub fn get_entry(&self, addr: &str) -> Option<&WalletEntry> {
+        self.entries.iter().find(|e| e.address == addr)
+    }
+
+    /// Get the most recently created address.
+    pub fn default_address(&self) -> Option<&WalletEntry> {
+        self.entries.last()
+    }
+
+    /// Restore a wallet from a hexadecimal private key (adds to existing wallet).
+    pub fn from_secret(secret_hex: &str, label: String) -> Result<WalletEntry, String> {
         let bytes = hex::decode(secret_hex).map_err(|e| e.to_string())?;
         let kp = KeyPair::from_secret(&bytes)?;
         let addr = address::address_from_public_key(&kp.public_key)?;
 
-        Ok(Wallet {
+        Ok(WalletEntry {
             address: addr,
             public_key: kp.public_key_hex(),
             secret: kp.secret_key_hex(),
+            label,
             created_at: now_millis(),
         })
-    }
-
-    /// Return the key pair associated with this wallet.
-    pub fn keypair(&self) -> Result<KeyPair, String> {
-        let sk = hex::decode(&self.secret).map_err(|e| e.to_string())?;
-        KeyPair::from_secret(&sk)
     }
 
     /// Save the wallet to the default location.
