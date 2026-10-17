@@ -4,9 +4,6 @@
 // file LICENSE or https://opensource.org/license/mit.
 
 //! Consensus validation rules for ZenaChain.
-//!
-//! This module contains every validation rule used by the consensus layer.
-//! Consensus constants are imported from `crate::consensus::rules`.
 
 use crate::block::Block;
 use crate::blockchain::Blockchain;
@@ -495,7 +492,10 @@ pub fn rule_genesis_pow(block: &Block) -> Result<(), ValidationError> {
 }
 
 pub fn is_special_tx(tx: &Transaction) -> bool {
-    tx.from == "COINBASE" || tx.from == "GENESIS" || tx.from == "NETWORK" || tx.from == "MEMPOOL"
+    tx.from == "COINBASE"
+        || tx.from == "GENESIS"
+        || tx.from == "NETWORK"
+        || tx.from == "MEMPOOL"
 }
 
 pub fn is_valid_address(addr: &str) -> bool {
@@ -599,6 +599,12 @@ pub fn wallet_has_balance(
     amount_sat: u64,
     fee_sat: u64,
 ) -> bool {
-    let balance = mature_balance(chain, &wallet.address);
-    balance >= amount_sat.saturating_add(fee_sat)
+    // Check if the wallet has sufficient balance across any of its addresses.
+    for entry in &wallet.entries {
+        let balance = mature_balance(chain, &entry.address);
+        if balance >= amount_sat.saturating_add(fee_sat) {
+            return true;
+        }
+    }
+    false
 }
