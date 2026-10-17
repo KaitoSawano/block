@@ -1,10 +1,13 @@
 use crate::datadir;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub network: String,
     pub rpc_addr: String,
+    pub rpc_user: String,
+    pub rpc_password: String,
     pub listen_addr: String,
     pub bootstrap: Vec<String>,
     pub mining_address: String,
@@ -17,6 +20,8 @@ impl Config {
         Config {
             network: "main".to_string(),
             rpc_addr: "127.0.0.1:8332".to_string(),
+            rpc_user: "zenachain".to_string(),
+            rpc_password: "rahasia".to_string(),
             listen_addr: "/ip4/0.0.0.0/tcp/8333".to_string(),
             bootstrap: Vec::new(),
             mining_address: "ZENAMINERDEFAULT".to_string(),
@@ -29,10 +34,28 @@ impl Config {
         datadir::as_str(&datadir::config_path())
     }
 
-    /// Baca config dari file `zenachain.conf` format `key=value`.
-    /// Kalau file tidak ada, kembalikan default.
+    /// Cari file config: cek di home dulu, lalu di datadir.
+    pub fn find_config_path() -> Option<String> {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        let home_conf = PathBuf::from(&home).join(".zenachain").join("zenachain.conf");
+        if home_conf.exists() {
+            return Some(home_conf.to_string_lossy().to_string());
+        }
+
+        let datadir_conf = datadir::config_path();
+        if datadir_conf.exists() {
+            return Some(datadir_conf.to_string_lossy().to_string());
+        }
+
+        None
+    }
+
     pub fn load_or_default() -> Self {
-        let path = Self::default_path();
+        let path = match Self::find_config_path() {
+            Some(p) => p,
+            None => return Config::new(),
+        };
+
         let data = match std::fs::read_to_string(&path) {
             Ok(d) => d,
             Err(_) => return Config::new(),
@@ -40,7 +63,6 @@ impl Config {
         Config::parse(&data)
     }
 
-    /// Parse format `key=value`.
     pub fn parse(data: &str) -> Self {
         let mut cfg = Config::new();
 
@@ -60,26 +82,20 @@ impl Config {
 
             match key {
                 "network" => cfg.network = value.to_string(),
-                "rpcport" => {
-                    // Format: rpcport=8332 → rpc_addr = 127.0.0.1:8332
-                    cfg.rpc_addr = format!("127.0.0.1:{}", value);
-                }
+                "rpcport" => cfg.rpc_addr = format!("127.0.0.1:{}", value),
                 "rpcbind" => cfg.rpc_addr = value.to_string(),
-                "port" => {
-                    // Format: port=8333 → listen_addr = /ip4/0.0.0.0/tcp/8333
-                    cfg.listen_addr = format!("/ip4/0.0.0.0/tcp/{}", value);
-                }
+                "rpcuser" => cfg.rpc_user = value.to_string(),
+                "rpcpassword" => cfg.rpc_password = value.to_string(),
+                "port" => cfg.listen_addr = format!("/ip4/0.0.0.0/tcp/{}", value),
                 "listen" => cfg.listen_addr = value.to_string(),
                 "bootstrap" => cfg.bootstrap.push(value.to_string()),
                 "miningaddress" => cfg.mining_address = value.to_string(),
                 _ => {}
             }
         }
-
         cfg
     }
 
-    /// Tulis config ke file format `key=value`.
     pub fn save_default(&self) -> std::io::Result<()> {
         datadir::ensure_dirs()?;
         let path = Self::default_path();
@@ -89,18 +105,16 @@ impl Config {
 
         let mut out = String::new();
         out.push_str("# ZenaChain configuration\n");
-        out.push_str("# Format: key=value. Satu bootstrap per baris.\n\n");
         out.push_str(&format!("network={}\n", self.network));
         out.push_str(&format!("rpcport={}\n", rpcport));
+        out.push_str(&format!("rpcuser={}\n", self.rpc_user));
+        out.push_str(&format!("rpcpassword={}\n", self.rpc_password));
         out.push_str(&format!("port={}\n", port));
         out.push_str(&format!("listen={}\n", self.listen_addr));
         out.push_str(&format!("miningaddress={}\n", self.mining_address));
-        if self.bootstrap.is_empty() {
-            out.push_str("# bootstrap=/ip4/127.0.0.1/tcp/8333\n");
-        } else {
-            for b in &self.bootstrap {
-                out.push_str(&format!("bootstrap={}\n", b));
-            }
+        
+        for b in &self.bootstrap {
+            out.push_str(&format!("bootstrap={}\n", b));
         }
 
         std::fs::write(path, out)
