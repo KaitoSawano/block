@@ -793,4 +793,206 @@ impl RpcServer {
             Err(_) => return RpcResponse::err("wallet tidak ditemukan"),
         };
 
-        let amount_sat = zenac
+        let amount_sat = zenac_to_satoshi(amount_zenac);
+        if amount_sat == 0 {
+            return RpcResponse::err("jumlah terlalu kecil");
+        }
+
+        let mut tx = Transaction::new(&wallet.address, &to, amount_sat, DEFAULT_FEE_SATOSHI);
+
+        if let Err(e) = tx.sign(&wallet.secret) {
+            return RpcResponse::err(&format!("gagal tanda tangan: {}", e));
+        }
+
+        let mut chain = self.chain.blocking_write();
+        if let Err(e) = validation::validate_transaction(&chain, &tx) {
+            return RpcResponse::err(&format!("transaksi tidak valid: {}", e));
+        }
+
+        let txid = tx.txid.clone();
+        chain.mempool.push(tx);
+
+        if let Err(e) = storage::save_chain(&chain) {
+            return RpcResponse::err(&format!("gagal simpan chain: {}", e));
+        }
+
+        RpcResponse::ok(json!({
+            "txid": txid,
+            "from": wallet.address,
+            "to": to,
+            "amount_satoshi": amount_sat,
+            "amount_zenac": to_coin(amount_sat),
+            "fee_satoshi": DEFAULT_FEE_SATOSHI,
+            "fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
+            "mempool_len": chain.mempool.len(),
+        }))
+    }
+}
+
+fn m_getcheckpoints() -> RpcResponse {
+    let items: Vec<Value> = blockchain::checkpoint::CHECKPOINTS
+        .iter()
+        .map(|c| json!({"height": c.height, "hash": c.hash}))
+        .collect();
+    RpcResponse::ok(json!(items))
+}
+
+fn m_getnetworkinfo() -> RpcResponse {
+    RpcResponse::ok(json!({
+        "network": blockchain::network::NETWORK_NAME,
+        "magic": blockchain::network::network_magic_hex(),
+        "default_port": blockchain::network::DEFAULT_PORT,
+        "prune_after_height": blockchain::network::PRUNE_AFTER_HEIGHT,
+        "assumed_blockchain_size_mb": blockchain::network::ASSUMED_BLOCKCHAIN_SIZE,
+        "assumed_chain_state_size_mb": blockchain::network::ASSUMED_CHAIN_STATE_SIZE,
+        "p2p_enabled": true,
+        "connection_count": 0,
+    }))
+}
+
+fn m_getwallet() -> RpcResponse {
+    match Wallet::load_default() {
+        Ok(w) => RpcResponse::ok(json!({
+            "address": w.address,
+            "public_key": w.public_key,
+            "created_at": w.created_at,
+        })),
+        Err(_) => RpcResponse::err("wallet tidak ditemukan"),
+    }
+}
+
+fn m_getprivkey(req: &RpcRequest) -> RpcResponse {
+    let target = match req.params.first().and_then(|v| v.as_str()) {
+        Some(a) => a.to_string(),
+        None => return RpcResponse::err("wajib memasukkan \"alamat tujuan\""),
+    };
+
+    let w = match Wallet::load_default() {
+        Ok(w) => w,
+        Err(_) => return RpcResponse::err("wallet tidak ditemukan"),
+    };
+
+    if w.address != target {
+        return RpcResponse::err("alamat tidak cocok dengan wallet tersimpan");
+    }
+
+    RpcResponse::ok(json!({
+        "address": w.address,
+        "public_key": w.public_key,
+        "created_at": w.created_at,
+    }))
+}
+
+fn m_dumpprivkey(req: &RpcRequest) -> RpcResponse {
+    let secret = match req.params.first().and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => return RpcResponse::err("dumpprivkey butuh private key"),
+    };
+
+    if secret.len() != 64 || !secret.chars().all(|c| c.is_ascii_hexdigit()) {
+        return RpcResponse::err("private key harus 64 karakter hex");
+    }
+
+    let w = match Wallet::from_secret(&secret) {
+        Ok(w) => w,
+        Err(e) => return RpcResponse::err(&format!("private key tidak valid: {}", e)),
+    };
+
+    match w.save_default() {
+        Ok(_) => RpcResponse::ok(json!({
+            "address": w.address,
+            "public_key": w.public_key,
+            "created_at": w.created_at,
+        })),
+        Err(e) => RpcResponse::err(&format!("gagal simpan wallet: {}", e)),
+    }
+}
+
+fn m_getnewwallet() -> RpcResponse {
+    if let Err(e) = datadir::ensure_dirs() {
+        return RpcResponse::err(&format!("gagal siapkan .zenachain: {}", e));
+    }
+    let w = Wallet::new();
+    match w.save_default() {
+        Ok(_) => RpcResponse::ok(json!({
+            "address": w.address,
+            "public_key": w.public_key,
+            "secret": w.secret,
+            "created_at": w.created_at,
+        })),
+        Err(e) => RpcResponse::err(&format!("gagal simpan wallet: {}", e)),
+    }
+}
+
+fn m_getaddtowallet() -> RpcResponse {
+    let w = match Wallet::load_default() {
+        Ok(w) => w,
+        Err(_) => return RpcResponse::err("wallet tidak ditemukan"),
+    };
+    let mut cfg = Config::load_or_default();
+    cfg.mining_address = w.address.clone();
+    match cfg.save_default() {
+        Ok(_) => RpcResponse::ok(json!({
+            "mining_address": w.address,
+            "config_file": Config::default_path(),
+        })),
+        Err(e) => RpcResponse::err(&format!("gagal simpan config: {}", e)),
+    }
+}
+
+fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
+    let addr = match req.params.first().and_then(|v| v.as_str()) {
+        Some(a) => a.to_string(),
+        None => return RpcResponse::err("getaddtoaddress butuh alamat"),
+    };
+    if !validation::is_valid_address(&addr) {
+        return RpcResponse::err("format alamat tidak valid");
+    }
+    let mut cfg = Config::load_or_default();
+    cfg.mining_address = addr.clone();
+    match cfg.save_default() {
+        Ok(_) => RpcResponse::ok(json!({
+            "mining_address": addr,
+            "config_file": Config::default_path(),
+        })),
+        Err(e) => RpcResponse::err(&format!("gagal simpan config: {}", e)),
+    }
+}
+
+fn write_http_response(
+    mut stream: TcpStream,
+    status: u16,
+    resp: &RpcResponse,
+) -> std::io::Result<()> {
+    let body = serde_json::to_string(resp).unwrap();
+    let status_text = if status == 200 { "OK" } else { "Error" };
+    let response = format!(
+        "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        status,
+        status_text,
+        body.len(),
+        body
+    );
+    stream.write_all(response.as_bytes())?;
+    stream.flush()
+}
+
+pub fn call_and_print(method: &str, params: Vec<Value>) {
+    match call(method, params) {
+        Ok(resp) => {
+            if resp.ok {
+                println!("{}", serde_json::to_string_pretty(&resp.result).unwrap());
+            } else {
+                println!("error: {}", resp.error);
+            }
+        }
+        Err(e) => {
+            let cfg = Config::load_or_default();
+            println!(
+                "[rpc] tidak dapat menghubungi node di {}: {}",
+                cfg.rpc_addr, e
+            );
+            println!("[rpc] jalankan zenachaind terlebih dahulu.");
+        }
+    }
+}
