@@ -1,3 +1,8 @@
+// Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
+
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 
 /// Verifikasi signature ECDSA secp256k1.
