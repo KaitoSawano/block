@@ -3,11 +3,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Address book for the ZenaChain peer-to-peer network.
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
-/// Satu entri alamat peer.
+/// A single address book entry.
 #[derive(Debug, Clone)]
 pub struct AddrEntry {
     pub addr: SocketAddr,
@@ -16,7 +18,7 @@ pub struct AddrEntry {
     pub attempts: u32,
 }
 
-/// Buku alamat peer.
+/// The address book.
 #[derive(Debug, Default)]
 pub struct AddrBook {
     entries: HashMap<SocketAddr, AddrEntry>,
@@ -39,7 +41,7 @@ impl AddrBook {
         self.entries.is_empty()
     }
 
-    /// Tambah alamat. Return `true` jika baru.
+    /// Add an address. Return `true` if the address is new.
     pub fn add(&mut self, addr: SocketAddr) -> bool {
         if self.entries.contains_key(&addr) {
             if let Some(entry) = self.entries.get_mut(&addr) {
@@ -64,6 +66,7 @@ impl AddrBook {
         true
     }
 
+    /// Add multiple addresses. Return the number of new addresses.
     pub fn add_many(&mut self, addrs: &[SocketAddr]) -> usize {
         let mut added = 0;
         for addr in addrs {
@@ -74,7 +77,7 @@ impl AddrBook {
         added
     }
 
-    /// Tandai alamat sudah dicoba.
+    /// Mark an address as attempted.
     pub fn mark_tried(&mut self, addr: &SocketAddr) {
         if let Some(entry) = self.entries.get_mut(addr) {
             entry.last_try = Some(Instant::now());
@@ -82,7 +85,7 @@ impl AddrBook {
         }
     }
 
-    /// Ambil alamat yang belum dicoba atau sudah lama tidak dicoba.
+    /// Return candidate addresses that have not been attempted recently.
     pub fn candidates(&self, min_interval: Duration, limit: usize) -> Vec<SocketAddr> {
         let now = Instant::now();
         let mut out: Vec<SocketAddr> = self
@@ -107,7 +110,7 @@ impl AddrBook {
         out
     }
 
-    /// Hapus entri yang sudah lama tidak terlihat.
+    /// Remove entries that have not been seen for longer than `max_age`.
     pub fn prune(&mut self, max_age: Duration) {
         let now = Instant::now();
         self.entries
