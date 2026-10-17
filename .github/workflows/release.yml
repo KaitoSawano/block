@@ -1,3 +1,8 @@
+# Copyright (c) 2026 Aldianokto
+# Copyright (c) 2026-present Zenachain Core developers
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or https://opensource.org/license/mit.
+
 name: Release
 
 on:
@@ -5,13 +10,50 @@ on:
     tags:
       - 'v*'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
+  SOURCE_DATE_EPOCH: 1767225600
 
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --all-targets
+
   build:
     name: Build ${{ matrix.target }}
+    needs: test
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -38,6 +80,8 @@ jobs:
             ext: ".exe"
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -46,7 +90,7 @@ jobs:
 
       - name: Install cross
         if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        run: cargo install cross --locked --version 0.2.5
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -55,35 +99,51 @@ jobs:
 
       - name: Build (native)
         if: matrix.target != 'aarch64-unknown-linux-gnu'
-        run: cargo build --release --target ${{ matrix.target }} -p zenachain --bin zenachain --bin zenachaind
+        run: cargo build --release --locked --target ${{ matrix.target }} --bin zenachain --bin zenachaind --bin zenachain-miner --bin zenachain-genesis
 
       - name: Build (cross)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: cross build --release --target ${{ matrix.target }} -p zenachain --bin zenachain --bin zenachaind
+        run: cross build --release --locked --target ${{ matrix.target }} --bin zenachain --bin zenachaind --bin zenachain-miner --bin zenachain-genesis
 
-      - name: Package Linux/macOS
+      - name: Package Linux and macOS
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
           mkdir -p package
-          cp target/${{ matrix.target }}/release/zenachain package/
-          cp target/${{ matrix.target }}/release/zenachaind package/
-          tar -czf ${{ matrix.archive }} -C package .
+          for bin in zenachain zenachaind zenachain-miner zenachain-genesis; do
+            cp "target/${{ matrix.target }}/release/${bin}" package/
+          done
+          cp README.md package/ 2>/dev/null || true
+          cp LICENSE package/ 2>/dev/null || true
+          cp CHANGELOG.md package/ 2>/dev/null || true
+          find package -exec touch -d "@${SOURCE_DATE_EPOCH}" {} +
+          tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -czf ${{ matrix.archive }} -C package .
 
       - name: Package Windows
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           mkdir package
-          Copy-Item target/${{ matrix.target }}/release/zenachain.exe package/
-          Copy-Item target/${{ matrix.target }}/release/zenachaind.exe package/
+          foreach ($bin in @("zenachain","zenachaind","zenachain-miner","zenachain-genesis")) {
+            Copy-Item "target/${{ matrix.target }}/release/${bin}.exe" package/
+          }
+          if (Test-Path README.md) { Copy-Item README.md package/ }
+          if (Test-Path LICENSE) { Copy-Item LICENSE package/ }
+          if (Test-Path CHANGELOG.md) { Copy-Item CHANGELOG.md package/ }
           Compress-Archive -Path package/* -DestinationPath ${{ matrix.archive }}
+
+      - name: Generate checksum
+        shell: bash
+        run: sha256sum ${{ matrix.archive }} > ${{ matrix.archive }}.sha256
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.archive }}
-          draft: false
-          prerelease: false
+          files: |
+            ${{ matrix.archive }}
+            ${{ matrix.archive }}.sha256
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
