@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-pub const DATADIR_NAME: &str = ".chain";
+pub const DATADIR_NAME: &str = ".zenachain";
 pub const BLOCKS_DIR: &str = "blocks";
 pub const CHAINSTATE_DIR: &str = "chainstate";
 pub const WALLET_FILE: &str = "wallet.dat";
@@ -9,6 +9,7 @@ pub const PEERS_FILE: &str = "peers.json";
 pub const MEMPOOL_FILE: &str = "mempool.json";
 pub const DEBUG_LOG: &str = "debug.log";
 pub const BLOCK_FILE_PREFIX: &str = "blk";
+pub const PEER_ID_FILE: &str = "peer_id";
 
 /// Datadir default. Bisa dioverride lewat env `ZENAC_DATADIR`.
 pub fn datadir() -> PathBuf {
@@ -39,6 +40,9 @@ pub fn mempool_path() -> PathBuf {
 }
 pub fn debug_log_path() -> PathBuf {
     datadir().join(DEBUG_LOG)
+}
+pub fn peer_id_path() -> PathBuf {
+    datadir().join(PEER_ID_FILE)
 }
 
 pub fn block_file(index: u32) -> PathBuf {
