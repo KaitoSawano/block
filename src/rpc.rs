@@ -264,6 +264,9 @@ impl RpcHandler {
             "listunspent" => self.m_listunspent(req),
             "getmempoolinfo" => self.m_getmempoolinfo(),
             "validatemempool" => self.m_validatemempool(),
+            "getdifficulty" => self.m_getdifficulty(),
+            "getblockheader" => self.m_getblockheader(req),
+            "getchaintips" => self.m_getchaintips(),
             _ => RpcResponse::err("unknown method"),
         }
     }
@@ -681,7 +684,6 @@ impl RpcHandler {
 
         let chain = self.state.chain.blocking_read();
         
-        // Cari transaksi di mempool atau blockchain
         let tx = chain.mempool.iter().find(|t| t.txid == txid).cloned();
         
         if tx.is_none() {
@@ -694,12 +696,11 @@ impl RpcHandler {
 
         let tx = tx.unwrap();
         
-        // Jika ada di mempool, coba validasi
         match validation::validate_transaction(&chain, &tx) {
             Ok(_) => RpcResponse::ok(json!([{
                 "txid": txid,
                 "allowed": true,
-                "vsize": 250, // placeholder
+                "vsize": 250,
                 "fees": {
                     "base": to_coin(tx.fee)
                 }
@@ -982,6 +983,72 @@ impl RpcHandler {
             "fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
             "mempool_len": chain.mempool.len(),
         }))
+    }
+
+    fn m_getdifficulty(&self) -> RpcResponse {
+        let chain = self.state.chain.blocking_read();
+        let target = pow::nbits_to_target(chain.nbits);
+        // Difficulty is the ratio between the maximum target (0x00000000FFFF0000...) and the current target.
+        // For simplicity, we compare the first 4 bytes.
+        let max_target = pow::nbits_to_target(0x1d00ffff); // Bitcoin's max target
+        let mut diff = 0.0;
+        
+        let mut max_u64 = [0u8; 8];
+        max_u64.copy_from_slice(&max_target[24..32]);
+        let max_val = u64::from_be_bytes(max_u64);
+
+        let mut cur_u64 = [0u8; 8];
+        cur_u64.copy_from_slice(&target[24..32]);
+        let cur_val = u64::from_be_bytes(cur_u64);
+
+        if cur_val > 0 {
+            diff = max_val as f64 / cur_val as f64;
+        }
+
+        RpcResponse::ok(json!(diff))
+    }
+
+    fn m_getblockheader(&self, req: &RpcRequest) -> RpcResponse {
+        let hash = match req.params.first().and_then(|v| v.as_str()) {
+            Some(h) => h,
+            None => return RpcResponse::err("getblockheader requires a hash"),
+        };
+
+        let chain = self.state.chain.blocking_read();
+        let block = match chain.chain.iter().find(|b| b.hash == hash) {
+            Some(b) => b,
+            None => return RpcResponse::err("block not found"),
+        };
+
+        RpcResponse::ok(json!({
+            "hash": block.hash,
+            "confirmations": chain.height() - block.index + 1,
+            "height": block.index,
+            "version": block.nversion,
+            "merkleroot": block.merkle_root,
+            "time": block.timestamp,
+            "mediantime": block.timestamp, // Simplified
+            "nonce": block.nonce,
+            "bits": format!("{:#010x}", block.nbits),
+            "previousblockhash": block.previous_hash,
+            "nextblockhash": if block.index + 1 < chain.chain.len() as u64 {
+                Some(chain.chain[(block.index + 1) as usize].hash.clone())
+            } else {
+                None
+            }
+        }))
+    }
+
+    fn m_getchaintips(&self) -> RpcResponse {
+        let chain = self.state.chain.blocking_read();
+        let tip = chain.chain.last().unwrap();
+        
+        RpcResponse::ok(json!([{
+            "height": chain.height(),
+            "hash": tip.hash,
+            "branchlen": 0,
+            "status": "active"
+        }]))
     }
 }
 
