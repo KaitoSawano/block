@@ -151,17 +151,11 @@ fn print_help() {
     println!("  zenachain getmempoolinfo                      ringkasan mempool");
     println!("  zenachain getwallet                           buka dompet tersimpan");
     println!("  zenachain getnewwallet                        buat dompet baru");
-    println!(
-        "  zenachain getaddtowallet                      pakai alamat wallet sebagai tujuan mining"
-    );
+    println!("  zenachain getaddtowallet                      pakai alamat wallet sebagai tujuan mining");
     println!("  zenachain getaddtoaddress \"<alamat>\"          set alamat mining manual");
     println!("  zenachain generatetoaddress <n> \"<alamat>\"    mining n blok langsung ke alamat");
-    println!(
-        "  zenachain sendtoaddress <jumlah> \"<alamat>\"   kirim koin dari wallet ke alamat tujuan"
-    );
-    println!(
-        "  zenachain getprivkey \"<alamat>\"               tampilkan private key untuk alamat itu"
-    );
+    println!("  zenachain sendtoaddress <jumlah> \"<alamat>\"   kirim koin dari wallet ke alamat tujuan");
+    println!("  zenachain getprivkey \"<alamat>\"               tampilkan private key untuk alamat itu");
     println!("  zenachain dumpprivkey \"<privkey>\"             pulihkan dompet dari private key");
     println!("  zenachain getbalance [address]                hitung saldo wallet");
     println!();
