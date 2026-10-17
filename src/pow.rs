@@ -1,7 +1,8 @@
 use crate::block::Block;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 pub use crate::consensus::pow::{GENESIS_NBITS, POW_LIMIT};
 
-/// Ubah nBits format compact menjadi target 256-bit big-endian.
 pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
     let exponent = (nbits >> 24) as usize;
     let mantissa = nbits & 0x007fffff;
@@ -55,9 +56,25 @@ pub fn hash_meets_nbits(hash_hex: &str, nbits: u32) -> bool {
     hash_le_target(hash_hex, &target)
 }
 
+/// Mine blok sampai hash memenuhi target atau `interrupt` di-set.
+/// Return `true` jika berhasil, `false` jika diinterupsi atau nonce habis.
 pub fn mine(block: &mut Block, nbits: u32) -> bool {
+    mine_interruptible(block, nbits, None)
+}
+
+/// Versi `mine` yang bisa diinterupsi lewat `AtomicBool`.
+pub fn mine_interruptible(
+    block: &mut Block,
+    nbits: u32,
+    interrupt: Option<&AtomicBool>,
+) -> bool {
     let target = nbits_to_target(nbits);
     loop {
+        if let Some(flag) = interrupt {
+            if flag.load(Ordering::SeqCst) {
+                return false;
+            }
+        }
         block.hash = block.calculate_hash();
         if hash_le_target(&block.hash, &target) {
             return true;
