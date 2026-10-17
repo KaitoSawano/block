@@ -3,9 +3,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! ECDSA verification for ZenaChain.
+
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1};
 
-/// Verifikasi signature ECDSA secp256k1.
+/// Verify a DER-encoded ECDSA signature.
 pub fn verify(public_key: &[u8], message_hash: &[u8], signature: &[u8]) -> bool {
     if public_key.len() != super::PUBLIC_KEY_SIZE {
         return false;
