@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Persistent storage for the blockchain state.
+
 use crate::block::Block;
 use crate::blockchain::Blockchain;
 use crate::datadir;
@@ -11,6 +13,7 @@ use std::io::Error;
 
 pub const BLOCKS_PER_FILE: usize = 1000;
 
+/// Save the blockchain state to disk.
 pub fn save_chain(chain: &Blockchain) -> std::io::Result<()> {
     datadir::ensure_dirs()?;
     save_blocks(chain)?;
@@ -19,6 +22,7 @@ pub fn save_chain(chain: &Blockchain) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Load the blockchain state from disk.
 pub fn load_chain() -> std::io::Result<Blockchain> {
     if !datadir::chainstate_file().exists() {
         return Ok(Blockchain::new());
@@ -43,6 +47,7 @@ pub struct ChainState {
     pub updated_at: u128,
 }
 
+/// Save the chain state (block count and nbits) to disk.
 pub fn save_chainstate(chain: &Blockchain) -> std::io::Result<()> {
     let state = ChainState {
         total_blocks: chain.chain.len() as u64,
@@ -53,12 +58,14 @@ pub fn save_chainstate(chain: &Blockchain) -> std::io::Result<()> {
     std::fs::write(datadir::chainstate_file(), json)
 }
 
+/// Load the chain state from disk.
 pub fn load_chainstate() -> std::io::Result<ChainState> {
     let data = std::fs::read_to_string(datadir::chainstate_file())?;
     let s: ChainState = serde_json::from_str(&data).map_err(Error::other)?;
     Ok(s)
 }
 
+/// Write the block files to disk.
 pub fn save_blocks(chain: &Blockchain) -> std::io::Result<()> {
     let total = chain.chain.len();
     let mut file_index = 0u32;
@@ -75,7 +82,8 @@ pub fn save_blocks(chain: &Blockchain) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn load_blocks(_total_blocks: u64) -> std::io::Result<Vec<Block>> {
+/// Read all block files from disk.
+pub fn load_blocks(total_blocks: u64) -> std::io::Result<Vec<Block>> {
     let mut all: Vec<Block> = Vec::new();
     let mut i = 0u32;
     loop {
@@ -88,14 +96,17 @@ pub fn load_blocks(_total_blocks: u64) -> std::io::Result<Vec<Block>> {
         all.append(&mut chunk);
         i += 1;
     }
+    all.truncate(total_blocks as usize);
     Ok(all)
 }
 
+/// Write the mempool to disk.
 pub fn save_mempool(mempool: &[crate::transaction::Transaction]) -> std::io::Result<()> {
     let json = serde_json::to_string_pretty(mempool).map_err(Error::other)?;
     std::fs::write(datadir::mempool_path(), json)
 }
 
+/// Read the mempool from disk.
 pub fn load_mempool() -> std::io::Result<Vec<crate::transaction::Transaction>> {
     let data = std::fs::read_to_string(datadir::mempool_path())?;
     let v: Vec<crate::transaction::Transaction> =
@@ -103,6 +114,7 @@ pub fn load_mempool() -> std::io::Result<Vec<crate::transaction::Transaction>> {
     Ok(v)
 }
 
+/// Write the mempool struct to disk.
 pub fn save_mempool_struct(mempool: &Mempool) -> std::io::Result<()> {
     save_mempool(&mempool.txs)
 }
