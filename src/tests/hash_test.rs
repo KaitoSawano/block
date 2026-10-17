@@ -24,7 +24,14 @@ fn sha3_256_abc() {
 }
 
 #[test]
-fn sha3_256_panjang() {
+fn sha3_256_output_length() {
     let h = sha3_256_hex(b"ZenaChain");
     assert_eq!(h.len(), 64);
+}
+
+#[test]
+fn sha3_256_is_deterministic() {
+    let a = sha3_256_hex(b"zenachain");
+    let b = sha3_256_hex(b"zenachain");
+    assert_eq!(a, b);
 }
