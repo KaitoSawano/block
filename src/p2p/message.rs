@@ -3,6 +3,12 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Peer-to-peer message types for ZenaChain, modeled after Bitcoin.
+//!
+//! Serialization is performed manually: integers are encoded in
+//! little-endian byte order, array and string lengths use a varint
+//! encoding, and hashes are encoded as 32 raw bytes.
+
 use crate::block::Block;
 use crate::transaction::Transaction;
 use serde::{Deserialize, Serialize};
@@ -10,6 +16,7 @@ use serde::{Deserialize, Serialize};
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const USER_AGENT: &str = "/zenachain:0.1.0/";
 
+/// Inventory type: transaction or block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InvType {
     Transaction = 1,
@@ -140,14 +147,14 @@ fn write_varint(out: &mut Vec<u8>, n: u64) {
 
 fn read_varint(input: &mut &[u8]) -> Result<u64, String> {
     if input.is_empty() {
-        return Err("varint: input kosong".into());
+        return Err("varint: input is empty".into());
     }
     let first = input[0];
     *input = &input[1..];
     match first {
         0xfd => {
             if input.len() < 2 {
-                return Err("varint: kurang 2 byte".into());
+                return Err("varint: missing 2 bytes".into());
             }
             let v = u16::from_le_bytes([input[0], input[1]]) as u64;
             *input = &input[2..];
@@ -155,7 +162,7 @@ fn read_varint(input: &mut &[u8]) -> Result<u64, String> {
         }
         0xfe => {
             if input.len() < 4 {
-                return Err("varint: kurang 4 byte".into());
+                return Err("varint: missing 4 bytes".into());
             }
             let v = u32::from_le_bytes([input[0], input[1], input[2], input[3]]) as u64;
             *input = &input[4..];
@@ -163,7 +170,7 @@ fn read_varint(input: &mut &[u8]) -> Result<u64, String> {
         }
         0xff => {
             if input.len() < 8 {
-                return Err("varint: kurang 8 byte".into());
+                return Err("varint: missing 8 bytes".into());
             }
             let mut b = [0u8; 8];
             b.copy_from_slice(&input[..8]);
@@ -182,7 +189,7 @@ fn write_string(out: &mut Vec<u8>, s: &str) {
 fn read_string(input: &mut &[u8]) -> Result<String, String> {
     let len = read_varint(input)? as usize;
     if input.len() < len {
-        return Err("string: kurang byte".into());
+        return Err("string: not enough bytes".into());
     }
     let s = String::from_utf8(input[..len].to_vec()).map_err(|e| format!("string: {}", e))?;
     *input = &input[len..];
@@ -197,7 +204,7 @@ fn write_netaddr(out: &mut Vec<u8>, addr: &NetAddr) {
 
 fn read_netaddr(input: &mut &[u8]) -> Result<NetAddr, String> {
     if input.len() < 8 + 16 + 2 {
-        return Err("netaddr: kurang byte".into());
+        return Err("netaddr: not enough bytes".into());
     }
     let services = u64::from_le_bytes(input[..8].try_into().unwrap());
     let mut ip = [0u8; 16];
@@ -293,7 +300,7 @@ impl Message {
         match command {
             "version" => {
                 if input.len() < 4 + 8 + 8 + 26 + 26 + 8 {
-                    return Err("version: payload terlalu pendek".into());
+                    return Err("version: payload too short".into());
                 }
                 let protocol_version = u32::from_le_bytes(input[..4].try_into().unwrap());
                 input = &input[4..];
@@ -307,7 +314,7 @@ impl Message {
                 input = &input[8..];
                 let user_agent = read_string(&mut input)?;
                 if input.len() < 8 {
-                    return Err("version: start_height kurang".into());
+                    return Err("version: start_height missing".into());
                 }
                 let start_height = u64::from_le_bytes(input[..8].try_into().unwrap());
                 input = &input[8..];
@@ -330,11 +337,11 @@ impl Message {
                 let mut items = Vec::with_capacity(count);
                 for _ in 0..count {
                     if input.len() < 4 + 32 {
-                        return Err("inv: item kurang byte".into());
+                        return Err("inv: item missing bytes".into());
                     }
                     let t = u32::from_le_bytes(input[..4].try_into().unwrap());
                     input = &input[4..];
-                    let inv_type = InvType::from_u32(t).ok_or("inv: tipe tidak dikenal")?;
+                    let inv_type = InvType::from_u32(t).ok_or("inv: unknown type")?;
                     let hash = hex::encode(&input[..32]);
                     input = &input[32..];
                     items.push(Inventory { inv_type, hash });
@@ -347,7 +354,7 @@ impl Message {
             }
             "getheaders" => {
                 if input.len() < 4 {
-                    return Err("getheaders: version kurang".into());
+                    return Err("getheaders: version missing".into());
                 }
                 let version = u32::from_le_bytes(input[..4].try_into().unwrap());
                 input = &input[4..];
@@ -355,13 +362,13 @@ impl Message {
                 let mut locator_hashes = Vec::with_capacity(count);
                 for _ in 0..count {
                     if input.len() < 32 {
-                        return Err("getheaders: locator kurang".into());
+                        return Err("getheaders: locator missing".into());
                     }
                     locator_hashes.push(hex::encode(&input[..32]));
                     input = &input[32..];
                 }
                 if input.len() < 32 {
-                    return Err("getheaders: hash_stop kurang".into());
+                    return Err("getheaders: hash_stop missing".into());
                 }
                 let hash_stop = hex::encode(&input[..32]);
                 Ok(Message::GetHeaders(BlockLocator {
@@ -375,7 +382,7 @@ impl Message {
                 let mut headers = Vec::with_capacity(count);
                 for _ in 0..count {
                     if input.len() < 4 + 8 + 16 + 32 + 32 + 8 + 4 + 8 + 32 {
-                        return Err("headers: header kurang byte".into());
+                        return Err("headers: header missing bytes".into());
                     }
                     let nversion = u32::from_le_bytes(input[..4].try_into().unwrap());
                     input = &input[4..];
@@ -431,7 +438,7 @@ impl Message {
             "getaddr" => Ok(Message::GetAddr),
             "ping" => {
                 if input.len() < 8 {
-                    return Err("ping: nonce kurang".into());
+                    return Err("ping: nonce missing".into());
                 }
                 Ok(Message::Ping(u64::from_le_bytes(
                     input[..8].try_into().unwrap(),
@@ -439,7 +446,7 @@ impl Message {
             }
             "pong" => {
                 if input.len() < 8 {
-                    return Err("pong: nonce kurang".into());
+                    return Err("pong: nonce missing".into());
                 }
                 Ok(Message::Pong(u64::from_le_bytes(
                     input[..8].try_into().unwrap(),
@@ -448,7 +455,7 @@ impl Message {
             "reject" => {
                 let command = read_string(&mut input)?;
                 if input.is_empty() {
-                    return Err("reject: code kurang".into());
+                    return Err("reject: code missing".into());
                 }
                 let code = input[0];
                 input = &input[1..];
@@ -459,7 +466,7 @@ impl Message {
                     reason,
                 })
             }
-            other => Err(format!("command tidak dikenal: {}", other)),
+            other => Err(format!("unknown command: {}", other)),
         }
     }
 }
@@ -499,7 +506,7 @@ mod tests {
                 assert_eq!(v2.user_agent, USER_AGENT);
                 assert!(v2.relay);
             }
-            _ => panic!("bukan version"),
+            _ => panic!("expected a Version message"),
         }
     }
 
@@ -520,7 +527,7 @@ mod tests {
         let decoded = Message::deserialize("inv", &bytes).unwrap();
         match decoded {
             Message::Inv(items2) => assert_eq!(items2, items),
-            _ => panic!("bukan inv"),
+            _ => panic!("expected an Inv message"),
         }
     }
 
@@ -531,12 +538,12 @@ mod tests {
         let decoded = Message::deserialize("ping", &bytes).unwrap();
         match decoded {
             Message::Ping(n) => assert_eq!(n, 12345),
-            _ => panic!("bukan ping"),
+            _ => panic!("expected a Ping message"),
         }
     }
 
     #[test]
-    fn varint_batas() {
+    fn varint_boundaries() {
         for n in [
             0u64,
             1,
