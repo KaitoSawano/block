@@ -1,6 +1,57 @@
-/target
-Cargo.lock
-.chain/
-*.log
+# Copyright (c) 2026 Aldianokto
+# Copyright (c) 2026-present Zenachain Core developers
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or https://opensource.org/license/mit.
+
+# Rust build artifacts
+/target/
+target/
+
+# Compiled binaries copied to the repository root by build.sh or Makefile
 /zenachain
 /zenachaind
+/zenachain-miner
+/zenachain-genesis
+
+# Gitian build directories
+/contrib/gitian-builder/
+/contrib/gitian-keys/*.private
+/contrib/gitian-keys/*.asc
+
+# Packaging and artifact directories
+/dist/
+/package/
+/artifact/
+
+# Release archives
+/*.tar.gz
+/*.zip
+
+# Code coverage output
+*.profraw
+*.profdata
+/coverage/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+wallet.dat
+zenachain.conf
+peers.json
+mempool.json
+/chainstate/
+/blocks/
+.zenachain/
+
+# Editor and operating system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Log files
+*.log
