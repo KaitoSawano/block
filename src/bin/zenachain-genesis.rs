@@ -1,9 +1,7 @@
-//! Binary sekali pakai untuk menghitung genesis ZenaChain.
-//!
-//! Jalankan `./zenachain-genesis` setiap kali parameter konsensus
-//! diubah. Cetak nilai hash, merkle_root, timestamp, dan nonce
-//! genesis yang baru. Salin keempat nilai ke
-//! `src/consensus/genesis.rs`.
+// Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
 
 use zenachain::block::Block;
 
