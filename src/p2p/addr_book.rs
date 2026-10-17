@@ -1,4 +1,7 @@
-//! Buku alamat peer (AddrMan sederhana ala Bitcoin).
+// Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
+// Distributed under the MIT software license, see the accompanying
+// file LICENSE or https://opensource.org/license/mit.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
