@@ -5,36 +5,51 @@
 
 use zenachain::block::Block;
 use zenachain::blockchain;
-use zenachain::pow::{hash_meets_target, mine};
+use zenachain::pow::{hash_meets_nbits, mine, nbits_to_target};
 use zenachain::transaction::Transaction;
 
 #[test]
-fn target_prefix() {
-    assert!(hash_meets_target("0000abc", 4));
-    assert!(!hash_meets_target("000abc", 4));
+fn nbits_to_target_genesis() {
+    let target = nbits_to_target(blockchain::genesis_nbits());
+    // The genesis target has four leading zero bytes.
+    assert_eq!(&target[..2], &[0u8, 0u8]);
+    assert!(target[2] <= 0x0f);
 }
 
 #[test]
-fn mining_hash_valid() {
+fn hash_meets_nbits_rejects_easy_hash() {
+    // A hash that starts with 0xff does not meet the genesis target.
+    let hash = "ff".repeat(32);
+    assert!(!hash_meets_nbits(&hash, blockchain::genesis_nbits()));
+}
+
+#[test]
+fn mining_produces_valid_hash() {
+    let nbits = blockchain::genesis_nbits();
     let mut b = Block::new(
         1,
         "0".repeat(64),
         blockchain::initial_reward(),
-        vec![Transaction::new("a", "b", 1, 0)],
+        nbits,
+        vec![Transaction::new("ZENA_alice", "ZENA_bob", 1, 0)],
     );
-    mine(&mut b, 3);
-    assert!(b.hash.starts_with("000"));
+    let ok = mine(&mut b, nbits);
+    assert!(ok);
+    assert!(hash_meets_nbits(&b.hash, nbits));
 }
 
 #[test]
-fn mining_nonce_naik() {
+fn mining_increments_nonce() {
+    let nbits = blockchain::genesis_nbits();
     let mut b = Block::new(
         1,
         "0".repeat(64),
         blockchain::initial_reward(),
-        vec![Transaction::new("a", "b", 1, 0)],
+        nbits,
+        vec![Transaction::new("ZENA_alice", "ZENA_bob", 1, 0)],
     );
     let n0 = b.nonce;
-    mine(&mut b, 2);
+    let ok = mine(&mut b, nbits);
+    assert!(ok);
     assert!(b.nonce >= n0);
 }
