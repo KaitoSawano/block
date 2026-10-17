@@ -237,11 +237,13 @@ impl RpcServer {
     fn m_stop(&mut self) -> RpcResponse {
         println!();
         println!("[node] Mematikan node sedang berjalan. Mohon tunggu...");
+        println!("[node] Menyimpan data blockchain...");
+
+        self.shutdown.store(true, Ordering::SeqCst);
 
         let chain = self.chain.blocking_read();
         match storage::save_chain(&chain) {
             Ok(_) => {
-                println!("[node] Menyimpan data blockchain...");
                 println!("[node]   blocks     : {}", chain.chain.len());
                 println!(
                     "[node]   chainstate : height={} difficulty/nbits={:#010x}",
@@ -249,10 +251,7 @@ impl RpcServer {
                     chain.nbits
                 );
                 println!("[node]   mempool    : {} transaksi", chain.mempool.len());
-                println!(
-                    "[node]   lokasi     : {}",
-                    datadir::as_str(&datadir::datadir())
-                );
+                println!("[node]   lokasi     : {}", datadir::as_str(&datadir::datadir()));
                 println!("[node] Data blockchain berhasil disimpan.");
             }
             Err(e) => {
@@ -261,8 +260,6 @@ impl RpcServer {
             }
         }
         drop(chain);
-
-        self.shutdown.store(true, Ordering::SeqCst);
 
         println!("[node] Menutup koneksi P2P dan RPC...");
         println!("[node] Shutdown berhasil.");
@@ -715,55 +712,64 @@ impl RpcServer {
             return RpcResponse::err("format alamat tidak valid");
         }
 
-        let mut chain = self.chain.blocking_write();
         let mut hashes: Vec<String> = Vec::new();
 
         for _ in 0..n {
-            let prev = chain.chain.last().unwrap().clone();
-            let next_index = prev.index + 1;
-            let reward = Blockchain::calculate_reward(next_index);
+            // Ambil lock hanya sebentar untuk membaca state.
+            let (prev, reward, nbits, txs) = {
+                let mut chain = self.chain.blocking_write();
+                let prev = chain.chain.last().unwrap().clone();
+                let next_index = prev.index + 1;
+                let reward = Blockchain::calculate_reward(next_index);
 
-            if chain.circulating_supply().saturating_add(reward) > consensus::max_supply() {
-                return RpcResponse::err("max supply reached");
-            }
+                if chain.circulating_supply().saturating_add(reward) > consensus::max_supply() {
+                    return RpcResponse::err("max supply reached");
+                }
 
-            let mut txs = std::mem::take(&mut chain.mempool);
-            txs.push(Transaction::new(
-                "NETWORK",
-                &addr,
-                consensus::satoshi() / 100,
-                0,
-            ));
-            txs.push(Transaction::new_with_inputs(
-                "MEMPOOL",
-                "CreateNewBlock",
-                0,
-                0,
-                Vec::new(),
-                format!("height={} target={}", next_index, addr),
-            ));
+                let mut txs = std::mem::take(&mut chain.mempool);
+                txs.push(Transaction::new(
+                    "NETWORK",
+                    &addr,
+                    consensus::satoshi() / 100,
+                    0,
+                ));
+                txs.push(Transaction::new_with_inputs(
+                    "MEMPOOL",
+                    "CreateNewBlock",
+                    0,
+                    0,
+                    Vec::new(),
+                    format!("height={} target={}", next_index, addr),
+                ));
 
+                (prev, reward, chain.nbits, txs)
+            };
+
+            // Mining di luar lock, agar RPC lain (termasuk stop) tetap responsif.
             let mut block = crate::block::Block::new_for(
-                next_index,
+                prev.index + 1,
                 prev.hash.clone(),
                 reward,
-                chain.nbits,
+                nbits,
                 txs,
                 addr.clone(),
             );
-            if !pow::mine(&mut block, chain.nbits) {
+            if !pow::mine(&mut block, nbits) {
                 return RpcResponse::err("mining gagal: nonce habis");
             }
 
-            let hash = block.hash.clone();
-            chain.chain.push(block.clone());
-            chain.adjust_difficulty();
-            block.log_add_to_wallet();
-            hashes.push(hash);
-        }
+            // Simpan blok ke chain.
+            {
+                let mut chain = self.chain.blocking_write();
+                chain.chain.push(block.clone());
+                chain.adjust_difficulty();
+                block.log_add_to_wallet();
+                if let Err(e) = storage::save_chain(&chain) {
+                    return RpcResponse::err(&format!("gagal simpan chain: {}", e));
+                }
+            }
 
-        if let Err(e) = storage::save_chain(&chain) {
-            return RpcResponse::err(&format!("gagal simpan chain: {}", e));
+            hashes.push(block.hash.clone());
         }
 
         RpcResponse::ok(json!(hashes))
