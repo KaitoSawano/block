@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+//! Configuration file parsing and persistence.
+
 use crate::datadir;
 use serde::{Deserialize, Serialize};
 
@@ -111,12 +113,11 @@ impl Default for Config {
     }
 }
 
-/// Normalisasi alamat listen. Kalau masih dalam format multiaddr libp2p
-/// (`/ip4/0.0.0.0/tcp/8333`), ubah ke SocketAddr (`0.0.0.0:8333`).
-/// Kalau sudah SocketAddr, kembalikan apa adanya.
+/// Normalize the listen address. If the value is still in the libp2p
+/// multiaddr format (`/ip4/0.0.0.0/tcp/8333`), convert it to a socket
+/// address (`0.0.0.0:8333`). Otherwise, return the value unchanged.
 fn normalize_listen_addr(value: &str) -> String {
     if value.starts_with('/') {
-        // Format multiaddr: /ip4/<ip>/tcp/<port> atau /ip6/<ip>/tcp/<port>
         let parts: Vec<&str> = value.trim_start_matches('/').split('/').collect();
         if parts.len() >= 4 {
             let proto = parts[0];
@@ -129,7 +130,6 @@ fn normalize_listen_addr(value: &str) -> String {
                 return format!("{}:{}", ip, port);
             }
         }
-        // Fallback kalau format tidak dikenal
         return "0.0.0.0:8333".to_string();
     }
     value.to_string()
