@@ -14,10 +14,7 @@ use zenachain::transaction::Transaction;
 
 fn main() {
     println!("[miner] zenachain-miner started");
-    println!(
-        "[miner] connecting to the node at {}",
-        rpc::DEFAULT_RPC_ADDR
-    );
+    println!("[miner] connecting to the node at {}", rpc::DEFAULT_RPC_ADDR);
 
     loop {
         let template = match rpc::call("getblocktemplate", vec![]) {
@@ -37,6 +34,11 @@ fn main() {
         let height = template["height"].as_u64().unwrap_or(0);
         let previous_hash = template["previous_hash"].as_str().unwrap_or("").to_string();
         let nbits = template["nbits"].as_u64().unwrap_or(0) as u32;
+        
+        // Ambil data dari template RPC (yang sudah dihitung oleh node)
+        let subsidy_satoshi = template["subsidy_satoshi"].as_u64().unwrap_or(0);
+        let total_fees_satoshi = template["total_fees_satoshi"].as_u64().unwrap_or(0);
+        let reward_satoshi = template["reward_satoshi"].as_u64().unwrap_or(0);
 
         let mut mempool: Vec<Transaction> =
             serde_json::from_value(template["mempool"].clone()).unwrap_or_default();
@@ -50,8 +52,7 @@ fn main() {
             continue;
         }
 
-        let reward = zenachain::blockchain::Blockchain::calculate_reward(height);
-
+        // Tambahkan transaksi MEMPOOL sebagai penanda (opsional, bisa dihapus)
         mempool.push(Transaction::new_with_inputs(
             "MEMPOOL",
             "CreateNewBlock",
@@ -61,14 +62,24 @@ fn main() {
             format!("height={} target={}", height, target_address),
         ));
 
+        // Panggil Block::new_for dengan 7 argumen (termasuk total_fees)
         let mut block = Block::new_for(
             height,
             previous_hash,
-            reward,
+            subsidy_satoshi,
+            total_fees_satoshi,
             nbits,
             mempool,
             target_address.clone(),
         );
+
+        // Pastikan reward di blok sama dengan yang diharapkan (opsional)
+        if block.reward != reward_satoshi {
+            println!(
+                "[miner] WARNING: reward mismatch. Block reward: {}, Template reward: {}",
+                block.reward, reward_satoshi
+            );
+        }
 
         if !zenachain::pow::mine(&mut block, nbits) {
             println!("[miner] mining failed: nonce exhausted");
