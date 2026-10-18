@@ -17,12 +17,12 @@ pub const GENESIS_TIMESTAMP: u128 = 1792303198445;
 /// The expected hash of the genesis block.
 /// TODO: Update this value after running `cargo run --release --bin zenachain-genesis`.
 pub const EXPECTED_GENESIS_HASH: &str =
-    "0000000000000000000000000000000000000000000000000000000000000000";
+    "00000efb658a36715e611a97ce22343e5e1ccd3243157680eb998316648a439f";
 
 /// The expected merkle root of the genesis block.
 /// TODO: Update this value after running `cargo run --release --bin zenachain-genesis`.
 pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =
-    "0000000000000000000000000000000000000000000000000000000000000000";
+    "a0d24005775f3cd42a6f7d4a03f6d9d650ef814a2d3bc73833a57d1749c3cd6c";
 
 /// The expected timestamp of the genesis block (must match GENESIS_TIMESTAMP).
 pub const EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198445;
