@@ -37,7 +37,6 @@ pub struct Block {
 }
 
 impl Block {
-    /// Compute the Merkle root of the given transaction list.
     pub fn compute_merkle_root(transactions: &[Transaction]) -> String {
         if transactions.is_empty() {
             return sha3_256_hex(b"empty");
@@ -83,7 +82,6 @@ impl Block {
         hex::encode(layer[0])
     }
 
-    /// Create a new block without a specific mining target.
     pub fn new(
         index: u64,
         previous_hash: String,
@@ -101,7 +99,6 @@ impl Block {
         )
     }
 
-    /// Create a new block with a specific mining target.
     pub fn new_for(
         index: u64,
         previous_hash: String,
@@ -144,18 +141,15 @@ impl Block {
     }
 
     /// Compute the genesis block without verifying the expected constants.
-    /// This function is used by the `zenachain-genesis` binary to
-    /// regenerate the `EXPECTED_GENESIS_*` constants after a consensus
-    /// parameter change.
     pub fn genesis_unchecked() -> Self {
         Self::genesis_mined()
     }
 
     /// Mine the genesis block using the genesis consensus parameters.
     fn genesis_mined() -> Self {
-        // Dynamically fetch the current timestamp to ensure that every
-        // regeneration produces a completely new genesis block.
-        let ts = now_millis();
+        // CRITICAL FIX: Use the hardcoded timestamp from genesis.rs, NOT now_millis().
+        // This ensures the genesis block is deterministic and never changes.
+        let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
         let genesis_output_script = genesis::GENESIS_OUTPUT_SCRIPT.to_string();
         let nbits = cpow::GENESIS_NBITS;
@@ -233,7 +227,6 @@ impl Block {
         std::process::exit(1);
     }
 
-    /// Compute the hash of this block.
     pub fn calculate_hash(&self) -> String {
         let mut payload = format!(
             "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
@@ -270,12 +263,10 @@ impl Block {
         sha3_256_hex(payload.as_bytes())
     }
 
-    /// Return the block reward for the given height.
     pub fn reward_at(height: u64) -> u64 {
         Blockchain::calculate_reward(height)
     }
 
-    /// Append an "AddToWallet" entry to the debug log.
     pub fn log_add_to_wallet(&self) {
         let entry = format!(
             "AddToWallet\n  mined_at : {}\n  txid     : {}\n  hash     : {}",
