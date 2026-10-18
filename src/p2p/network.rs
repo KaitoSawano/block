@@ -22,7 +22,7 @@ use crate::p2p::framing::{read_message, write_message};
 use crate::p2p::handshake;
 use crate::p2p::inv::InventoryManager;
 use crate::p2p::message::{BlockLocator, Inventory, InvType, Message};
-use crate::p2p::peer::PeerState;
+use crate::p2p::peer::{PeerState};
 use crate::p2p::peer_manager::{PeerEvent, PeerManager};
 use crate::p2p::peers;
 use crate::storage;
@@ -41,8 +41,8 @@ pub type PeerRegistry = Arc<Mutex<Vec<PeerInfo>>>;
 
 #[derive(Debug, Clone)]
 pub enum NetworkCommand {
-    BroadcastBlock(String),      // Hash blok baru
-    BroadcastTransaction(String), // TxID transaksi baru
+    BroadcastBlock(String),
+    BroadcastTransaction(String),
 }
 
 #[derive(Debug, Clone)]
@@ -69,7 +69,7 @@ impl Default for NetworkConfig {
             idle_timeout: Duration::from_secs(120),
             ping_interval: Duration::from_secs(30),
             ping_timeout: Duration::from_secs(60),
-            connect_interval: Duration::from_secs(2), // Dipercepat dari 10s ke 2s
+            connect_interval: Duration::from_secs(2),
         }
     }
 }
@@ -92,7 +92,7 @@ pub struct Network {
     local_addr: Option<SocketAddr>,
     next_connect_at: Instant,
     peer_registry: PeerRegistry,
-    command_rx: mpsc::Receiver<NetworkCommand>, // <-- Tambahan
+    command_rx: mpsc::Receiver<NetworkCommand>,
 }
 
 impl Network {
@@ -214,6 +214,10 @@ impl Network {
         let mut reg = self.peer_registry.lock().unwrap();
         reg.clear();
         for peer in self.peer_manager.all_peers() {
+            // Filter out peers that are not active
+            if peer.state == PeerState::Disconnected || peer.state == PeerState::Banned {
+                continue;
+            }
             reg.push(PeerInfo {
                 id: peer.id,
                 addr: peer.addr.to_string(),
@@ -227,7 +231,6 @@ impl Network {
         self.peer_manager.tick();
         self.addr_book.prune(Duration::from_secs(3600));
         
-        // Jika tinggi chain berubah, minta header ke semua peer (fallback)
         let chain = self.chain.read().await;
         let height = chain.height();
         drop(chain);
@@ -256,9 +259,14 @@ impl Network {
                 break;
             }
 
-            // Cegah koneksi ke diri sendiri
+            // Prevent self-connection (robust check)
             if let Some(local) = self.local_addr {
-                if addr.ip() == local.ip() && addr.port() == local.port() {
+                if local.ip().is_unspecified() {
+                    // Listening on 0.0.0.0: block any localhost/unspecified on the same port
+                    if addr.port() == local.port() {
+                        continue;
+                    }
+                } else if addr.ip() == local.ip() && addr.port() == local.port() {
                     continue;
                 }
             }
@@ -801,7 +809,7 @@ pub fn spawn(
     config: NetworkConfig,
     chain: Arc<RwLock<Blockchain>>,
     peer_registry: PeerRegistry,
-    command_rx: mpsc::Receiver<NetworkCommand>, // <-- Tambahan
+    command_rx: mpsc::Receiver<NetworkCommand>,
 ) -> tokio::task::JoinHandle<Result<(), String>> {
     tokio::spawn(async move {
         let mut net = Network::new(config, chain, peer_registry, command_rx);
