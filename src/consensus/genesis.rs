@@ -3,87 +3,34 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
-//! Consensus module for ZenaChain.
+//! Genesis consensus parameters for ZenaChain.
 
-pub mod genesis;
-pub mod pow;
-pub mod rules;
-pub mod spec;
+pub const GENESIS_MESSAGE: &str = "ZenaChain Genesis - 2026";
+pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
+pub const GENESIS_OUTPUT_SCRIPT: &str =
+    "OP_DUP OP_HASH160 ZenaChainGenesisOutput OP_EQUALVERIFY OP_CHECKSIG";
 
-use crate::utils::sha3_256_hex;
+pub const GENESIS_TIMESTAMP: u128 = 1792303198445;
 
-/// Compute the consensus fingerprint. The fingerprint is the SHA3-256
-/// digest of all consensus parameters, and it binds the genesis block to
-/// the current parameter set.
-pub fn consensus_fingerprint() -> String {
-    let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-        spec::HASH_ALGO,
-        spec::SIGNATURE_ALGO,
-        spec::DECIMALS,
-        spec::SATOSHI,
-        spec::MAX_SUPPLY_ZENAC,
-        spec::MAX_SUPPLY,
-        spec::INITIAL_REWARD_ZENAC,
-        spec::INITIAL_REWARD,
-        spec::SUBSIDY_HALVING_INTERVAL,
-        spec::MAX_HALVINGS,
-        spec::POW_TARGET_SPACING_SECS,
-        spec::POW_TARGET_TIMESPAN_SECS,
-        spec::MINER_CONFIRMATION_WINDOW,
-        spec::DIFFICULTY_ADJUST_INTERVAL,
-        genesis::GENESIS_MESSAGE,
-        genesis::GENESIS_SECRET,
-        genesis::GENESIS_TIMESTAMP,
-        genesis::GENESIS_OUTPUT_SCRIPT,
-        pow::GENESIS_NBITS,
-        pow::POW_LIMIT,
-        rules::COINBASE_MATURITY,
-        rules::ADDRESS_PREFIX,
-        rules::ADDRESS_HEX_LEN,
-        rules::MAX_TX_PER_BLOCK,
-        rules::MAX_NOTE_LEN,
-        rules::BLOCK_VERSION,
-        rules::ZERO_HASH,
-    );
-    sha3_256_hex(payload.as_bytes())
+pub const EXPECTED_GENESIS_HASH: &str =
+    "000005d589f2e9a9fa09571fb2a978e5bf998f2f8104c570ff66212c7083620a";
+
+pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =
+    "a0d24005775f3cd42a6f7d4a03f6d9d650ef814a2d3bc73833a57d1749c3cd6c";
+
+pub const EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198445;
+
+pub const EXPECTED_GENESIS_NONCE: u64 = 72180;
+
+pub fn genesis_message() -> &'static str {
+    GENESIS_MESSAGE
 }
-
-/// Compute the genesis coinbase transaction ID from the consensus
-/// fingerprint, the genesis timestamp, and the genesis nBits.
-pub fn genesis_coinbase_txid() -> String {
-    let fp = consensus_fingerprint();
-    let payload = format!(
-        "genesis|{}|{}|{}",
-        fp,
-        genesis::GENESIS_TIMESTAMP,
-        pow::GENESIS_NBITS
-    );
-    sha3_256_hex(payload.as_bytes())
+pub fn genesis_secret() -> &'static str {
+    GENESIS_SECRET
 }
-
-pub use genesis::genesis_message;
-pub use genesis::genesis_output_script;
-pub use genesis::genesis_secret;
-pub use genesis::genesis_timestamp;
-pub use pow::genesis_nbits;
-pub use pow::pow_limit;
-pub use rules::max_tx_per_block;
-pub use spec::coin_name;
-pub use spec::decimals;
-pub use spec::difficulty_adjust_interval;
-pub use spec::hash_algo;
-pub use spec::initial_reward;
-pub use spec::initial_reward_zenac;
-pub use spec::max_halvings;
-pub use spec::max_supply;
-pub use spec::max_supply_zenac;
-pub use spec::miner_confirmation_window;
-pub use spec::pow_target_spacing_secs;
-pub use spec::pow_target_timespan_secs;
-pub use spec::protocol_version;
-pub use spec::satoshi;
-pub use spec::signature_algo;
-pub use spec::subsidy_halving_interval;
-pub use spec::symbol;
-pub use spec::version;
+pub fn genesis_timestamp() -> u128 {
+    GENESIS_TIMESTAMP
+}
+pub fn genesis_output_script() -> String {
+    GENESIS_OUTPUT_SCRIPT.to_string()
+}
