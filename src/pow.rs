@@ -44,12 +44,9 @@ pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
 
 /// Convert nBits to a floating-point difficulty value (similar to Bitcoin).
 pub fn nbits_to_difficulty(nbits: u32) -> f64 {
-    // Bitcoin's maximum target (0x1d00ffff) corresponds to difficulty 1.0.
     let max_target = nbits_to_target(0x1d00ffff);
     let target = nbits_to_target(nbits);
 
-    // Convert the 256-bit arrays to f64 by using the leading bytes.
-    // This is an approximation but sufficient for display purposes.
     let mut max_val = 0.0f64;
     for &b in max_target.iter() {
         max_val = max_val * 256.0 + b as f64;
@@ -92,7 +89,6 @@ pub fn hash_meets_nbits(hash_hex: &str, nbits: u32) -> bool {
 }
 
 /// Mine the block until the hash meets the target or the nonce is exhausted.
-/// Return `true` on success and `false` if the nonce is exhausted.
 pub fn mine(block: &mut Block, nbits: u32) -> bool {
     mine_interruptible(block, nbits, None)
 }
@@ -104,13 +100,6 @@ pub fn mine_interruptible(
     nbits: u32,
     interrupt: Option<&AtomicBool>,
 ) -> bool {
-    // If ZENAC_SKIP_POW is set, bypass the proof-of-work loop.
-    // This is used by the test suite to avoid CPU-intensive mining.
-    if std::env::var("ZENAC_SKIP_POW").is_ok() {
-        block.hash = block.calculate_hash();
-        return true;
-    }
-
     let target = nbits_to_target(nbits);
     loop {
         if let Some(flag) = interrupt {
