@@ -4,13 +4,6 @@
 // file LICENSE or https://opensource.org/license/mit.
 
 //! Consensus module for ZenaChain.
-//!
-//! Every parameter that binds the chain validation rules is defined here.
-//! If any parameter in this module is changed, the genesis hash changes
-//! and all previous chains become invalid.
-//!
-//! Network parameters (peer bootstrap, DNS seeds, P2P port) are not
-//! defined here. They are defined in `src/p2p/peers.rs`.
 
 pub mod genesis;
 pub mod pow;
@@ -24,7 +17,7 @@ use crate::utils::sha3_256_hex;
 /// the current parameter set.
 pub fn consensus_fingerprint() -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
         spec::DECIMALS,
@@ -41,7 +34,6 @@ pub fn consensus_fingerprint() -> String {
         spec::DIFFICULTY_ADJUST_INTERVAL,
         genesis::GENESIS_MESSAGE,
         genesis::GENESIS_SECRET,
-        genesis::GENESIS_TIMESTAMP,
         genesis::GENESIS_OUTPUT_SCRIPT,
         pow::GENESIS_NBITS,
         pow::POW_LIMIT,
@@ -58,13 +50,12 @@ pub fn consensus_fingerprint() -> String {
 }
 
 /// Compute the genesis coinbase transaction ID from the consensus
-/// fingerprint, the genesis timestamp, and the genesis nBits.
+/// fingerprint and the genesis nBits.
 pub fn genesis_coinbase_txid() -> String {
     let fp = consensus_fingerprint();
     let payload = format!(
-        "genesis|{}|{}|{}",
+        "genesis|{}|{}",
         fp,
-        genesis::GENESIS_TIMESTAMP,
         pow::GENESIS_NBITS
     );
     sha3_256_hex(payload.as_bytes())
@@ -73,7 +64,6 @@ pub fn genesis_coinbase_txid() -> String {
 pub use genesis::genesis_message;
 pub use genesis::genesis_output_script;
 pub use genesis::genesis_secret;
-pub use genesis::genesis_timestamp;
 pub use pow::genesis_nbits;
 pub use pow::pow_limit;
 pub use rules::max_tx_per_block;
