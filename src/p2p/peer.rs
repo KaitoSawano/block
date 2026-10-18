@@ -19,11 +19,20 @@ pub enum PeerState {
     Banned,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionType {
+    OutboundFullRelay,
+    OutboundBlockRelayOnly,
+    Inbound,
+    Feeler,
+}
+
 #[derive(Debug, Clone)]
 pub struct Peer {
     pub id: u64,
     pub addr: SocketAddr,
     pub state: PeerState,
+    pub conn_type: ConnectionType,
     pub outbound: bool,
     pub local_nonce: u64,
     pub remote_nonce: u64,
@@ -40,8 +49,14 @@ pub struct Peer {
 }
 
 impl Peer {
-    pub fn new(id: u64, addr: SocketAddr, outbound: bool) -> Self {
+    pub fn new(id: u64, addr: SocketAddr, conn_type: ConnectionType) -> Self {
         let now = Instant::now();
+        let outbound = matches!(
+            conn_type,
+            ConnectionType::OutboundFullRelay
+                | ConnectionType::OutboundBlockRelayOnly
+                | ConnectionType::Feeler
+        );
         Peer {
             id,
             addr,
@@ -50,6 +65,7 @@ impl Peer {
             } else {
                 PeerState::Handshaking
             },
+            conn_type,
             outbound,
             local_nonce: rand_nonce(),
             remote_nonce: 0,
@@ -74,7 +90,6 @@ impl Peer {
         self.state == PeerState::Handshaking
     }
 
-    /// Add a misbehavior score. Return `true` if the peer must be banned.
     pub fn add_misbehavior(&mut self, score: u32) -> bool {
         self.misbehavior = self.misbehavior.saturating_add(score);
         if self.misbehavior >= MAX_MISBEHAVIOR {
