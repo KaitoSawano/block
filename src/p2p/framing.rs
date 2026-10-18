@@ -4,16 +4,10 @@
 // file LICENSE or https://opensource.org/license/mit.
 
 //! Message framing for the ZenaChain peer-to-peer protocol.
-//!
-//! The frame layout follows Bitcoin:
-//! [magic: 4][command: 12][length: 4 LE][checksum: 4][payload: length]
-//!
-//! The checksum is the first four bytes of double-SHA3-256(payload),
-//! the analogue of Bitcoin's double-SHA256 checksum.
 
 use crate::blockchain::network::NETWORK_MAGIC;
-use zenachain_crypto::sha3_256_hex;
 use std::io::{self, Read, Write};
+use zenachain_crypto::sha3_256_hex;
 
 pub const COMMAND_LEN: usize = 12;
 pub const HEADER_LEN: usize = 4 + COMMAND_LEN + 4 + 4;
