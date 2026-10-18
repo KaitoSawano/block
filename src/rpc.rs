@@ -9,7 +9,7 @@ use crate::blockchain::{self, Blockchain};
 use crate::config::Config;
 use crate::consensus;
 use crate::datadir;
-use crate::p2p::network::PeerRegistry;
+use crate::p2p::network::{NetworkCommand, PeerRegistry};
 use crate::pow;
 use crate::storage;
 use crate::transaction::Transaction;
@@ -23,7 +23,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
 pub const DEFAULT_RPC_ADDR: &str = "127.0.0.1:8332";
 pub const DEFAULT_FEE_SATOSHI: u64 = 100_000;
@@ -117,6 +117,7 @@ struct RpcState {
     rpc_password: String,
     wallet_password: Arc<RwLock<Option<String>>>,
     peer_registry: PeerRegistry,
+    network_cmd_tx: mpsc::Sender<NetworkCommand>,
 }
 
 pub struct RpcServer {
@@ -129,6 +130,7 @@ impl RpcServer {
         chain: Arc<RwLock<Blockchain>>,
         cfg: &Config,
         peer_registry: PeerRegistry,
+        network_cmd_tx: mpsc::Sender<NetworkCommand>,
     ) -> Self {
         let state = Arc::new(RpcState {
             chain,
@@ -138,6 +140,7 @@ impl RpcServer {
             rpc_password: cfg.rpc_password.clone(),
             wallet_password: Arc::new(RwLock::new(None)),
             peer_registry,
+            network_cmd_tx,
         });
         RpcServer {
             state,
@@ -454,6 +457,15 @@ impl RpcHandler {
         if let Err(e) = storage::save_chain(&chain) {
             return RpcResponse::err(&format!("failed to save chain: {}", e));
         }
+
+        drop(chain);
+
+        // Broadcast block baru ke P2P network
+        let tx = self.state.network_cmd_tx.clone();
+        let hash = block.hash.clone();
+        tokio::spawn(async move {
+            let _ = tx.send(NetworkCommand::BroadcastBlock(hash)).await;
+        });
 
         RpcResponse::ok(json!({
             "accepted": true,
@@ -992,6 +1004,13 @@ impl RpcHandler {
                 }
             }
 
+            // Broadcast block baru ke P2P network
+            let tx = self.state.network_cmd_tx.clone();
+            let hash = block.hash.clone();
+            tokio::spawn(async move {
+                let _ = tx.send(NetworkCommand::BroadcastBlock(hash)).await;
+            });
+
             hashes.push(block.hash.clone());
         }
 
@@ -1086,6 +1105,15 @@ impl RpcHandler {
             return RpcResponse::err(&format!("failed to save chain: {}", e));
         }
 
+        drop(chain);
+
+        // Broadcast transaksi baru ke P2P network
+        let tx = self.state.network_cmd_tx.clone();
+        let tid = txid.clone();
+        tokio::spawn(async move {
+            let _ = tx.send(NetworkCommand::BroadcastTransaction(tid)).await;
+        });
+
         RpcResponse::ok(json!({
             "txid": txid,
             "from": entry.address,
@@ -1094,7 +1122,7 @@ impl RpcHandler {
             "amount_zenac": to_coin(amount_sat),
             "fee_satoshi": DEFAULT_FEE_SATOSHI,
             "fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
-            "mempool_len": chain.mempool.len(),
+            "mempool_len": self.state.chain.blocking_read().mempool.len(),
         }))
     }
 
