@@ -152,15 +152,13 @@ impl RpcServer {
         self.state.shutdown.clone()
     }
 
-    pub fn listen(&mut self) {
-        let listener = match TcpListener::bind(&self.rpc_addr) {
-            Ok(l) => l,
-            Err(e) => {
-                println!("[rpc] failed to bind {}: {}", self.rpc_addr, e);
-                return;
-            }
-        };
-
+    /// Start the RPC server and block until shutdown is requested.
+    ///
+    /// The function returns an error if the RPC address cannot be bound.
+    /// This allows the daemon to exit if another node is already using
+    /// the same address.
+    pub fn listen(&mut self) -> std::io::Result<()> {
+        let listener = TcpListener::bind(&self.rpc_addr)?;
         let _ = listener.set_nonblocking(true);
         println!("[rpc] listening on {}", self.rpc_addr);
 
@@ -185,6 +183,7 @@ impl RpcServer {
                 Err(e) => eprintln!("[rpc] accept failed: {}", e),
             }
         }
+        Ok(())
     }
 }
 
