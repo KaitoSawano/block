@@ -5,30 +5,37 @@
 
 //! Genesis consensus parameters for ZenaChain.
 
-pub const GENESIS_MESSAGE: &str = "ZenaChain Genesis - 2026";
-pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
+pub const GENESIS_MESSAGE: &str = "ZenaChain Genesis - 2026"; // Ganti jika mau hard fork
+pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";      // Ganti jika mau hard fork
 pub const GENESIS_OUTPUT_SCRIPT: &str =
     "OP_DUP OP_HASH160 ZenaChainGenesisOutput OP_EQUALVERIFY OP_CHECKSIG";
 
+/// The timestamp of the genesis block. This is the exact time the block was mined.
+/// It is locked forever and must not change.
+pub const GENESIS_TIMESTAMP: u128 = 1792303198445;
+
 /// The expected hash of the genesis block.
 pub const EXPECTED_GENESIS_HASH: &str =
-    "000007c50a27e3992b8b089f484532806b7536b25ed5b24fdd50621e43440f53";
+    "000005d589f2e9a9fa09571fb2a978e5bf998f2f8104c570ff66212c7083620a";
 
 /// The expected merkle root of the genesis block.
 pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =
-    "d2b3a95f56d04cf97a8ff85f52d6f8d88928905255b756aa87d44e9b1e1a0d9a";
+    "a0d24005775f3cd42a6f7d4a03f6d9d650ef814a2d3bc73833a57d1749c3cd6c";
 
-/// The expected timestamp of the genesis block.
-pub const EXPECTED_GENESIS_TIMESTAMP: u128 = 1792012800000;
+/// The expected timestamp of the genesis block (must match GENESIS_TIMESTAMP).
+pub const EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198445;
 
 /// The expected nonce of the genesis block.
-pub const EXPECTED_GENESIS_NONCE: u64 = 1075998;
+pub const EXPECTED_GENESIS_NONCE: u64 = 72180;
 
 pub fn genesis_message() -> &'static str {
     GENESIS_MESSAGE
 }
 pub fn genesis_secret() -> &'static str {
     GENESIS_SECRET
+}
+pub fn genesis_timestamp() -> u128 {
+    GENESIS_TIMESTAMP
 }
 pub fn genesis_output_script() -> String {
     GENESIS_OUTPUT_SCRIPT.to_string()
