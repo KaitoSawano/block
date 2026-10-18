@@ -3,7 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
-use zenachain::utils::sha3_256_hex;
+use zenachain_crypto::sha3_256_hex;
 
 #[test]
 fn sha3_256_empty() {
