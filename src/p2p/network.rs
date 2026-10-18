@@ -29,7 +29,7 @@ use crate::storage;
 use crate::utils::{format_datetime, now_millis};
 use crate::validation;
 
-// Include ASMap directly into the binary.
+// Include the ASMap directly into the binary.
 const ASMAP_JSON: &str = include_str!("asmap.json");
 
 /// Maximum number of bytes that may be buffered for a single peer before
@@ -614,19 +614,18 @@ impl Network {
                 };
                 match result {
                     Ok(true) => {
-                        let is_feeler = self
-                            .peer_manager
-                            .get(id)
-                            .map(|p| p.conn_type == ConnectionType::Feeler)
-                            .unwrap_or(false);
+                        // Fetch the peer's connection type and address in a
+                        // single lookup. SocketAddr does not implement
+                        // Default, so unwrap_or_default cannot be used.
+                        let (is_feeler, peer_addr) = match self.peer_manager.get(id) {
+                            Some(p) => (p.conn_type == ConnectionType::Feeler, p.addr),
+                            None => (false, "0.0.0.0:0".parse().unwrap()),
+                        };
 
                         if is_feeler {
                             println!(
                                 "[p2p] feeler connection to {} successful, disconnecting",
-                                self.peer_manager
-                                    .get(id)
-                                    .map(|p| p.addr)
-                                    .unwrap_or_default()
+                                peer_addr
                             );
                             self.disconnect(id, "feeler complete").await;
                             return;
