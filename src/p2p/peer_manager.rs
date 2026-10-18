@@ -9,24 +9,23 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
-use crate::p2p::peer::{Peer, PeerState};
+use crate::p2p::peer::{ConnectionType, Peer, PeerState};
 
 #[derive(Debug)]
 pub enum PeerEvent {
     Connected(u64),
     HandshakeComplete(u64),
-    Message(u64, crate::p2p::message::Message),
     Disconnected(u64, String),
     Banned(u64, String),
     PingDue(u64, u64),
-    TimedOut(u64),
 }
 
 pub struct PeerManager {
     peers: HashMap<u64, Peer>,
     next_id: u64,
-    max_peers: usize,
-    max_outbound: usize,
+    max_outbound_full_relay: usize,
+    max_outbound_block_relay: usize,
+    max_inbound: usize,
     handshake_timeout: Duration,
     idle_timeout: Duration,
     ping_interval: Duration,
@@ -36,8 +35,9 @@ pub struct PeerManager {
 
 impl PeerManager {
     pub fn new(
-        max_peers: usize,
-        max_outbound: usize,
+        max_outbound_full_relay: usize,
+        max_outbound_block_relay: usize,
+        max_inbound: usize,
         handshake_timeout: Duration,
         idle_timeout: Duration,
         ping_interval: Duration,
@@ -46,8 +46,9 @@ impl PeerManager {
         PeerManager {
             peers: HashMap::new(),
             next_id: 1,
-            max_peers,
-            max_outbound,
+            max_outbound_full_relay,
+            max_outbound_block_relay,
+            max_inbound,
             handshake_timeout,
             idle_timeout,
             ping_interval,
@@ -56,30 +57,43 @@ impl PeerManager {
         }
     }
 
-    pub fn peer_count(&self) -> usize {
-        self.peers.len()
+    pub fn outbound_full_relay_count(&self) -> usize {
+        self.peers
+            .values()
+            .filter(|p| p.conn_type == ConnectionType::OutboundFullRelay)
+            .count()
     }
 
-    pub fn outbound_count(&self) -> usize {
-        self.peers.values().filter(|p| p.outbound).count()
+    pub fn outbound_block_relay_count(&self) -> usize {
+        self.peers
+            .values()
+            .filter(|p| p.conn_type == ConnectionType::OutboundBlockRelayOnly)
+            .count()
     }
 
-    pub fn connected_count(&self) -> usize {
-        self.peers.values().filter(|p| p.is_connected()).count()
+    pub fn inbound_count(&self) -> usize {
+        self.peers
+            .values()
+            .filter(|p| p.conn_type == ConnectionType::Inbound)
+            .count()
+    }
+
+    pub fn can_add_outbound_full_relay(&self) -> bool {
+        self.outbound_full_relay_count() < self.max_outbound_full_relay
+    }
+
+    pub fn can_add_outbound_block_relay(&self) -> bool {
+        self.outbound_block_relay_count() < self.max_outbound_block_relay
     }
 
     pub fn can_accept_inbound(&self) -> bool {
-        self.peers.len() < self.max_peers
+        self.inbound_count() < self.max_inbound
     }
 
-    pub fn can_add_outbound(&self) -> bool {
-        self.outbound_count() < self.max_outbound && self.peers.len() < self.max_peers
-    }
-
-    pub fn add_peer(&mut self, addr: SocketAddr, outbound: bool) -> u64 {
+    pub fn add_peer(&mut self, addr: SocketAddr, conn_type: ConnectionType) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
-        let peer = Peer::new(id, addr, outbound);
+        let peer = Peer::new(id, addr, conn_type);
         self.peers.insert(id, peer);
         self.events.push(PeerEvent::Connected(id));
         id
