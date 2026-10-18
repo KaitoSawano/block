@@ -22,7 +22,7 @@ use crate::p2p::framing::{read_message, write_message};
 use crate::p2p::handshake;
 use crate::p2p::inv::InventoryManager;
 use crate::p2p::message::{BlockLocator, Inventory, InvType, Message};
-use crate::p2p::peer::{PeerState};
+use crate::p2p::peer::{ConnectionType, PeerState};
 use crate::p2p::peer_manager::{PeerEvent, PeerManager};
 use crate::p2p::peers;
 use crate::storage;
@@ -34,6 +34,7 @@ pub struct PeerInfo {
     pub id: u64,
     pub addr: String,
     pub outbound: bool,
+    pub conn_type: String,
     pub state: String,
 }
 
@@ -49,13 +50,15 @@ pub enum NetworkCommand {
 pub struct NetworkConfig {
     pub listen_addr: SocketAddr,
     pub bootstrap: Vec<SocketAddr>,
-    pub max_peers: usize,
-    pub max_outbound: usize,
+    pub max_outbound_full_relay: usize,
+    pub max_outbound_block_relay: usize,
+    pub max_inbound: usize,
     pub handshake_timeout: Duration,
     pub idle_timeout: Duration,
     pub ping_interval: Duration,
     pub ping_timeout: Duration,
     pub connect_interval: Duration,
+    pub feeler_interval: Duration,
 }
 
 impl Default for NetworkConfig {
@@ -63,13 +66,15 @@ impl Default for NetworkConfig {
         NetworkConfig {
             listen_addr: "0.0.0.0:8333".parse().unwrap(),
             bootstrap: Vec::new(),
-            max_peers: peers::MAX_PEERS,
-            max_outbound: peers::MAX_OUTBOUND,
+            max_outbound_full_relay: 8,
+            max_outbound_block_relay: 2,
+            max_inbound: 115,
             handshake_timeout: Duration::from_secs(30),
             idle_timeout: Duration::from_secs(120),
             ping_interval: Duration::from_secs(30),
             ping_timeout: Duration::from_secs(60),
             connect_interval: Duration::from_secs(2),
+            feeler_interval: Duration::from_secs(120),
         }
     }
 }
@@ -91,6 +96,7 @@ pub struct Network {
     listener: Option<TcpListener>,
     local_addr: Option<SocketAddr>,
     next_connect_at: Instant,
+    next_feeler_at: Instant,
     peer_registry: PeerRegistry,
     command_rx: mpsc::Receiver<NetworkCommand>,
 }
@@ -103,8 +109,9 @@ impl Network {
         command_rx: mpsc::Receiver<NetworkCommand>,
     ) -> Self {
         let peer_manager = PeerManager::new(
-            config.max_peers,
-            config.max_outbound,
+            config.max_outbound_full_relay,
+            config.max_outbound_block_relay,
+            config.max_inbound,
             config.handshake_timeout,
             config.idle_timeout,
             config.ping_interval,
@@ -120,6 +127,7 @@ impl Network {
             listener: None,
             local_addr: None,
             next_connect_at: Instant::now(),
+            next_feeler_at: Instant::now() + Duration::from_secs(10),
             peer_registry,
             command_rx,
         }
@@ -159,6 +167,7 @@ impl Network {
             }
 
             self.try_connect().await;
+            self.try_feeler().await;
 
             let has_listener = self.listener.is_some();
             tokio::select! {
@@ -196,13 +205,15 @@ impl Network {
         match cmd {
             NetworkCommand::BroadcastBlock(hash) => {
                 println!("[p2p] broadcasting block {}", hash);
-                self.broadcast_inv(&[Inventory {
+                // Only send to full-relay peers
+                self.broadcast_inv_to_full_relay(&[Inventory {
                     inv_type: InvType::Block,
                     hash,
                 }]);
             }
             NetworkCommand::BroadcastTransaction(txid) => {
-                self.broadcast_inv(&[Inventory {
+                // Only send to full-relay peers
+                self.broadcast_inv_to_full_relay(&[Inventory {
                     inv_type: InvType::Transaction,
                     hash: txid,
                 }]);
@@ -214,14 +225,20 @@ impl Network {
         let mut reg = self.peer_registry.lock().unwrap();
         reg.clear();
         for peer in self.peer_manager.all_peers() {
-            // Filter out peers that are not active
             if peer.state == PeerState::Disconnected || peer.state == PeerState::Banned {
                 continue;
             }
+            let conn_type_str = match peer.conn_type {
+                ConnectionType::OutboundFullRelay => "outbound-full-relay",
+                ConnectionType::OutboundBlockRelayOnly => "block-relay-only",
+                ConnectionType::Inbound => "inbound",
+                ConnectionType::Feeler => "feeler",
+            };
             reg.push(PeerInfo {
                 id: peer.id,
                 addr: peer.addr.to_string(),
                 outbound: peer.outbound,
+                conn_type: conn_type_str.to_string(),
                 state: format!("{:?}", peer.state),
             });
         }
@@ -245,62 +262,73 @@ impl Network {
         if Instant::now() < self.next_connect_at {
             return;
         }
-        if !self.peer_manager.can_add_outbound() {
-            return;
-        }
-        let candidates = self.addr_book.candidates(Duration::from_secs(60), 4);
-        if candidates.is_empty() {
-            self.next_connect_at = Instant::now() + self.config.connect_interval;
-            return;
-        }
 
-        for addr in candidates {
-            if !self.peer_manager.can_add_outbound() {
-                break;
+        // Priority 1: Fill full-relay slots
+        if self.peer_manager.can_add_outbound_full_relay() {
+            if let Some(addr) = self.addr_book.candidates(Duration::from_secs(60), 1).first() {
+                self.attempt_connect(*addr, ConnectionType::OutboundFullRelay).await;
             }
+        }
 
-            // Prevent self-connection (robust check)
-            if let Some(local) = self.local_addr {
-                if local.ip().is_unspecified() {
-                    // Listening on 0.0.0.0: block any localhost/unspecified on the same port
-                    if addr.port() == local.port() {
-                        continue;
-                    }
-                } else if addr.ip() == local.ip() && addr.port() == local.port() {
-                    continue;
-                }
-            }
-
-            self.addr_book.mark_tried(&addr);
-            match TcpStream::connect(addr).await {
-                Ok(stream) => {
-                    let _ = stream.set_nodelay(true);
-                    let id = self.peer_manager.add_peer(addr, true);
-                    self.connections.insert(
-                        id,
-                        Connection {
-                            stream,
-                            addr,
-                            read_buf: Vec::new(),
-                            write_buf: Vec::new(),
-                        },
-                    );
-                    println!("[p2p] outbound connection to {}", addr);
-
-                    if let Some(peer) = self.peer_manager.get_mut(id) {
-                        peer.state = PeerState::Handshaking;
-                    }
-
-                    self.send_version(id).await;
-                }
-                Err(e) => {
-                    eprintln!("[p2p] failed to connect to {}: {}", addr, e);
-                    let _ = self.addr_book.mark_failed(&addr);
-                }
+        // Priority 2: Fill block-relay-only slots
+        if self.peer_manager.can_add_outbound_block_relay() {
+            if let Some(addr) = self.addr_book.candidates(Duration::from_secs(60), 1).first() {
+                self.attempt_connect(*addr, ConnectionType::OutboundBlockRelayOnly).await;
             }
         }
 
         self.next_connect_at = Instant::now() + self.config.connect_interval;
+    }
+
+    async fn try_feeler(&mut self) {
+        if Instant::now() < self.next_feeler_at {
+            return;
+        }
+        if let Some(addr) = self.addr_book.candidates(Duration::from_secs(120), 1).first() {
+            println!("[p2p] feeler connection to {}", addr);
+            self.attempt_connect(*addr, ConnectionType::Feeler).await;
+        }
+        self.next_feeler_at = Instant::now() + self.config.feeler_interval;
+    }
+
+    async fn attempt_connect(&mut self, addr: SocketAddr, conn_type: ConnectionType) {
+        // Prevent self-connection
+        if let Some(local) = self.local_addr {
+            if local.ip().is_unspecified() {
+                if addr.port() == local.port() {
+                    return;
+                }
+            } else if addr.ip() == local.ip() && addr.port() == local.port() {
+                return;
+            }
+        }
+
+        self.addr_book.mark_tried(&addr);
+        match TcpStream::connect(addr).await {
+            Ok(stream) => {
+                let _ = stream.set_nodelay(true);
+                let id = self.peer_manager.add_peer(addr, conn_type);
+                self.connections.insert(
+                    id,
+                    Connection {
+                        stream,
+                        addr,
+                        read_buf: Vec::new(),
+                        write_buf: Vec::new(),
+                    },
+                );
+
+                if let Some(peer) = self.peer_manager.get_mut(id) {
+                    peer.state = PeerState::Handshaking;
+                }
+
+                self.send_version(id).await;
+            }
+            Err(e) => {
+                eprintln!("[p2p] failed to connect to {}: {}", addr, e);
+                let _ = self.addr_book.mark_failed(&addr);
+            }
+        }
     }
 
     async fn on_inbound(&mut self, stream: TcpStream, addr: SocketAddr) {
@@ -309,7 +337,7 @@ impl Network {
             return;
         }
         let _ = stream.set_nodelay(true);
-        let id = self.peer_manager.add_peer(addr, false);
+        let id = self.peer_manager.add_peer(addr, ConnectionType::Inbound);
         self.connections.insert(
             id,
             Connection {
@@ -338,7 +366,14 @@ impl Network {
             None => return,
         };
         let chain = self.chain.read().await;
-        let msg = handshake::build_version(&chain, &peer, local);
+        
+        // For block-relay-only and feeler, set relay = false
+        let relay = match peer.conn_type {
+            ConnectionType::OutboundBlockRelayOnly | ConnectionType::Feeler => false,
+            _ => true,
+        };
+        
+        let msg = handshake::build_version_with_relay(&chain, &peer, local, relay);
         drop(chain);
         self.queue_message(id, &msg);
     }
@@ -489,6 +524,20 @@ impl Network {
                 };
                 match result {
                     Ok(true) => {
+                        // If this is a feeler connection, disconnect immediately
+                        let is_feeler = self
+                            .peer_manager
+                            .get(id)
+                            .map(|p| p.conn_type == ConnectionType::Feeler)
+                            .unwrap_or(false);
+                        
+                        if is_feeler {
+                            println!("[p2p] feeler connection to {} successful, disconnecting", 
+                                self.peer_manager.get(id).map(|p| p.addr).unwrap_or_default());
+                            self.disconnect(id, "feeler complete").await;
+                            return;
+                        }
+                        
                         self.peer_manager
                             .push_event(PeerEvent::HandshakeComplete(id));
                     }
@@ -546,10 +595,17 @@ impl Network {
                     } else if inv.inv_type == InvType::Transaction
                         && !self.inv.has_tx(&inv.hash)
                     {
-                        if chain.mempool.iter().any(|t| t.txid == inv.hash) {
-                            self.inv.add_tx(&inv.hash);
-                        } else {
-                            to_request.push(inv.clone());
+                        // Ignore transactions from block-relay-only peers
+                        let is_block_relay = self.peer_manager.get(id)
+                            .map(|p| p.conn_type == ConnectionType::OutboundBlockRelayOnly)
+                            .unwrap_or(false);
+                        
+                        if !is_block_relay {
+                            if chain.mempool.iter().any(|t| t.txid == inv.hash) {
+                                self.inv.add_tx(&inv.hash);
+                            } else {
+                                to_request.push(inv.clone());
+                            }
                         }
                     }
                 }
@@ -596,6 +652,14 @@ impl Network {
                 self.handle_block(id, b).await;
             }
             Message::Tx(tx) => {
+                // Ignore transactions from block-relay-only peers
+                let is_block_relay = self.peer_manager.get(id)
+                    .map(|p| p.conn_type == ConnectionType::OutboundBlockRelayOnly)
+                    .unwrap_or(false);
+                if is_block_relay {
+                    return;
+                }
+                
                 let mut chain = self.chain.write().await;
                 if chain.add_transaction(tx.clone()) {
                     self.inv.add_tx(&tx.txid);
@@ -610,7 +674,7 @@ impl Network {
                     );
 
                     drop(chain);
-                    self.broadcast_inv(&[Inventory {
+                    self.broadcast_inv_to_full_relay(&[Inventory {
                         inv_type: InvType::Transaction,
                         hash: tx.txid.clone(),
                     }]);
@@ -676,7 +740,7 @@ impl Network {
                 self.inv.add_block(&block.hash);
                 let _ = storage::save_chain(&chain);
                 drop(chain);
-                self.broadcast_inv(&[Inventory {
+                self.broadcast_inv_to_full_relay(&[Inventory {
                     inv_type: InvType::Block,
                     hash: block.hash.clone(),
                 }]);
@@ -694,13 +758,24 @@ impl Network {
         }
     }
 
-    fn broadcast_inv(&mut self, items: &[Inventory]) {
-        let peers = self.peer_manager.connected_peers();
-        if peers.is_empty() {
+    fn broadcast_inv_to_full_relay(&mut self, items: &[Inventory]) {
+        let full_relay_peers: Vec<u64> = self
+            .peer_manager
+            .all_peers()
+            .iter()
+            .filter(|p| {
+                p.is_connected()
+                    && (p.conn_type == ConnectionType::OutboundFullRelay
+                        || p.conn_type == ConnectionType::Inbound)
+            })
+            .map(|p| p.id)
+            .collect();
+
+        if full_relay_peers.is_empty() {
             return;
         }
         let msg = Message::Inv(items.to_vec());
-        for id in peers {
+        for id in full_relay_peers {
             self.queue_message(id, &msg);
         }
     }
@@ -746,7 +821,6 @@ impl Network {
                 PeerEvent::Banned(id, reason) => {
                     println!("[p2p] peer {} banned: {}", id, reason);
                 }
-                _ => {}
             }
         }
     }
