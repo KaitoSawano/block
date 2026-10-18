@@ -300,14 +300,30 @@ pub fn rule_block_tx_count(block: &Block) -> Result<(), ValidationError> {
     Ok(())
 }
 
-pub fn rule_block_reward(block: &Block) -> Result<(), ValidationError> {
+/// Ensures that the block subsidy matches the consensus schedule.
+pub fn rule_block_subsidy(block: &Block) -> Result<(), ValidationError> {
     let expected = Blockchain::calculate_reward(block.index);
-    if block.reward != expected {
+    if block.subsidy != expected {
         return Err(ValidationError::new(
             "E031",
             format!(
-                "reward for block {} does not match the era: got {}, expected {}",
-                block.index, block.reward, expected
+                "subsidy for block {} does not match the era: got {}, expected {}",
+                block.index, block.subsidy, expected
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Ensures that the total reward is exactly the subsidy plus all transaction fees.
+pub fn rule_block_reward(block: &Block) -> Result<(), ValidationError> {
+    let expected = block.subsidy.saturating_add(block.total_fees);
+    if block.reward != expected {
+        return Err(ValidationError::new(
+            "E046",
+            format!(
+                "reward for block {} is invalid: got {}, expected {} (subsidy {} + fees {})",
+                block.index, block.reward, expected, block.subsidy, block.total_fees
             ),
         ));
     }
@@ -540,6 +556,7 @@ pub fn validate_block(
     rule_block_hash_consistent(block)?;
     rule_block_previous_hash(prev, block)?;
     rule_block_merkle_root(block)?;
+    rule_block_subsidy(block)?;
     rule_block_reward(block)?;
     rule_block_pow(block)?;
     rule_block_tx_count(block)?;
@@ -573,6 +590,7 @@ pub fn validate_chain(chain: &Blockchain) -> Result<(), ValidationError> {
         rule_block_hash_consistent(cur)?;
         rule_block_previous_hash(prev, cur)?;
         rule_block_merkle_root(cur)?;
+        rule_block_subsidy(cur)?;
         rule_block_reward(cur)?;
         rule_block_pow(cur)?;
         rule_block_tx_count(cur)?;
@@ -599,7 +617,6 @@ pub fn wallet_has_balance(
     amount_sat: u64,
     fee_sat: u64,
 ) -> bool {
-    // Check if the wallet has sufficient balance across any of its addresses.
     for entry in &wallet.entries {
         let balance = mature_balance(chain, &entry.address);
         if balance >= amount_sat.saturating_add(fee_sat) {
