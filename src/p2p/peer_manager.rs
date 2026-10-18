@@ -5,13 +5,13 @@
 
 //! Peer management for the ZenaChain peer-to-peer network.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
-use crate::p2p::peer::{rand_nonce, ConnectionType, Peer, PeerState};
+use crate::p2p::peer::{rand_nonce, ConnectionType, Peer, PeerState, MAX_MISBEHAVIOR};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum PeerEvent {
     Connected(u64),
     HandshakeComplete(u64),
@@ -22,6 +22,7 @@ pub enum PeerEvent {
 
 pub struct PeerManager {
     peers: HashMap<u64, Peer>,
+    banned: HashSet<SocketAddr>,
     next_id: u64,
     max_outbound_full_relay: usize,
     max_outbound_block_relay: usize,
@@ -45,6 +46,7 @@ impl PeerManager {
     ) -> Self {
         PeerManager {
             peers: HashMap::new(),
+            banned: HashSet::new(),
             next_id: 1,
             max_outbound_full_relay,
             max_outbound_block_relay,
@@ -58,42 +60,74 @@ impl PeerManager {
     }
 
     // ------------------------------------------------------------------
+    // Capacity checks (only count active peers)
+    // ------------------------------------------------------------------
+
+    fn is_active(peer: &Peer) -> bool {
+        peer.state != PeerState::Disconnected && peer.state != PeerState::Banned
+    }
+
+    pub fn outbound_full_relay_count(&self) -> usize {
+        self.peers
+            .values()
+            .filter(|p| p.conn_type == ConnectionType::OutboundFullRelay && Self::is_active(p))
+            .count()
+    }
+
+    pub fn outbound_block_relay_count(&self) -> usize {
+        self.peers
+            .values()
+            .filter(|p| {
+                p.conn_type == ConnectionType::OutboundBlockRelayOnly && Self::is_active(p)
+            })
+            .count()
+    }
+
+    pub fn inbound_count(&self) -> usize {
+        self.peers
+            .values()
+            .filter(|p| p.conn_type == ConnectionType::Inbound && Self::is_active(p))
+            .count()
+    }
+
+    pub fn can_add_outbound_full_relay(&self) -> bool {
+        self.outbound_full_relay_count() < self.max_outbound_full_relay
+    }
+
+    pub fn can_add_outbound_block_relay(&self) -> bool {
+        self.outbound_block_relay_count() < self.max_outbound_block_relay
+    }
+
+    pub fn can_accept_inbound(&self) -> bool {
+        self.inbound_count() < self.max_inbound
+    }
+
+    // ------------------------------------------------------------------
     // Peer lifecycle
     // ------------------------------------------------------------------
 
+    /// Return `true` if `addr` is banned.
+    pub fn is_banned(&self, addr: &SocketAddr) -> bool {
+        self.banned.contains(addr)
+    }
+
+    /// Add a peer. Returns `None` if the address is banned.
     pub fn add_peer(
         &mut self,
         addr: SocketAddr,
         conn_type: ConnectionType,
         mapped_as: u32,
-    ) -> u64 {
+    ) -> Option<u64> {
+        if self.banned.contains(&addr) {
+            return None;
+        }
         let id = self.next_id;
         self.next_id += 1;
         let peer = Peer::new(id, addr, conn_type, mapped_as);
         self.peers.insert(id, peer);
         self.events.push(PeerEvent::Connected(id));
-        id
+        Some(id)
     }
-
-    pub fn remove(&mut self, id: u64, reason: &str) {
-        if let Some(peer) = self.peers.remove(&id) {
-            self.events
-                .push(PeerEvent::Disconnected(peer.id, reason.to_string()));
-        }
-    }
-
-    pub fn ban(&mut self, id: u64, reason: &str) {
-        if let Some(peer) = self.peers.get_mut(&id) {
-            peer.state = PeerState::Banned;
-            peer.add_misbehavior(crate::p2p::peer::MAX_MISBEHAVIOR);
-            self.events
-                .push(PeerEvent::Banned(peer.id, reason.to_string()));
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Accessors
-    // ------------------------------------------------------------------
 
     pub fn get(&self, id: u64) -> Option<&Peer> {
         self.peers.get(&id)
@@ -107,10 +141,75 @@ impl PeerManager {
         self.peers.values().collect()
     }
 
+    pub fn remove(&mut self, id: u64, reason: &str) {
+        if self.peers.remove(&id).is_some() {
+            self.events
+                .push(PeerEvent::Disconnected(id, reason.to_string()));
+        }
+    }
+
+    /// Ban a peer: mark it banned, add its address to the ban list,
+    /// and remove it from the active set.
+    pub fn ban(&mut self, id: u64, reason: &str) {
+        if let Some(peer) = self.peers.get_mut(&id) {
+            peer.state = PeerState::Banned;
+            peer.add_misbehavior(MAX_MISBEHAVIOR);
+            self.banned.insert(peer.addr);
+            self.events.push(PeerEvent::Banned(id, reason.to_string()));
+        }
+    }
+
+    pub fn drain_events(&mut self) -> Vec<PeerEvent> {
+        std::mem::take(&mut self.events)
+    }
+
+    pub fn push_event(&mut self, event: PeerEvent) {
+        self.events.push(event);
+    }
+
+    // ------------------------------------------------------------------
+    // Periodic maintenance
+    // ------------------------------------------------------------------
+
+    pub fn tick(&mut self) {
+        let now = Instant::now();
+        let mut to_remove = Vec::new();
+        let mut to_ping = Vec::new();
+
+        for (id, peer) in self.peers.iter_mut() {
+            match peer.state {
+                PeerState::Handshaking => {
+                    if now.duration_since(peer.last_recv) > self.handshake_timeout {
+                        to_remove.push((*id, "handshake timeout".to_string()));
+                    }
+                }
+                PeerState::Connected => {
+                    if peer.is_timed_out(self.idle_timeout) {
+                        to_remove.push((*id, "idle timeout".to_string()));
+                    } else if peer.is_ping_timed_out(self.ping_timeout) {
+                        to_remove.push((*id, "ping timeout".to_string()));
+                    } else if peer.should_ping(self.ping_interval) {
+                        let nonce = rand_nonce();
+                        peer.mark_ping_sent(nonce);
+                        to_ping.push((*id, nonce));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for (id, reason) in to_remove {
+            self.remove(id, &reason);
+        }
+        for (id, nonce) in to_ping {
+            self.events.push(PeerEvent::PingDue(id, nonce));
+        }
+    }
+
     pub fn connected_peers(&self) -> Vec<u64> {
         self.peers
             .iter()
-            .filter(|(_, p)| p.state == PeerState::Connected)
+            .filter(|(_, p)| p.is_connected())
             .map(|(id, _)| *id)
             .collect()
     }
@@ -118,146 +217,8 @@ impl PeerManager {
     pub fn connected_addrs(&self) -> Vec<SocketAddr> {
         self.peers
             .values()
-            .filter(|p| p.state == PeerState::Connected)
+            .filter(|p| p.is_connected())
             .map(|p| p.addr)
             .collect()
     }
-
-    pub fn count(&self) -> usize {
-        self.peers.len()
-    }
-
-    // ------------------------------------------------------------------
-    // Capacity checks
-    // ------------------------------------------------------------------
-
-    fn count_by_type<F>(&self, pred: F) -> usize
-    where
-        F: Fn(&Peer) -> bool,
-    {
-        self.peers.values().filter(|p| pred(p)).count()
-    }
-
-    pub fn can_add_outbound_full_relay(&self) -> bool {
-        self.count_by_type(|p| {
-            p.state != PeerState::Disconnected
-                && p.state != PeerState::Banned
-                && p.conn_type == ConnectionType::OutboundFullRelay
-        }) < self.max_outbound_full_relay
-    }
-
-    pub fn can_add_outbound_block_relay(&self) -> bool {
-        self.count_by_type(|p| {
-            p.state != PeerState::Disconnected
-                && p.state != PeerState::Banned
-                && p.conn_type == ConnectionType::OutboundBlockRelayOnly
-        }) < self.max_outbound_block_relay
-    }
-
-    pub fn can_accept_inbound(&self) -> bool {
-        self.count_by_type(|p| {
-            p.state != PeerState::Disconnected
-                && p.state != PeerState::Banned
-                && p.conn_type == ConnectionType::Inbound
-        }) < self.max_inbound
-    }
-
-    // ------------------------------------------------------------------
-    // Periodic maintenance
-    // ------------------------------------------------------------------
-
-    /// Called periodically by the network loop. Detects timeouts
-    /// (handshake, idle, ping) and schedules ping messages.
-    pub fn tick(&mut self) {
-        let now = Instant::now();
-        let mut to_remove: Vec<(u64, String)> = Vec::new();
-
-        for (id, peer) in self.peers.iter_mut() {
-            // Handshake timeout
-            if peer.state == PeerState::Handshaking
-                && now.duration_since(peer.last_recv) > self.handshake_timeout
-            {
-                to_remove.push((*id, "handshake timeout".to_string()));
-                continue;
-            }
-
-            // Idle timeout (no message from peer)
-            if peer.is_connected()
-                && now.duration_since(peer.last_recv) > self.idle_timeout
-            {
-                to_remove.push((*id, "idle timeout".to_string()));
-                continue;
-            }
-
-            // Ping timeout (pong not received)
-            if peer.is_connected() && peer.is_ping_timed_out(self.ping_timeout) {
-                to_remove.push((*id, "ping timeout".to_string()));
-                continue;
-            }
-
-            // Schedule ping
-            if peer.is_connected() && peer.should_ping(self.ping_interval) {
-                let nonce = rand_nonce();
-                peer.mark_ping_sent(nonce);
-                self.events.push(PeerEvent::PingDue(*id, nonce));
-            }
-        }
-
-        for (id, reason) in to_remove {
-            self.remove(id, &reason);
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Event queue
-    // ------------------------------------------------------------------
-
-    pub fn push_event(&mut self, event: PeerEvent) {
-        self.events.push(event);
-    }
-
-    pub fn drain_events(&mut self) -> Vec<PeerEvent> {
-        std::mem::take(&mut self.events)
-    }
-
-    // ------------------------------------------------------------------
-    // Registry view for RPC (getpeerinfo)
-    // ------------------------------------------------------------------
-
-    pub fn snapshot(&self) -> Vec<PeerSnapshot> {
-        self.peers
-            .values()
-            .map(|p| PeerSnapshot {
-                id: p.id,
-                addr: p.addr.to_string(),
-                outbound: p.outbound,
-                conn_type: format!("{:?}", p.conn_type),
-                mapped_as: p.mapped_as,
-                state: format!("{:?}", p.state),
-                user_agent: p.user_agent.clone(),
-                start_height: p.start_height,
-                misbehavior: p.misbehavior,
-            })
-            .collect()
-    }
-}
-
-impl Default for PeerManager {
-    fn default() -> Self {
-        Self::new(8, 2, 115, Duration::from_secs(30), Duration::from_secs(120), Duration::from_secs(30), Duration::from_secs(60))
-    }
-}
-
-/// Read-only view of a peer, used by the RPC layer.
-#[derive(Debug, Clone)]
-pub struct PeerSnapshot {
-    pub id: u64,
-    pub addr: String,
-    pub outbound: bool,
-    pub conn_type: String,
-    pub mapped_as: u32,
-    pub state: String,
-    pub user_agent: String,
-    pub start_height: u64,
-    pub misbehavior: u32,
 }
