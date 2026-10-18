@@ -198,16 +198,19 @@ impl Network {
                         },
                     );
                     println!("[p2p] outbound connection to {}", addr);
-                    
-                    // Set state to Handshaking BEFORE sending version
+
                     if let Some(peer) = self.peer_manager.get_mut(id) {
                         peer.state = PeerState::Handshaking;
                     }
-                    
+
                     self.send_version(id).await;
                 }
                 Err(e) => {
                     eprintln!("[p2p] failed to connect to {}: {}", addr, e);
+                    if self.addr_book.mark_failed(&addr) {
+                        // Remove if failures >= 3 (we just let it be filtered out
+                        // by candidates, so no explicit remove needed)
+                    }
                 }
             }
         }
@@ -232,12 +235,11 @@ impl Network {
             },
         );
         println!("[p2p] inbound connection from {}", addr);
-        
-        // Set state to Handshaking BEFORE sending version
+
         if let Some(peer) = self.peer_manager.get_mut(id) {
             peer.state = PeerState::Handshaking;
         }
-        
+
         self.send_version(id).await;
     }
 
@@ -435,6 +437,12 @@ impl Network {
                 let mut count = 0;
                 for na in addrs {
                     let sa = na.to_socket();
+
+                    // Only accept addresses on the default P2P port.
+                    if sa.port() != crate::blockchain::network::DEFAULT_PORT {
+                        continue;
+                    }
+
                     if self.addr_book.add(sa) {
                         count += 1;
                     }
@@ -509,8 +517,7 @@ impl Network {
                 let mut chain = self.chain.write().await;
                 if chain.add_transaction(tx.clone()) {
                     self.inv.add_tx(&tx.txid);
-                    
-                    // Log the peer transaction with timestamp.
+
                     let now = now_millis();
                     println!(
                         "[mempool] {} Accepted peer transaction {} from {} to {}",
@@ -595,7 +602,12 @@ impl Network {
             }
             Err(e) => {
                 drop(chain);
-                self.punish(id, 50, &format!("block rejected: {}", e)).await;
+                if e.contains("does not follow tip") {
+                    println!("[p2p] block from {} does not follow tip, requesting headers", id);
+                    self.send_getheaders(id).await;
+                } else {
+                    self.punish(id, 50, &format!("block rejected: {}", e)).await;
+                }
             }
         }
     }
