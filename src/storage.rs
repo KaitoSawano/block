@@ -23,6 +23,7 @@ pub fn save_chain(chain: &Blockchain) -> std::io::Result<()> {
 }
 
 /// Load the blockchain state from disk.
+/// This function verifies that the loaded chain starts with a valid genesis block.
 pub fn load_chain() -> std::io::Result<Blockchain> {
     if !datadir::chainstate_file().exists() {
         return Ok(Blockchain::new());
@@ -32,6 +33,15 @@ pub fn load_chain() -> std::io::Result<Blockchain> {
     if blocks.is_empty() {
         return Ok(Blockchain::new());
     }
+
+    // Verify that the first block loaded from disk is the correct genesis block.
+    let expected_genesis = Block::genesis();
+    if blocks[0].hash != expected_genesis.hash {
+        return Err(Error::other(
+            "consensus failure: the chain on disk does not match the current genesis block. Delete the datadir (~/.zenachain) to start a new chain.",
+        ));
+    }
+
     let mempool = load_mempool().unwrap_or_default();
     Ok(Blockchain {
         chain: blocks,
