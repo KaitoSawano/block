@@ -5,14 +5,8 @@
 
 //! Utility functions shared across the crate.
 
-use sha3::{Digest, Sha3_256};
-
-/// Compute the SHA3-256 digest of `data` and return it as a lowercase hex string.
-pub fn sha3_256_hex(data: &[u8]) -> String {
-    let mut hasher = Sha3_256::new();
-    hasher.update(data);
-    hex::encode(hasher.finalize())
-}
+// (HAPUS import sha3 di sini)
+// (HAPUS fungsi sha3_256_hex di sini)
 
 /// Return the current Unix timestamp in milliseconds.
 pub fn now_millis() -> u128 {
@@ -23,12 +17,6 @@ pub fn now_millis() -> u128 {
 }
 
 /// Convert an amount in satoshis to a ZENAC string with eight decimal places.
-///
-/// One ZENAC equals 100,000,000 satoshis.
-/// Examples:
-///   1           -> "0.00000001"
-///   100000000   -> "1.00000000"
-///   10102000000 -> "101.02000000"
 pub fn satoshi_to_zenac(satoshi: u64) -> String {
     let whole = satoshi / 100_000_000;
     let frac = satoshi % 100_000_000;
@@ -50,7 +38,6 @@ pub fn format_datetime(millis: u128) -> String {
     )
 }
 
-/// Convert a Unix timestamp in seconds to a civil date and time in UTC.
 fn civil_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     let days = secs.div_euclid(86_400);
     let secs_of_day = secs.rem_euclid(86_400);
