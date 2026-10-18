@@ -12,7 +12,7 @@ use crate::datadir;
 use crate::pow;
 use crate::storage;
 use crate::transaction::Transaction;
-use crate::utils::zenac_to_satoshi;
+use crate::utils::{format_datetime, now_millis, zenac_to_satoshi};
 use crate::validation;
 use crate::wallet::Wallet;
 use serde::{Deserialize, Serialize};
@@ -1037,9 +1037,11 @@ impl RpcHandler {
         let txid = tx.txid.clone();
         chain.mempool.push(tx);
 
-        // Log the transaction into the mempool.
+        // Log the transaction into the mempool with timestamp.
+        let now = now_millis();
         println!(
-            "[mempool] Accepted transaction {} from {} to {} amount={} fee={}",
+            "[mempool] {} Accepted transaction {} from {} to {} amount={} fee={}",
+            format_datetime(now),
             txid,
             entry.address,
             to,
@@ -1070,7 +1072,7 @@ impl RpcHandler {
         
         let mut w = Wallet::load_default().unwrap_or_else(|_| Wallet {
             entries: Vec::new(),
-            created_at: crate::utils::now_millis(),
+            created_at: now_millis(),
             encrypted: false,
             salt: String::new(),
             nonce: String::new(),
@@ -1229,7 +1231,7 @@ fn m_importprivkey(req: &RpcRequest) -> RpcResponse {
 
     let mut w = Wallet::load_default().unwrap_or_else(|_| Wallet {
         entries: Vec::new(),
-        created_at: crate::utils::now_millis(),
+        created_at: now_millis(),
         encrypted: false,
         salt: String::new(),
         nonce: String::new(),
