@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
 use crate::block::Block;
 use crate::blockchain::Blockchain;
@@ -35,10 +35,15 @@ pub struct PeerInfo {
     pub addr: String,
     pub outbound: bool,
     pub state: String,
-    pub last_recv: u128,
 }
 
 pub type PeerRegistry = Arc<Mutex<Vec<PeerInfo>>>;
+
+#[derive(Debug, Clone)]
+pub enum NetworkCommand {
+    BroadcastBlock(String),      // Hash blok baru
+    BroadcastTransaction(String), // TxID transaksi baru
+}
 
 #[derive(Debug, Clone)]
 pub struct NetworkConfig {
@@ -64,7 +69,7 @@ impl Default for NetworkConfig {
             idle_timeout: Duration::from_secs(120),
             ping_interval: Duration::from_secs(30),
             ping_timeout: Duration::from_secs(60),
-            connect_interval: Duration::from_secs(10),
+            connect_interval: Duration::from_secs(2), // Dipercepat dari 10s ke 2s
         }
     }
 }
@@ -87,6 +92,7 @@ pub struct Network {
     local_addr: Option<SocketAddr>,
     next_connect_at: Instant,
     peer_registry: PeerRegistry,
+    command_rx: mpsc::Receiver<NetworkCommand>, // <-- Tambahan
 }
 
 impl Network {
@@ -94,6 +100,7 @@ impl Network {
         config: NetworkConfig,
         chain: Arc<RwLock<Blockchain>>,
         peer_registry: PeerRegistry,
+        command_rx: mpsc::Receiver<NetworkCommand>,
     ) -> Self {
         let peer_manager = PeerManager::new(
             config.max_peers,
@@ -114,6 +121,7 @@ impl Network {
             local_addr: None,
             next_connect_at: Instant::now(),
             peer_registry,
+            command_rx,
         }
     }
 
@@ -170,12 +178,35 @@ impl Network {
                         }
                     }
                 }
+                cmd = self.command_rx.recv() => {
+                    if let Some(cmd) = cmd {
+                        self.handle_command(cmd).await;
+                    }
+                }
                 _ = tokio::time::sleep(Duration::from_millis(50)) => {}
             }
 
             self.process_connections().await;
             self.process_events().await;
             self.update_registry();
+        }
+    }
+
+    async fn handle_command(&mut self, cmd: NetworkCommand) {
+        match cmd {
+            NetworkCommand::BroadcastBlock(hash) => {
+                println!("[p2p] broadcasting block {}", hash);
+                self.broadcast_inv(&[Inventory {
+                    inv_type: InvType::Block,
+                    hash,
+                }]);
+            }
+            NetworkCommand::BroadcastTransaction(txid) => {
+                self.broadcast_inv(&[Inventory {
+                    inv_type: InvType::Transaction,
+                    hash: txid,
+                }]);
+            }
         }
     }
 
@@ -188,7 +219,6 @@ impl Network {
                 addr: peer.addr.to_string(),
                 outbound: peer.outbound,
                 state: format!("{:?}", peer.state),
-                last_recv: 0, // Bisa diisi timestamp jika perlu
             });
         }
     }
@@ -196,6 +226,16 @@ impl Network {
     async fn on_tick(&mut self) {
         self.peer_manager.tick();
         self.addr_book.prune(Duration::from_secs(3600));
+        
+        // Jika tinggi chain berubah, minta header ke semua peer (fallback)
+        let chain = self.chain.read().await;
+        let height = chain.height();
+        drop(chain);
+        if height > 0 {
+            for id in self.peer_manager.connected_peers() {
+                self.send_getheaders(id).await;
+            }
+        }
     }
 
     async fn try_connect(&mut self) {
@@ -215,6 +255,14 @@ impl Network {
             if !self.peer_manager.can_add_outbound() {
                 break;
             }
+
+            // Cegah koneksi ke diri sendiri
+            if let Some(local) = self.local_addr {
+                if addr.ip() == local.ip() && addr.port() == local.port() {
+                    continue;
+                }
+            }
+
             self.addr_book.mark_tried(&addr);
             match TcpStream::connect(addr).await {
                 Ok(stream) => {
@@ -753,9 +801,10 @@ pub fn spawn(
     config: NetworkConfig,
     chain: Arc<RwLock<Blockchain>>,
     peer_registry: PeerRegistry,
+    command_rx: mpsc::Receiver<NetworkCommand>, // <-- Tambahan
 ) -> tokio::task::JoinHandle<Result<(), String>> {
     tokio::spawn(async move {
-        let mut net = Network::new(config, chain, peer_registry);
+        let mut net = Network::new(config, chain, peer_registry, command_rx);
         net.run().await
     })
 }
