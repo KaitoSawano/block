@@ -4,10 +4,6 @@
 // file LICENSE or https://opensource.org/license/mit.
 
 //! Main network loop for the ZenaChain peer-to-peer layer.
-//!
-//! This module manages the TCP listener, inbound and outbound
-//! connections, handshaking, ping scheduling, header and block
-//! synchronization, and inventory relay.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -25,10 +21,11 @@ use crate::p2p::dns_seed;
 use crate::p2p::framing::{read_message, write_message};
 use crate::p2p::handshake;
 use crate::p2p::inv::InventoryManager;
-use crate::p2p::message::{BlockLocator, InvType, Inventory, Message};
+use crate::p2p::message::{BlockLocator, Inventory, InvType, Message};
 use crate::p2p::peer_manager::{PeerEvent, PeerManager};
 use crate::p2p::peers;
 use crate::storage;
+use crate::utils::{format_datetime, now_millis};
 use crate::validation;
 
 #[derive(Debug, Clone)]
@@ -378,8 +375,7 @@ impl Network {
                         self.queue_message(id, &Message::Verack);
                     }
                     Err(e) => {
-                        self.disconnect(id, &format!("version rejected: {}", e))
-                            .await;
+                        self.disconnect(id, &format!("version rejected: {}", e)).await;
                     }
                 }
             }
@@ -398,8 +394,7 @@ impl Network {
                     }
                     Ok(false) => {}
                     Err(e) => {
-                        self.disconnect(id, &format!("verack rejected: {}", e))
-                            .await;
+                        self.disconnect(id, &format!("verack rejected: {}", e)).await;
                     }
                 }
             }
@@ -445,7 +440,9 @@ impl Network {
                 for inv in &new_items {
                     if inv.inv_type == InvType::Block && !self.inv.has_block(&inv.hash) {
                         to_request.push(inv.clone());
-                    } else if inv.inv_type == InvType::Transaction && !self.inv.has_tx(&inv.hash) {
+                    } else if inv.inv_type == InvType::Transaction
+                        && !self.inv.has_tx(&inv.hash)
+                    {
                         if chain.mempool.iter().any(|t| t.txid == inv.hash) {
                             self.inv.add_tx(&inv.hash);
                         } else {
@@ -499,6 +496,17 @@ impl Network {
                 let mut chain = self.chain.write().await;
                 if chain.add_transaction(tx.clone()) {
                     self.inv.add_tx(&tx.txid);
+                    
+                    // Log the peer transaction with timestamp.
+                    let now = now_millis();
+                    println!(
+                        "[mempool] {} Accepted peer transaction {} from {} to {}",
+                        format_datetime(now),
+                        tx.txid,
+                        tx.from,
+                        tx.to
+                    );
+
                     drop(chain);
                     self.broadcast_inv(&[Inventory {
                         inv_type: InvType::Transaction,
@@ -531,8 +539,7 @@ impl Network {
         let first = &headers[0];
         if first.index != tip.index + 1 || first.previous_hash != tip.hash {
             drop(chain);
-            self.punish(id, 20, "headers do not connect to the tip")
-                .await;
+            self.punish(id, 20, "headers do not connect to the tip").await;
             return;
         }
         let mut to_request = Vec::new();
