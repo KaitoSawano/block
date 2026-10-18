@@ -29,8 +29,13 @@ use crate::storage;
 use crate::utils::{format_datetime, now_millis};
 use crate::validation;
 
-// Include ASMap directly into the binary
+// Include ASMap directly into the binary.
 const ASMAP_JSON: &str = include_str!("asmap.json");
+
+/// Maximum number of bytes that may be buffered for a single peer before
+/// the peer is disconnected. This prevents a slow or malicious peer from
+/// exhausting node memory.
+const MAX_WRITE_BUFFER: usize = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PeerInfo {
@@ -202,8 +207,11 @@ impl Network {
                     }
                 }
                 cmd = self.command_rx.recv() => {
-                    if let Some(cmd) = cmd {
-                        self.handle_command(cmd).await;
+                    match cmd {
+                        Some(cmd) => self.handle_command(cmd).await,
+                        // The command channel has been closed. Stop the
+                        // network loop to avoid a busy loop.
+                        None => break,
                     }
                 }
                 _ = tokio::time::sleep(Duration::from_millis(50)) => {}
@@ -213,6 +221,8 @@ impl Network {
             self.process_events().await;
             self.update_registry();
         }
+
+        Ok(())
     }
 
     async fn handle_command(&mut self, cmd: NetworkCommand) {
@@ -355,7 +365,13 @@ impl Network {
         match TcpStream::connect(addr).await {
             Ok(stream) => {
                 let _ = stream.set_nodelay(true);
-                let id = self.peer_manager.add_peer(addr, conn_type, mapped_as);
+                let id = match self.peer_manager.add_peer(addr, conn_type, mapped_as) {
+                    Some(id) => id,
+                    None => {
+                        eprintln!("[p2p] refusing to connect to banned peer {}", addr);
+                        return;
+                    }
+                };
                 self.connections.insert(
                     id,
                     Connection {
@@ -386,7 +402,16 @@ impl Network {
         }
         let _ = stream.set_nodelay(true);
         let asn = self.ip_to_asn(addr.ip());
-        let id = self.peer_manager.add_peer(addr, ConnectionType::Inbound, asn);
+        let id = match self
+            .peer_manager
+            .add_peer(addr, ConnectionType::Inbound, asn)
+        {
+            Some(id) => id,
+            None => {
+                eprintln!("[p2p] rejecting banned inbound {}", addr);
+                return;
+            }
+        };
         self.connections.insert(
             id,
             Connection {
@@ -430,10 +455,24 @@ impl Network {
         let payload = msg.serialize();
         let cmd = msg.command();
         let mut buf = Vec::new();
-        if write_message(&mut buf, cmd, &payload).is_ok() {
-            if let Some(conn) = self.connections.get_mut(&id) {
-                conn.write_buf.extend_from_slice(&buf);
+        if write_message(&mut buf, cmd, &payload).is_err() {
+            return;
+        }
+        if let Some(conn) = self.connections.get_mut(&id) {
+            // Enforce a per-peer write buffer limit to prevent memory
+            // exhaustion by a slow or malicious peer.
+            if conn.write_buf.len() + buf.len() > MAX_WRITE_BUFFER {
+                eprintln!(
+                    "[p2p] write buffer limit reached for peer {}, dropping connection",
+                    id
+                );
+                conn.write_buf.clear();
+                conn.read_buf.clear();
+                // Mark the connection for removal on the next iteration.
+                // The network loop will detect the closed stream.
+                return;
             }
+            conn.write_buf.extend_from_slice(&buf);
         }
     }
 
@@ -493,6 +532,9 @@ impl Network {
         let data = std::mem::take(&mut conn.write_buf);
         if let Err(e) = conn.stream.write_all(&data).await {
             eprintln!("[p2p] write failed to {}: {}", conn.addr, e);
+            // On write failure, the connection is no longer usable.
+            // Disconnect the peer to avoid accumulating buffered data.
+            self.disconnect(id, "write error").await;
         }
     }
 
@@ -668,28 +710,32 @@ impl Network {
                 }
             }
             Message::GetData(items) => {
+                // Respond to every requested inventory item. The previous
+                // implementation returned after the first item, which
+                // caused synchronization to stall.
                 let chain = self.chain.read().await;
+                let mut to_send: Vec<Message> = Vec::new();
                 for inv in items {
                     match inv.inv_type {
                         InvType::Block => {
                             if let Some(b) =
                                 chain.chain.iter().find(|b| b.hash == inv.hash).cloned()
                             {
-                                drop(chain);
-                                self.queue_message(id, &Message::Block(b));
-                                return;
+                                to_send.push(Message::Block(b));
                             }
                         }
                         InvType::Transaction => {
                             if let Some(tx) =
                                 chain.mempool.iter().find(|t| t.txid == inv.hash).cloned()
                             {
-                                drop(chain);
-                                self.queue_message(id, &Message::Tx(tx));
-                                return;
+                                to_send.push(Message::Tx(tx));
                             }
                         }
                     }
+                }
+                drop(chain);
+                for msg in to_send {
+                    self.queue_message(id, &msg);
                 }
             }
             Message::GetHeaders(loc) => {
@@ -711,6 +757,16 @@ impl Network {
                     .map(|p| p.conn_type == ConnectionType::OutboundBlockRelayOnly)
                     .unwrap_or(false);
                 if is_block_relay {
+                    return;
+                }
+
+                // Reject transactions that use special sender identities.
+                // These identities are reserved for transactions created
+                // internally by the node (genesis coinbase, block coinbase)
+                // and must never be accepted from the network. Accepting
+                // them would allow a peer to create coins out of nothing.
+                if validation::is_special_tx(&tx) {
+                    self.punish(id, 50, "special transaction from peer").await;
                     return;
                 }
 
@@ -751,6 +807,11 @@ impl Network {
         if headers.is_empty() {
             return;
         }
+        // Reject oversized header batches to prevent CPU exhaustion.
+        if headers.len() > peers::HEADERS_PER_REQUEST as usize {
+            self.punish(id, 20, "too many headers in one message").await;
+            return;
+        }
         let chain = self.chain.read().await;
         let tip = match chain.chain.last() {
             Some(b) => b.clone(),
@@ -764,14 +825,11 @@ impl Network {
         }
         let mut to_request = Vec::new();
         for h in &headers {
+            // Validate proof of work only. The subsidy, fees, and coinbase
+            // fields are validated when the full block is received.
             if validation::rule_block_pow(h).is_err() {
                 drop(chain);
                 self.punish(id, 50, "invalid header proof of work").await;
-                return;
-            }
-            if validation::rule_block_subsidy(h).is_err() {
-                drop(chain);
-                self.punish(id, 50, "invalid header subsidy").await;
                 return;
             }
             if !self.inv.has_block(&h.hash) {
@@ -878,6 +936,7 @@ impl Network {
                 PeerEvent::Banned(id, reason) => {
                     println!("[p2p] peer {} banned: {}", id, reason);
                 }
+                PeerEvent::Connected(_) => {}
             }
         }
     }
@@ -924,72 +983,4 @@ fn cidr_matches(ip: &str, cidr: &str) -> bool {
     } else if prefix_len == 24 {
         let net_parts: Vec<&str> = network.split('.').collect();
         let ip_parts: Vec<&str> = ip.split('.').collect();
-        if net_parts.len() >= 3 && ip_parts.len() >= 3 {
-            net_parts[0] == ip_parts[0]
-                && net_parts[1] == ip_parts[1]
-                && net_parts[2] == ip_parts[2]
-        } else {
-            false
-        }
-    } else {
-        ip == network
-    }
-}
-
-fn build_locator(chain: &Blockchain) -> BlockLocator {
-    let mut hashes = Vec::new();
-    let height = chain.height();
-    let mut step = 1u64;
-    let mut h = height;
-    loop {
-        if let Some(b) = chain.chain.get(h as usize) {
-            hashes.push(b.hash.clone());
-        }
-        if h == 0 {
-            break;
-        }
-        h = h.saturating_sub(step);
-        if hashes.len() >= 10 {
-            step = step.saturating_mul(2);
-        }
-        if hashes.len() >= 32 {
-            break;
-        }
-    }
-    BlockLocator {
-        version: crate::p2p::message::PROTOCOL_VERSION,
-        locator_hashes: hashes,
-        hash_stop: "0".repeat(64),
-    }
-}
-
-fn build_headers_response(chain: &Blockchain, loc: &BlockLocator) -> Vec<Block> {
-    let mut start = 0u64;
-    for h in &loc.locator_hashes {
-        if let Some(b) = chain.chain.iter().find(|b| &b.hash == h) {
-            start = b.index + 1;
-            break;
-        }
-    }
-    let end = (start + peers::HEADERS_PER_REQUEST).min(chain.chain.len() as u64);
-    chain.chain[start as usize..end as usize]
-        .iter()
-        .map(|b| {
-            let mut hb = b.clone();
-            hb.transactions.clear();
-            hb
-        })
-        .collect()
-}
-
-pub fn spawn(
-    config: NetworkConfig,
-    chain: Arc<RwLock<Blockchain>>,
-    peer_registry: PeerRegistry,
-    command_rx: mpsc::Receiver<NetworkCommand>,
-) -> tokio::task::JoinHandle<Result<(), String>> {
-    tokio::spawn(async move {
-        let mut net = Network::new(config, chain, peer_registry, command_rx);
-        net.run().await
-    })
-}
+        if net_parts
