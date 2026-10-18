@@ -111,11 +111,11 @@ impl Wallet {
         let salt = crate::utils::random_hex(16);
         let nonce_hex = crate::utils::random_hex(12);
 
-        let key = crate::utils::derive_key(password, &salt);
+        let key = zenachain_crypto::derive_key(password, &salt);
         let nonce = crate::utils::hex_to_bytes(&nonce_hex)?;
 
         for entry in self.entries.iter_mut() {
-            let ciphertext = crate::utils::aes_encrypt(&key, &nonce, &entry.secret)?;
+            let ciphertext = zenachain_crypto::aes_encrypt(&key, &nonce, &entry.secret)?;
             entry.secret = ciphertext;
         }
 
@@ -131,13 +131,13 @@ impl Wallet {
             return Ok(self.clone());
         }
 
-        let key = crate::utils::derive_key(password, &self.salt);
+        let key = zenachain_crypto::derive_key(password, &self.salt);
         let nonce = crate::utils::hex_to_bytes(&self.nonce)?;
 
         let mut decrypted = self.clone();
 
         for entry in decrypted.entries.iter_mut() {
-            let plaintext = crate::utils::aes_decrypt(&key, &nonce, &entry.secret)?;
+            let plaintext = zenachain_crypto::aes_decrypt(&key, &nonce, &entry.secret)?;
             entry.secret = plaintext;
         }
 
