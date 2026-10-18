@@ -1,0 +1,14 @@
+# Copyright (c) 2026 Aldianokto
+# Copyright (c) 2026-present Zenachain Core developers
+# Distributed under the MIT software license, see the accompanying
+# file LICENSE or https://opensource.org/license/mit.
+
+[package]
+name = "zenachain-crypto"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+sha3 = "0.10"
+hex = "0.4"
