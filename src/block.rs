@@ -100,6 +100,8 @@ impl Block {
         )
     }
 
+    /// Create a new block. The `reward` field must already include the
+    /// block subsidy plus the sum of all transaction fees.
     pub fn new_for(
         index: u64,
         previous_hash: String,
@@ -146,7 +148,6 @@ impl Block {
     }
 
     fn genesis_mined() -> Self {
-        // Use the hardcoded timestamp from genesis.rs
         let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
         let genesis_output_script = genesis::GENESIS_OUTPUT_SCRIPT.to_string();
