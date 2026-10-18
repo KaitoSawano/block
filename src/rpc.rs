@@ -379,13 +379,17 @@ impl RpcHandler {
     fn m_getblocktemplate(&self) -> RpcResponse {
         let c = self.state.chain.blocking_read();
         let next_height = c.height() + 1;
-        let reward = Blockchain::calculate_reward(next_height);
+        let subsidy = Blockchain::calculate_reward(next_height);
         let prev_hash = c.chain.last().unwrap().hash.clone();
+        let total_fees: u64 = c.mempool.iter().map(|tx| tx.fee).sum();
+        let reward = subsidy.saturating_add(total_fees);
         RpcResponse::ok(json!({
             "height": next_height,
             "previous_hash": prev_hash,
             "nbits": c.nbits,
             "reward": to_coin(reward),
+            "subsidy": to_coin(subsidy),
+            "total_fees": to_coin(total_fees),
             "reward_satoshi": reward,
             "mempool": c.mempool,
         }))
@@ -491,6 +495,8 @@ impl RpcHandler {
             "nonce": block.nonce,
             "nbits": format!("{:#010x}", block.nbits),
             "reward": to_coin(block.reward),
+            "subsidy": to_coin(block.subsidy),
+            "total_fees": to_coin(block.total_fees),
             "coinbase_txid": block.coinbase_txid,
             "blockchain_size": block.blockchain_size,
             "genesis_output_script": block.genesis_output_script,
@@ -581,6 +587,8 @@ impl RpcHandler {
                 "nonce": g.nonce,
                 "nbits": format!("{:#010x}", g.nbits),
                 "reward": to_coin(g.reward),
+                "subsidy": to_coin(g.subsidy),
+                "total_fees": to_coin(g.total_fees),
                 "coinbase_txid": g.coinbase_txid,
                 "blockchain_size": g.blockchain_size,
                 "genesis_output_script": g.genesis_output_script,
@@ -651,6 +659,10 @@ impl RpcHandler {
                     "to": block.mined_for,
                     "amount_satoshi": block.reward,
                     "amount_zenac": to_coin(block.reward),
+                    "subsidy_satoshi": block.subsidy,
+                    "subsidy_zenac": to_coin(block.subsidy),
+                    "total_fees_satoshi": block.total_fees,
+                    "total_fees_zenac": to_coin(block.total_fees),
                     "fee_satoshi": 0,
                     "in_mempool": false,
                     "block_hash": block.hash,
@@ -915,21 +927,17 @@ impl RpcHandler {
                     return RpcResponse::err("max supply reached");
                 }
 
-                // Take the real transactions from the mempool.
                 let txs = std::mem::take(&mut chain.mempool);
                 (next_index, prev.hash, subsidy, chain.nbits, txs)
             };
 
-            // Calculate the total fees from the mempool transactions.
             let total_fees = mempool_txs.iter().map(|tx| tx.fee).sum::<u64>();
-
-            // The total reward is the block subsidy plus all transaction fees.
-            let total_reward = subsidy.saturating_add(total_fees);
 
             let mut block = crate::block::Block::new_for(
                 next_index,
                 prev_hash,
-                total_reward,
+                subsidy,
+                total_fees,
                 nbits,
                 mempool_txs,
                 addr.clone(),
