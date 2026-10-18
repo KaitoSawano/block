@@ -93,6 +93,10 @@ impl PeerManager {
         self.peers.get_mut(&id)
     }
 
+    pub fn all_peers(&self) -> Vec<&Peer> {
+        self.peers.values().collect()
+    }
+
     pub fn remove(&mut self, id: u64, reason: &str) {
         if self.peers.remove(&id).is_some() {
             self.events
@@ -115,8 +119,6 @@ impl PeerManager {
         self.events.push(event);
     }
 
-    /// Check for timeouts and schedule pings. This method should be called
-    /// periodically by the network loop.
     pub fn tick(&mut self) {
         let now = Instant::now();
         let mut to_remove = Vec::new();
