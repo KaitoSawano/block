@@ -8,11 +8,21 @@
 use std::net::SocketAddr;
 
 use crate::blockchain::Blockchain;
-use crate::p2p::message::{Message, NetAddr, VersionMessage, PROTOCOL_VERSION, USER_AGENT};
+use crate::p2p::message::{
+    Message, NetAddr, VersionMessage, PROTOCOL_VERSION, USER_AGENT,
+};
 use crate::p2p::peer::{Peer, PeerState};
 
-/// Build a Version message to be sent to the peer.
 pub fn build_version(chain: &Blockchain, peer: &Peer, local_addr: SocketAddr) -> Message {
+    build_version_with_relay(chain, peer, local_addr, true)
+}
+
+pub fn build_version_with_relay(
+    chain: &Blockchain,
+    peer: &Peer,
+    local_addr: SocketAddr,
+    relay: bool,
+) -> Message {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -27,11 +37,10 @@ pub fn build_version(chain: &Blockchain, peer: &Peer, local_addr: SocketAddr) ->
         nonce: peer.local_nonce,
         user_agent: USER_AGENT.to_string(),
         start_height: chain.height(),
-        relay: true,
+        relay,
     })
 }
 
-/// Process a Version message from the peer.
 pub fn handle_version(peer: &mut Peer, msg: &VersionMessage) -> Result<(), String> {
     if peer.state != PeerState::Handshaking {
         return Err("version received in the wrong state".into());
@@ -56,8 +65,6 @@ pub fn handle_version(peer: &mut Peer, msg: &VersionMessage) -> Result<(), Strin
     Ok(())
 }
 
-/// Process a Verack message from the peer.
-/// Return `true` if the handshake is complete.
 pub fn handle_verack(peer: &mut Peer) -> Result<bool, String> {
     if peer.state != PeerState::Handshaking {
         return Err("verack received in the wrong state".into());
@@ -69,8 +76,6 @@ pub fn handle_verack(peer: &mut Peer) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Validate that the peer sends the correct network magic. The actual
-/// check is performed by the framing layer.
 pub fn validate_magic(_peer: &Peer) -> bool {
     true
 }
@@ -82,7 +87,7 @@ mod tests {
 
     fn dummy_peer() -> Peer {
         let addr: SocketAddr = "127.0.0.1:8333".parse().unwrap();
-        Peer::new(1, addr, false)
+        Peer::new(1, addr, crate::p2p::peer::ConnectionType::Inbound)
     }
 
     #[test]
