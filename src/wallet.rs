@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 pub struct WalletEntry {
     pub address: String,
     pub public_key: String,
-    pub secret: String,
+    pub secret: String, // Jika wallet terkunci, ini berisi ciphertext base64
     pub label: String,
     pub created_at: u128,
 }
@@ -23,6 +23,9 @@ pub struct WalletEntry {
 pub struct Wallet {
     pub entries: Vec<WalletEntry>,
     pub created_at: u128,
+    pub encrypted: bool,
+    pub salt: String,
+    pub nonce: String,
 }
 
 impl Wallet {
@@ -31,6 +34,9 @@ impl Wallet {
         let mut w = Wallet {
             entries: Vec::new(),
             created_at: now_millis(),
+            encrypted: false,
+            salt: String::new(),
+            nonce: String::new(),
         };
         w.add_new_address("default".to_string());
         w
@@ -63,7 +69,7 @@ impl Wallet {
         self.entries.last()
     }
 
-    /// Restore a wallet from a hexadecimal private key (adds to existing wallet).
+    /// Restore a wallet from a hexadecimal private key.
     pub fn from_secret(secret_hex: &str, label: String) -> Result<WalletEntry, String> {
         let bytes = hex::decode(secret_hex).map_err(|e| e.to_string())?;
         let kp = KeyPair::from_secret(&bytes)?;
@@ -105,6 +111,53 @@ impl Wallet {
         let data = std::fs::read_to_string(path)?;
         let w: Wallet = serde_json::from_str(&data).map_err(std::io::Error::other)?;
         Ok(w)
+    }
+
+    // === FITUR ENKRIPSI ===
+
+    /// Encrypt all private keys in the wallet using AES-256-GCM.
+    pub fn encrypt(&mut self, password: &str) -> Result<(), String> {
+        if self.encrypted {
+            return Err("wallet is already encrypted".into());
+        }
+        
+        let salt = crate::utils::random_hex(16);
+        let nonce_hex = crate::utils::random_hex(12);
+        
+        let key = crate::utils::derive_key(password, &salt);
+        let nonce = crate::utils::hex_to_bytes(&nonce_hex)?;
+        
+        for entry in self.entries.iter_mut() {
+            let ciphertext = crate::utils::aes_encrypt(&key, &nonce, &entry.secret)?;
+            entry.secret = ciphertext;
+        }
+        
+        self.encrypted = true;
+        self.salt = salt;
+        self.nonce = nonce_hex;
+        
+        Ok(())
+    }
+
+    /// Decrypt all private keys using the provided password.
+    /// This does not modify the wallet on disk; it returns a temporary decrypted copy.
+    pub fn decrypt(&self, password: &str) -> Result<Wallet, String> {
+        if !self.encrypted {
+            return Ok(self.clone());
+        }
+        
+        let key = crate::utils::derive_key(password, &self.salt);
+        let nonce = crate::utils::hex_to_bytes(&self.nonce)?;
+        
+        let mut decrypted = self.clone();
+        
+        for entry in decrypted.entries.iter_mut() {
+            let plaintext = crate::utils::aes_decrypt(&key, &nonce, &entry.secret)?;
+            entry.secret = plaintext;
+        }
+        
+        decrypted.encrypted = false;
+        Ok(decrypted)
     }
 }
 
