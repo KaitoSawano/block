@@ -10,8 +10,9 @@ use crate::consensus::{genesis, pow as cpow, rules};
 use crate::datadir;
 use crate::pow;
 use crate::transaction::Transaction;
-use crate::utils::{format_datetime, now_millis, sha3_256_hex};
+use crate::utils::{format_datetime, now_millis};
 use serde::{Deserialize, Serialize};
+use zenachain_crypto::sha3_256_hex;
 
 pub const BLOCK_VERSION: u32 = rules::BLOCK_VERSION;
 
