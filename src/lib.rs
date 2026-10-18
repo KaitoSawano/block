@@ -4,10 +4,6 @@
 // file LICENSE or https://opensource.org/license/mit.
 
 //! ZenaChain library crate.
-//!
-//! This crate exposes the blockchain primitives, consensus rules,
-//! networking layer, RPC server, and cryptographic utilities that are
-//! shared by all binaries in the workspace.
 
 pub mod block;
 pub mod blockchain;
