@@ -114,6 +114,7 @@ struct RpcState {
     interrupt: Arc<AtomicBool>,
     rpc_user: String,
     rpc_password: String,
+    wallet_password: Arc<RwLock<Option<String>>>, // <-- Menyimpan password di memori
 }
 
 pub struct RpcServer {
@@ -129,6 +130,7 @@ impl RpcServer {
             interrupt: Arc::new(AtomicBool::new(false)),
             rpc_user: cfg.rpc_user.clone(),
             rpc_password: cfg.rpc_password.clone(),
+            wallet_password: Arc::new(RwLock::new(None)),
         });
         RpcServer {
             state,
@@ -252,16 +254,16 @@ impl RpcHandler {
             "getlistwallet" => m_getlistwallet(self.state.chain.clone()),
             "dumpprivkey" => m_dumpprivkey(req),
             "importprivkey" => m_importprivkey(req),
-            "getnewwallet" => m_getnewwallet(),
+            "getnewwallet" => self.m_getnewwallet(),       // <-- Panggil method self
             "encryptwallet" => m_encryptwallet(req),
-            "walletpassphrase" => m_walletpassphrase(req),
+            "walletpassphrase" => self.m_walletpassphrase(req), // <-- Panggil method self
             "getaddressinfo" => m_getaddressinfo(req),
             "setlabel" => m_setlabel(req),
             "backupwallet" => m_backupwallet(req),
             "getaddtowallet" => m_getaddtowallet(),
             "getaddtoaddress" => m_getaddtoaddress(req),
             "generatetoaddress" => self.m_generatetoaddress(req),
-            "sendtoaddress" => self.m_sendtoaddress(req),
+            "sendtoaddress" => self.m_sendtoaddress(req),  // <-- Panggil method self
             "stop" => self.m_stop(),
             "getrawtransaction" => self.m_getrawtransaction(req),
             "decoderawtransaction" => self.m_decoderawtransaction(req),
@@ -984,10 +986,23 @@ impl RpcHandler {
             None => return RpcResponse::err("invalid destination address"),
         };
 
-        let wallet = match Wallet::load_default() {
+        let mut wallet = match Wallet::load_default() {
             Ok(w) => w,
             Err(_) => return RpcResponse::err("wallet not found"),
         };
+
+        if wallet.encrypted {
+            let pass_opt = self.state.wallet_password.blocking_read().clone();
+            match pass_opt {
+                Some(pass) => {
+                    match wallet.decrypt(&pass) {
+                        Ok(decrypted) => wallet = decrypted,
+                        Err(_) => return RpcResponse::err("wallet is locked. Run walletpassphrase first."),
+                    }
+                }
+                None => return RpcResponse::err("wallet is locked. Run walletpassphrase first."),
+            }
+        }
 
         let from_address = if req.params.len() >= 3 {
             req.params[2].as_str().unwrap_or("").to_string()
@@ -999,7 +1014,7 @@ impl RpcHandler {
         };
 
         let entry = match wallet.get_entry(&from_address) {
-            Some(e) => e,
+            Some(e) => e.clone(),
             None => return RpcResponse::err("from address not found in wallet"),
         };
 
@@ -1036,6 +1051,72 @@ impl RpcHandler {
             "fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
             "mempool_len": chain.mempool.len(),
         }))
+    }
+
+    fn m_getnewwallet(&mut self) -> RpcResponse {
+        if let Err(e) = datadir::ensure_dirs() {
+            return RpcResponse::err(&format!("failed to prepare .zenachain: {}", e));
+        }
+        
+        let mut w = Wallet::load_default().unwrap_or_else(|_| Wallet {
+            entries: Vec::new(),
+            created_at: crate::utils::now_millis(),
+            encrypted: false,
+            salt: String::new(),
+            nonce: String::new(),
+        });
+
+        if w.encrypted {
+            let pass_opt = self.state.wallet_password.blocking_read().clone();
+            match pass_opt {
+                Some(pass) => {
+                    match w.decrypt(&pass) {
+                        Ok(decrypted) => w = decrypted,
+                        Err(_) => return RpcResponse::err("wallet is locked. Run walletpassphrase first."),
+                    }
+                }
+                None => return RpcResponse::err("wallet is locked. Run walletpassphrase first."),
+            }
+        }
+        
+        let addr = w.add_new_address("default".to_string());
+        let entry = w.get_entry(&addr).unwrap().clone();
+
+        // Simpan sebagai plaintext (setelah didekripsi)
+        match w.save_default() {
+            Ok(_) => RpcResponse::ok(json!({
+                "address": entry.address,
+                "public_key": entry.public_key,
+                "secret": entry.secret,
+                "created_at": entry.created_at,
+            })),
+            Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
+        }
+    }
+
+    fn m_walletpassphrase(&mut self, req: &RpcRequest) -> RpcResponse {
+        let pass = match req.params.first().and_then(|v| v.as_str()) {
+            Some(p) => p.to_string(),
+            None => return RpcResponse::err("walletpassphrase requires a password"),
+        };
+
+        let w = match Wallet::load_default() {
+            Ok(w) => w,
+            Err(_) => return RpcResponse::err("wallet not found"),
+        };
+
+        match w.decrypt(&pass) {
+            Ok(_) => {
+                let mut lock = self.state.wallet_password.blocking_write();
+                *lock = Some(pass);
+                
+                RpcResponse::ok(json!({
+                    "message": "wallet decrypted successfully",
+                    "addresses": w.entries.len(),
+                }))
+            },
+            Err(e) => RpcResponse::err(&format!("failed to decrypt wallet: {}", e)),
+        }
     }
 }
 
@@ -1145,7 +1226,6 @@ fn m_importprivkey(req: &RpcRequest) -> RpcResponse {
         nonce: String::new(),
     });
 
-    // PERBAIKAN: Tolak import jika dompet terkunci
     if w.encrypted {
         return RpcResponse::err("wallet is encrypted. Use walletpassphrase to unlock it first.");
     }
@@ -1159,37 +1239,6 @@ fn m_importprivkey(req: &RpcRequest) -> RpcResponse {
             "address": entry.address,
             "public_key": entry.public_key,
             "message": "private key imported successfully",
-        })),
-        Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
-    }
-}
-
-fn m_getnewwallet() -> RpcResponse {
-    if let Err(e) = datadir::ensure_dirs() {
-        return RpcResponse::err(&format!("failed to prepare .zenachain: {}", e));
-    }
-    let mut w = Wallet::load_default().unwrap_or_else(|_| Wallet {
-        entries: Vec::new(),
-        created_at: crate::utils::now_millis(),
-        encrypted: false,
-        salt: String::new(),
-        nonce: String::new(),
-    });
-
-    // PERBAIKAN: Tolak buat alamat baru jika dompet terkunci
-    if w.encrypted {
-        return RpcResponse::err("wallet is encrypted. Use walletpassphrase to unlock it first.");
-    }
-    
-    let addr = w.add_new_address("default".to_string());
-    let entry = w.get_entry(&addr).unwrap().clone();
-
-    match w.save_default() {
-        Ok(_) => RpcResponse::ok(json!({
-            "address": entry.address,
-            "public_key": entry.public_key,
-            "secret": entry.secret,
-            "created_at": entry.created_at,
         })),
         Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
     }
@@ -1215,26 +1264,6 @@ fn m_encryptwallet(req: &RpcRequest) -> RpcResponse {
             "message": "wallet encrypted successfully",
         })),
         Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
-    }
-}
-
-fn m_walletpassphrase(req: &RpcRequest) -> RpcResponse {
-    let pass = match req.params.first().and_then(|v| v.as_str()) {
-        Some(p) => p.to_string(),
-        None => return RpcResponse::err("walletpassphrase requires a password"),
-    };
-
-    let w = match Wallet::load_default() {
-        Ok(w) => w,
-        Err(_) => return RpcResponse::err("wallet not found"),
-    };
-
-    match w.decrypt(&pass) {
-        Ok(_) => RpcResponse::ok(json!({
-            "message": "wallet decrypted successfully",
-            "addresses": w.entries.len(),
-        })),
-        Err(e) => RpcResponse::err(&format!("failed to decrypt wallet: {}", e)),
     }
 }
 
