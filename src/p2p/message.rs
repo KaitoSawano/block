@@ -10,6 +10,7 @@
 //! encoding, and hashes are encoded as 32 raw bytes.
 
 use crate::block::Block;
+use crate::blockchain::Blockchain;
 use crate::transaction::Transaction;
 use serde::{Deserialize, Serialize};
 
@@ -381,7 +382,7 @@ impl Message {
                 let count = read_varint(&mut input)? as usize;
                 let mut headers = Vec::with_capacity(count);
                 for _ in 0..count {
-                    if input.len() < 4 + 8 + 16 + 32 + 32 + 8 + 4 + 8 + 32 {
+                    if input.len() < 4 + 8 + 16 + 32 + 32 + 8 + 4 + 8 + 32 + 1 {
                         return Err("headers: header missing bytes".into());
                     }
                     let nversion = u32::from_le_bytes(input[..4].try_into().unwrap());
@@ -413,6 +414,11 @@ impl Message {
                     b.nbits = nbits;
                     b.hash = hash;
                     b.reward = reward;
+                    // Recompute the subsidy from the block height so that
+                    // header validation succeeds. The subsidy is a pure
+                    // function of the height and is not transmitted on the
+                    // wire.
+                    b.subsidy = Blockchain::calculate_reward(index);
                     headers.push(b);
                 }
                 Ok(Message::Headers(headers))
