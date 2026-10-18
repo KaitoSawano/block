@@ -9,6 +9,7 @@ use crate::blockchain::{self, Blockchain};
 use crate::config::Config;
 use crate::consensus;
 use crate::datadir;
+use crate::p2p::network::PeerRegistry;
 use crate::pow;
 use crate::storage;
 use crate::transaction::Transaction;
@@ -115,6 +116,7 @@ struct RpcState {
     rpc_user: String,
     rpc_password: String,
     wallet_password: Arc<RwLock<Option<String>>>,
+    peer_registry: PeerRegistry,
 }
 
 pub struct RpcServer {
@@ -123,7 +125,11 @@ pub struct RpcServer {
 }
 
 impl RpcServer {
-    pub fn new(chain: Arc<RwLock<Blockchain>>, cfg: &Config) -> Self {
+    pub fn new(
+        chain: Arc<RwLock<Blockchain>>,
+        cfg: &Config,
+        peer_registry: PeerRegistry,
+    ) -> Self {
         let state = Arc::new(RpcState {
             chain,
             shutdown: Arc::new(AtomicBool::new(false)),
@@ -131,6 +137,7 @@ impl RpcServer {
             rpc_user: cfg.rpc_user.clone(),
             rpc_password: cfg.rpc_password.clone(),
             wallet_password: Arc::new(RwLock::new(None)),
+            peer_registry,
         });
         RpcServer {
             state,
@@ -236,7 +243,8 @@ impl RpcHandler {
         match req.method.as_str() {
             "getinfo" => self.m_getinfo(),
             "getblockchaininfo" => self.m_getblockchaininfo(),
-            "getnetworkinfo" => m_getnetworkinfo(),
+            "getnetworkinfo" => self.m_getnetworkinfo(),
+            "getpeerinfo" => self.m_getpeerinfo(),
             "getcheckpoints" => m_getcheckpoints(),
             "getblocktemplate" => self.m_getblocktemplate(),
             "submitblock" => self.m_submitblock(req),
@@ -273,6 +281,32 @@ impl RpcHandler {
             "validatemempool" => self.m_validatemempool(),
             _ => RpcResponse::err("unknown method"),
         }
+    }
+
+    fn m_getnetworkinfo(&self) -> RpcResponse {
+        let reg = self.state.peer_registry.lock().unwrap();
+        let connected = reg.iter().filter(|p| p.state == "Connected").count();
+        RpcResponse::ok(json!({
+            "network": blockchain::network::NETWORK_NAME,
+            "magic": blockchain::network::network_magic_hex(),
+            "default_port": blockchain::network::DEFAULT_PORT,
+            "prune_after_height": blockchain::network::PRUNE_AFTER_HEIGHT,
+            "assumed_blockchain_size_mb": blockchain::network::ASSUMED_BLOCKCHAIN_SIZE,
+            "assumed_chain_state_size_mb": blockchain::network::ASSUMED_CHAIN_STATE_SIZE,
+            "p2p_enabled": true,
+            "connection_count": connected,
+        }))
+    }
+
+    fn m_getpeerinfo(&self) -> RpcResponse {
+        let reg = self.state.peer_registry.lock().unwrap();
+        let peers: Vec<Value> = reg.iter().map(|p| json!({
+            "id": p.id,
+            "addr": p.addr,
+            "outbound": p.outbound,
+            "state": p.state,
+        })).collect();
+        RpcResponse::ok(json!(peers))
     }
 
     fn m_stop(&mut self) -> RpcResponse {
@@ -1037,7 +1071,6 @@ impl RpcHandler {
         let txid = tx.txid.clone();
         chain.mempool.push(tx);
 
-        // Log the transaction into the mempool with timestamp.
         let now = now_millis();
         println!(
             "[mempool] {} Accepted transaction {} from {} to {} amount={} fee={}",
@@ -1137,19 +1170,6 @@ fn m_getcheckpoints() -> RpcResponse {
         .map(|c| json!({"height": c.height, "hash": c.hash}))
         .collect();
     RpcResponse::ok(json!(items))
-}
-
-fn m_getnetworkinfo() -> RpcResponse {
-    RpcResponse::ok(json!({
-        "network": blockchain::network::NETWORK_NAME,
-        "magic": blockchain::network::network_magic_hex(),
-        "default_port": blockchain::network::DEFAULT_PORT,
-        "prune_after_height": blockchain::network::PRUNE_AFTER_HEIGHT,
-        "assumed_blockchain_size_mb": blockchain::network::ASSUMED_BLOCKCHAIN_SIZE,
-        "assumed_chain_state_size_mb": blockchain::network::ASSUMED_CHAIN_STATE_SIZE,
-        "p2p_enabled": true,
-        "connection_count": 0,
-    }))
 }
 
 fn m_getlistwallet(chain_arc: Arc<RwLock<Blockchain>>) -> RpcResponse {
