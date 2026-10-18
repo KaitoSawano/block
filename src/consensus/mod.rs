@@ -12,10 +12,63 @@ pub mod spec;
 
 use zenachain_crypto::sha3_256_hex;
 
-/// Compute the consensus fingerprint. The fingerprint is the SHA3-256
-/// digest of all consensus parameters, and it binds the genesis block to
-/// the current parameter set.
+/// Compute the consensus fingerprint.
+///
+/// The fingerprint is the SHA3-256 digest of all consensus parameters,
+/// including the expected genesis hash, merkle root, and nonce. It binds
+/// the genesis block to the current parameter set. Any change to a
+/// consensus parameter, or any change to the code that produces the
+/// genesis block, results in a different fingerprint and therefore in a
+/// hard fork.
+///
+/// Note: `genesis_coinbase_txid` must not depend on this fingerprint,
+/// because the fingerprint depends on the genesis hash, which depends on
+/// the genesis coinbase transaction identifier. To break the cycle,
+/// `genesis_coinbase_txid` is derived from a separate parameter
+/// fingerprint that excludes the genesis hash, merkle root, and nonce.
 pub fn consensus_fingerprint() -> String {
+    let payload = format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        spec::HASH_ALGO,
+        spec::SIGNATURE_ALGO,
+        spec::DECIMALS,
+        spec::SATOSHI,
+        spec::MAX_SUPPLY_ZENAC,
+        spec::MAX_SUPPLY,
+        spec::INITIAL_REWARD_ZENAC,
+        spec::INITIAL_REWARD,
+        spec::SUBSIDY_HALVING_INTERVAL,
+        spec::MAX_HALVINGS,
+        spec::POW_TARGET_SPACING_SECS,
+        spec::POW_TARGET_TIMESPAN_SECS,
+        spec::MINER_CONFIRMATION_WINDOW,
+        spec::DIFFICULTY_ADJUST_INTERVAL,
+        genesis::GENESIS_MESSAGE,
+        genesis::GENESIS_SECRET,
+        genesis::GENESIS_TIMESTAMP,
+        genesis::GENESIS_OUTPUT_SCRIPT,
+        pow::GENESIS_NBITS,
+        pow::POW_LIMIT,
+        rules::COINBASE_MATURITY,
+        rules::ADDRESS_PREFIX,
+        rules::ADDRESS_HEX_LEN,
+        rules::MAX_TX_PER_BLOCK,
+        rules::MAX_NOTE_LEN,
+        rules::BLOCK_VERSION,
+        rules::ZERO_HASH,
+        genesis::EXPECTED_GENESIS_HASH,
+        genesis::EXPECTED_GENESIS_MERKLE_ROOT,
+        genesis::EXPECTED_GENESIS_NONCE,
+    );
+    sha3_256_hex(payload.as_bytes())
+}
+
+/// Compute the parameter fingerprint.
+///
+/// This fingerprint excludes the expected genesis hash, merkle root, and
+/// nonce. It is used to derive the genesis coinbase transaction
+/// identifier without creating a circular dependency.
+pub fn parameter_fingerprint() -> String {
     let payload = format!(
         "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         spec::HASH_ALGO,
@@ -49,10 +102,14 @@ pub fn consensus_fingerprint() -> String {
     sha3_256_hex(payload.as_bytes())
 }
 
-/// Compute the genesis coinbase transaction ID from the consensus
-/// fingerprint, the genesis timestamp, and the genesis nBits.
+/// Compute the genesis coinbase transaction identifier.
+///
+/// The identifier is derived from the parameter fingerprint, the genesis
+/// timestamp, and the genesis nBits. It intentionally does not depend on
+/// the consensus fingerprint, because the consensus fingerprint depends
+/// on the genesis hash, which in turn depends on this identifier.
 pub fn genesis_coinbase_txid() -> String {
-    let fp = consensus_fingerprint();
+    let fp = parameter_fingerprint();
     let payload = format!(
         "genesis|{}|{}|{}",
         fp,
