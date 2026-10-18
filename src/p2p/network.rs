@@ -29,6 +29,9 @@ use crate::storage;
 use crate::utils::{format_datetime, now_millis};
 use crate::validation;
 
+// Include ASMap directly into the binary
+const ASMAP_JSON: &str = include_str!("asmap.json");
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PeerInfo {
     pub id: u64,
@@ -100,7 +103,7 @@ pub struct Network {
     next_feeler_at: Instant,
     peer_registry: PeerRegistry,
     command_rx: mpsc::Receiver<NetworkCommand>,
-    asmap: Vec<bool>,
+    asmap: HashMap<String, u32>,
 }
 
 impl Network {
@@ -120,16 +123,12 @@ impl Network {
             config.ping_timeout,
         );
 
-        let asmap = match bitcoin_asmap::decode_asmap("asmap.dat") {
-            Ok(map) => {
-                println!("[p2p] loaded ASMap with {} bits", map.len());
-                map
-            }
-            Err(e) => {
-                eprintln!("[p2p] WARNING: failed to load asmap.dat: {}", e);
-                Vec::new()
-            }
-        };
+        let asmap: HashMap<String, u32> =
+            serde_json::from_str(ASMAP_JSON).unwrap_or_else(|e| {
+                eprintln!("[p2p] WARNING: failed to parse asmap.json: {}", e);
+                HashMap::new()
+            });
+        println!("[p2p] loaded custom ASMap with {} entries", asmap.len());
 
         Network {
             config,
@@ -891,42 +890,50 @@ impl Network {
     }
 
     fn ip_to_asn(&self, ip: IpAddr) -> u32 {
-        let ip_bits = ip_to_bits(ip);
-        bitcoin_asmap::interpret(&self.asmap, &ip_bits)
+        let ip_str = ip.to_string();
+        for (cidr, asn) in &self.asmap {
+            if cidr_matches(&ip_str, cidr) {
+                return *asn;
+            }
+        }
+        0
     }
 }
 
-fn ip_to_bits(ip: IpAddr) -> Vec<bool> {
-    let mut bits = vec![false; 128];
-    match ip {
-        IpAddr::V4(v4) => {
-            bits[80] = true;
-            bits[81] = true;
-            bits[82] = true;
-            bits[83] = true;
-            bits[84] = true;
-            bits[85] = true;
-            bits[86] = true;
-            bits[87] = true;
-            bits[88] = true;
-            bits[89] = true;
-            bits[90] = true;
-            bits[91] = true;
-            bits[92] = true;
-            bits[93] = true;
-            bits[94] = true;
-            bits[95] = true;
-            for i in 0..32 {
-                bits[96 + i] = (v4.octets()[i / 8] >> (7 - (i % 8))) & 1 == 1;
-            }
-        }
-        IpAddr::V6(v6) => {
-            for i in 0..128 {
-                bits[i] = (v6.octets()[i / 8] >> (7 - (i % 8))) & 1 == 1;
-            }
-        }
+fn cidr_matches(ip: &str, cidr: &str) -> bool {
+    let parts: Vec<&str> = cidr.split('/').collect();
+    if parts.len() != 2 {
+        return false;
     }
-    bits
+    let network = parts[0];
+    let prefix_len: u32 = parts[1].parse().unwrap_or(0);
+
+    if prefix_len == 8 {
+        ip.starts_with(&format!(
+            "{}.",
+            network.split('.').next().unwrap_or("")
+        ))
+    } else if prefix_len == 16 {
+        let net_parts: Vec<&str> = network.split('.').collect();
+        let ip_parts: Vec<&str> = ip.split('.').collect();
+        if net_parts.len() >= 2 && ip_parts.len() >= 2 {
+            net_parts[0] == ip_parts[0] && net_parts[1] == ip_parts[1]
+        } else {
+            false
+        }
+    } else if prefix_len == 24 {
+        let net_parts: Vec<&str> = network.split('.').collect();
+        let ip_parts: Vec<&str> = ip.split('.').collect();
+        if net_parts.len() >= 3 && ip_parts.len() >= 3 {
+            net_parts[0] == ip_parts[0]
+                && net_parts[1] == ip_parts[1]
+                && net_parts[2] == ip_parts[2]
+        } else {
+            false
+        }
+    } else {
+        ip == network
+    }
 }
 
 fn build_locator(chain: &Blockchain) -> BlockLocator {
