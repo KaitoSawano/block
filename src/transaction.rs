@@ -85,16 +85,24 @@ impl Transaction {
         tx
     }
 
+    /// Compute the transaction identifier.
+    ///
+    /// The identifier commits to every field that affects transaction
+    /// validity, including the public key and the signature. This prevents
+    /// third parties from altering the public key or the signature without
+    /// changing the transaction identifier (signature malleability).
     pub fn compute_txid(&self) -> String {
         let payload = format!(
-            "{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.from,
             self.to,
             self.amount,
             self.fee,
             self.note,
             self.inputs.join(","),
-            self.output_script
+            self.output_script,
+            self.public_key,
+            self.signature
         );
         sha3_256_hex(payload.as_bytes())
     }
@@ -105,12 +113,18 @@ impl Transaction {
         let sk = hex::decode(secret_hex).map_err(|e| e.to_string())?;
         let kp = KeyPair::from_secret(&sk)?;
 
+        // Set the public key before computing the identifier so that the
+        // identifier commits to the signer identity.
         self.public_key = kp.public_key_hex();
         self.txid = self.compute_txid();
 
         let txid_bytes = hex::decode(&self.txid).map_err(|e| e.to_string())?;
         let sig = sign::sign(&kp.secret_key, &txid_bytes)?;
         self.signature = hex::encode(sig);
+
+        // Recompute the identifier after the signature is set so that the
+        // identifier commits to the signature as well.
+        self.txid = self.compute_txid();
 
         Ok(())
     }
