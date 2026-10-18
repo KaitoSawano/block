@@ -16,6 +16,7 @@ pub struct AddrEntry {
     pub last_seen: Instant,
     pub last_try: Option<Instant>,
     pub attempts: u32,
+    pub failures: u32,
 }
 
 /// The address book.
@@ -61,6 +62,7 @@ impl AddrBook {
                 last_seen: Instant::now(),
                 last_try: None,
                 attempts: 0,
+                failures: 0,
             },
         );
         true
@@ -85,15 +87,31 @@ impl AddrBook {
         }
     }
 
+    /// Mark an address as failed. Return `true` if the address should be removed.
+    pub fn mark_failed(&mut self, addr: &SocketAddr) -> bool {
+        if let Some(entry) = self.entries.get_mut(addr) {
+            entry.failures = entry.failures.saturating_add(1);
+            if entry.failures >= 3 {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Return candidate addresses that have not been attempted recently.
     pub fn candidates(&self, min_interval: Duration, limit: usize) -> Vec<SocketAddr> {
         let now = Instant::now();
         let mut out: Vec<SocketAddr> = self
             .entries
             .values()
-            .filter(|e| match e.last_try {
-                None => true,
-                Some(t) => now.duration_since(t) > min_interval,
+            .filter(|e| {
+                if e.failures >= 3 {
+                    return false;
+                }
+                match e.last_try {
+                    None => true,
+                    Some(t) => now.duration_since(t) > min_interval,
+                }
             })
             .map(|e| e.addr)
             .collect();
