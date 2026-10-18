@@ -14,6 +14,7 @@ use crate::transaction::Transaction;
 use crate::wallet::Wallet;
 use std::collections::HashSet;
 use std::fmt;
+use zenachain_crypto::sha3_256_hex;
 
 pub use rules::ADDRESS_HEX_LEN;
 pub use rules::ADDRESS_PREFIX;
@@ -113,6 +114,26 @@ pub fn rule_input_count(tx: &Transaction) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Compute the signing hash of a transaction.
+///
+/// The signing hash excludes the `signature` field, because a signature
+/// cannot commit to itself. The `public_key` is included so that the
+/// signature commits to the signer identity.
+pub fn signing_hash(tx: &Transaction) -> String {
+    let payload = format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}",
+        tx.from,
+        tx.to,
+        tx.amount,
+        tx.fee,
+        tx.note,
+        tx.inputs.join(","),
+        tx.output_script,
+        tx.public_key
+    );
+    sha3_256_hex(payload.as_bytes())
+}
+
 pub fn rule_signature(tx: &Transaction) -> Result<(), ValidationError> {
     if is_special_tx(tx) {
         return Ok(());
@@ -127,8 +148,10 @@ pub fn rule_signature(tx: &Transaction) -> Result<(), ValidationError> {
         .map_err(|_| ValidationError::new("E010", "public key is not hexadecimal"))?;
     let sig = hex::decode(&tx.signature)
         .map_err(|_| ValidationError::new("E010", "signature is not hexadecimal"))?;
-    let msg = hex::decode(&tx.txid)
-        .map_err(|_| ValidationError::new("E010", "txid is not hexadecimal"))?;
+    // The signature commits to the signing hash, which excludes the
+    // signature field itself.
+    let msg = hex::decode(&signing_hash(tx))
+        .map_err(|_| ValidationError::new("E010", "signing hash is not hexadecimal"))?;
     if !verify::verify(&pk, &msg, &sig) {
         return Err(ValidationError::new(
             "E010",
@@ -300,7 +323,7 @@ pub fn rule_block_tx_count(block: &Block) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Ensures that the block subsidy matches the consensus schedule.
+/// Ensure that the block subsidy matches the consensus schedule.
 pub fn rule_block_subsidy(block: &Block) -> Result<(), ValidationError> {
     let expected = Blockchain::calculate_reward(block.index);
     if block.subsidy != expected {
@@ -315,7 +338,7 @@ pub fn rule_block_subsidy(block: &Block) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Ensures that the total reward is exactly the subsidy plus all transaction fees.
+/// Ensure that the total reward equals the subsidy plus the declared fees.
 pub fn rule_block_reward(block: &Block) -> Result<(), ValidationError> {
     let expected = block.subsidy.saturating_add(block.total_fees);
     if block.reward != expected {
@@ -328,6 +351,70 @@ pub fn rule_block_reward(block: &Block) -> Result<(), ValidationError> {
         ));
     }
     Ok(())
+}
+
+/// Ensure that the declared total fees equal the sum of the fees of all
+/// transactions in the block. This prevents a miner from inflating the
+/// reward by declaring arbitrary fees.
+pub fn rule_block_total_fees(block: &Block) -> Result<(), ValidationError> {
+    let computed: u64 = block.transactions.iter().map(|tx| tx.fee).sum();
+    if block.total_fees != computed {
+        return Err(ValidationError::new(
+            "E047",
+            format!(
+                "total_fees for block {} is invalid: got {}, expected {}",
+                block.index, block.total_fees, computed
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Ensure that the coinbase transaction identifier is consistent with the
+/// block index, the mining target, and the block timestamp. This prevents a
+/// miner from claiming a reward for an arbitrary address.
+pub fn rule_block_coinbase_consistent(block: &Block) -> Result<(), ValidationError> {
+    if block.index == 0 {
+        // The genesis coinbase identifier is defined by the consensus
+        // fingerprint and is validated separately.
+        return Ok(());
+    }
+    let expected = sha3_256_hex(
+        format!("{}|{}|{}", block.index, block.mined_for, block.timestamp).as_bytes(),
+    );
+    if block.coinbase_txid != expected {
+        return Err(ValidationError::new(
+            "E048",
+            format!(
+                "coinbase_txid for block {} is inconsistent with index, mined_for, and timestamp",
+                block.index
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Ensure that the mining target address is a valid address. The genesis
+/// block is exempt because it uses the literal string "GENESIS".
+pub fn rule_mined_for_valid(block: &Block) -> Result<(), ValidationError> {
+    if block.index == 0 {
+        return Ok(());
+    }
+    if block.mined_for.is_empty() {
+        return Err(ValidationError::new(
+            "E049",
+            format!("block {} has an empty mined_for address", block.index),
+        ));
+    }
+    rule_address_format(&block.mined_for).map_err(|_| {
+        ValidationError::new(
+            "E049",
+            format!(
+                "mined_for address of block {} is invalid: {}",
+                block.index, block.mined_for
+            ),
+        )
+    })
 }
 
 pub fn rule_block_timestamp_monotonic(prev: &Block, cur: &Block) -> Result<(), ValidationError> {
@@ -557,7 +644,10 @@ pub fn validate_block(
     rule_block_previous_hash(prev, block)?;
     rule_block_merkle_root(block)?;
     rule_block_subsidy(block)?;
+    rule_block_total_fees(block)?;
     rule_block_reward(block)?;
+    rule_block_coinbase_consistent(block)?;
+    rule_mined_for_valid(block)?;
     rule_block_pow(block)?;
     rule_block_tx_count(block)?;
     rule_block_timestamp_monotonic(prev, block)?;
@@ -591,11 +681,15 @@ pub fn validate_chain(chain: &Blockchain) -> Result<(), ValidationError> {
         rule_block_previous_hash(prev, cur)?;
         rule_block_merkle_root(cur)?;
         rule_block_subsidy(cur)?;
+        rule_block_total_fees(cur)?;
         rule_block_reward(cur)?;
+        rule_block_coinbase_consistent(cur)?;
+        rule_mined_for_valid(cur)?;
         rule_block_pow(cur)?;
         rule_block_tx_count(cur)?;
         rule_block_timestamp_monotonic(prev, cur)?;
         rule_block_checkpoint(cur)?;
+        rule_block_nbits(chain, cur)?;
     }
 
     Ok(())
