@@ -460,12 +460,10 @@ impl RpcHandler {
 
         drop(chain);
 
-        // Broadcast block baru ke P2P network
+        // Broadcast new block to P2P network
         let tx = self.state.network_cmd_tx.clone();
         let hash = block.hash.clone();
-        tokio::spawn(async move {
-            let _ = tx.send(NetworkCommand::BroadcastBlock(hash)).await;
-        });
+        let _ = tx.blocking_send(NetworkCommand::BroadcastBlock(hash));
 
         RpcResponse::ok(json!({
             "accepted": true,
@@ -1004,12 +1002,10 @@ impl RpcHandler {
                 }
             }
 
-            // Broadcast block baru ke P2P network
+            // Broadcast new block to P2P network
             let tx = self.state.network_cmd_tx.clone();
             let hash = block.hash.clone();
-            tokio::spawn(async move {
-                let _ = tx.send(NetworkCommand::BroadcastBlock(hash)).await;
-            });
+            let _ = tx.blocking_send(NetworkCommand::BroadcastBlock(hash));
 
             hashes.push(block.hash.clone());
         }
@@ -1107,12 +1103,10 @@ impl RpcHandler {
 
         drop(chain);
 
-        // Broadcast transaksi baru ke P2P network
+        // Broadcast new transaction to P2P network
         let tx = self.state.network_cmd_tx.clone();
         let tid = txid.clone();
-        tokio::spawn(async move {
-            let _ = tx.send(NetworkCommand::BroadcastTransaction(tid)).await;
-        });
+        let _ = tx.blocking_send(NetworkCommand::BroadcastTransaction(tid));
 
         RpcResponse::ok(json!({
             "txid": txid,
