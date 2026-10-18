@@ -7,13 +7,13 @@
 //!
 //! Banning is manual and persistent (banlist.json). Discouragement is
 //! automatic and ephemeral (rolling bloom filter). A discouraged peer is
-//! still accepted as inbound but is preferred for eviction [citation:2].
+//! still accepted as inbound but is preferred for eviction.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::datadir;
 
@@ -52,7 +52,7 @@ impl BanMan {
             banlist,
             discouraged: std::collections::HashSet::new(),
             // Bitcoin Core uses a 50,000-entry rolling bloom filter with
-            // a false positive rate of 1e-6 [citation:2].
+            // a false positive rate of 1e-6.
             max_discouraged: 50_000,
         }
     }
@@ -122,7 +122,7 @@ impl BanMan {
     }
 
     /// Persist the ban list to disk. Bitcoin Core dumps the ban list
-    /// every 15 minutes and on shutdown [citation:6].
+    /// every 15 minutes and on shutdown.
     pub fn dump_banlist(&self) -> std::io::Result<()> {
         datadir::ensure_dirs()?;
         let path = banlist_path();
