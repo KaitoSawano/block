@@ -12,9 +12,6 @@ pub mod spec;
 
 use crate::utils::sha3_256_hex;
 
-/// Compute the consensus fingerprint. The fingerprint is the SHA3-256
-/// digest of all consensus parameters, and it binds the genesis block to
-/// the current parameter set.
 pub fn consensus_fingerprint() -> String {
     let payload = format!(
         "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
@@ -42,7 +39,6 @@ pub fn consensus_fingerprint() -> String {
         rules::ADDRESS_PREFIX,
         rules::ADDRESS_HEX_LEN,
         rules::MAX_TX_PER_BLOCK,
-        // rules::MAX_INPUTS_PER_TX, (Opsional, bisa ditambah jika perlu)
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
         rules::ZERO_HASH,
@@ -50,8 +46,6 @@ pub fn consensus_fingerprint() -> String {
     sha3_256_hex(payload.as_bytes())
 }
 
-/// Compute the genesis coinbase transaction ID from the consensus
-/// fingerprint, the genesis timestamp, and the genesis nBits.
 pub fn genesis_coinbase_txid() -> String {
     let fp = consensus_fingerprint();
     let payload = format!(
