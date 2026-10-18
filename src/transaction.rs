@@ -5,8 +5,8 @@
 
 //! Transaction structure and signature operations.
 
-use zenachain_crypto::sha3_256_hex;
 use serde::{Deserialize, Serialize};
+use zenachain_crypto::sha3_256_hex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
