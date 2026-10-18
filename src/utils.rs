@@ -5,9 +5,6 @@
 
 //! Utility functions shared across the crate.
 
-// (HAPUS import sha3 di sini)
-// (HAPUS fungsi sha3_256_hex di sini)
-
 /// Return the current Unix timestamp in milliseconds.
 pub fn now_millis() -> u128 {
     std::time::SystemTime::now()
