@@ -153,7 +153,9 @@ impl Block {
 
     /// Mine the genesis block using the genesis consensus parameters.
     fn genesis_mined() -> Self {
-        let ts = genesis::GENESIS_TIMESTAMP;
+        // Dynamically fetch the current timestamp to ensure that every
+        // regeneration produces a completely new genesis block.
+        let ts = now_millis();
         let coinbase_txid = blockchain::genesis_coinbase_txid();
         let genesis_output_script = genesis::GENESIS_OUTPUT_SCRIPT.to_string();
         let nbits = cpow::GENESIS_NBITS;
