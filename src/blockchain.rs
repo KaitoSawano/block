@@ -47,8 +47,6 @@ pub mod checkpoint {
 }
 
 pub mod network {
-    /// Magic bytes for ZenaChain: "ZENA" in ASCII hexadecimal.
-    /// This value replaces the Bitcoin magic (0xf9beb4d9) to avoid conflicts.
     pub const NETWORK_MAGIC: [u8; 4] = [0x5a, 0x45, 0x4e, 0x41];
     pub const NETWORK_NAME: &str = "main";
     pub const DEFAULT_PORT: u16 = 8333;
@@ -69,7 +67,6 @@ pub use consensus::genesis_coinbase_txid;
 pub use genesis::genesis_message;
 pub use genesis::genesis_output_script;
 pub use genesis::genesis_secret;
-pub use genesis::genesis_timestamp;
 pub use spec::coin_name;
 pub use spec::decimals;
 pub use spec::difficulty_adjust_interval;
