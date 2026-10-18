@@ -983,4 +983,72 @@ fn cidr_matches(ip: &str, cidr: &str) -> bool {
     } else if prefix_len == 24 {
         let net_parts: Vec<&str> = network.split('.').collect();
         let ip_parts: Vec<&str> = ip.split('.').collect();
-        if net_parts
+        if net_parts.len() >= 3 && ip_parts.len() >= 3 {
+            net_parts[0] == ip_parts[0]
+                && net_parts[1] == ip_parts[1]
+                && net_parts[2] == ip_parts[2]
+        } else {
+            false
+        }
+    } else {
+        ip == network
+    }
+}
+
+fn build_locator(chain: &Blockchain) -> BlockLocator {
+    let mut hashes = Vec::new();
+    let height = chain.height();
+    let mut step = 1u64;
+    let mut h = height;
+    loop {
+        if let Some(b) = chain.chain.get(h as usize) {
+            hashes.push(b.hash.clone());
+        }
+        if h == 0 {
+            break;
+        }
+        h = h.saturating_sub(step);
+        if hashes.len() >= 10 {
+            step = step.saturating_mul(2);
+        }
+        if hashes.len() >= 32 {
+            break;
+        }
+    }
+    BlockLocator {
+        version: crate::p2p::message::PROTOCOL_VERSION,
+        locator_hashes: hashes,
+        hash_stop: "0".repeat(64),
+    }
+}
+
+fn build_headers_response(chain: &Blockchain, loc: &BlockLocator) -> Vec<Block> {
+    let mut start = 0u64;
+    for h in &loc.locator_hashes {
+        if let Some(b) = chain.chain.iter().find(|b| &b.hash == h) {
+            start = b.index + 1;
+            break;
+        }
+    }
+    let end = (start + peers::HEADERS_PER_REQUEST).min(chain.chain.len() as u64);
+    chain.chain[start as usize..end as usize]
+        .iter()
+        .map(|b| {
+            let mut hb = b.clone();
+            hb.transactions.clear();
+            hb
+        })
+        .collect()
+}
+
+pub fn spawn(
+    config: NetworkConfig,
+    chain: Arc<RwLock<Blockchain>>,
+    peer_registry: PeerRegistry,
+    command_rx: mpsc::Receiver<NetworkCommand>,
+) -> tokio::task::JoinHandle<Result<(), String>> {
+    tokio::spawn(async move {
+        let mut net = Network::new(config, chain, peer_registry, command_rx);
+        net.run().await
+    })
+}
