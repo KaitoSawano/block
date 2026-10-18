@@ -7,7 +7,7 @@ ZenaChain adalah blockchain berbasis Rust (konsep diadaptasi dari Dogecoin/Litec
 - **Algoritma Hash:** SHA3-256
 - **Tanda Tangan:** secp256k1-ECDSA
 - **Max Supply:** 28.000.000.000 ZENAC
-- **Reward Awal:** 50 ZENAC
+- **Reward Awal (Subsidy):** 50 ZENAC
 - **Coinbase Maturity:** 100 blok
 - **Waktu Blok:** 15 detik
 - **Penyesuaian Difficulty:** Setiap 69.120 blok
@@ -27,16 +27,17 @@ ZenaChain adalah blockchain berbasis Rust (konsep diadaptasi dari Dogecoin/Litec
    - `consensus_fingerprint` mengikat semua parameter ekonomi.
    - Perubahan aturan konsensus memaksa pembuatan genesis baru (Hard Fork).
 
-2. **Jaringan P2P:**
-   - Transportasi TCP mentah (tanpa libp2p).
-   - Framing ala Bitcoin (magic bytes `0x5a454e41`, checksum double-SHA3-256).
-   - Handshake Version/Verack.
-   - Sinkronisasi headers-first, relay Inv/GetData.
+2. **Jaringan P2P (Berfungsi Penuh):**
+   - Transportasi TCP mentah, framing ala Bitcoin.
+   - Handshake Version/Verack berhasil.
+   - Sinkronisasi headers-first dan relay blok berhasil (Node 2 menerima blok dari Node 1).
+   - **Address Book Optimization:** Hanya menerima alamat dengan port default (8333), memberikan *backoff* (gagal 3x = hapus), dan mencegah spam "Connection refused".
+   - **Self-Connection Detection:** Node mem-ban peer yang mengirim blok duplikat/lama (fitur keamanan).
 
 3. **RPC Server:**
-   - Multi-threaded (setiap koneksi di-handle di thread terpisah).
+   - Multi-threaded.
    - Perintah `stop` langsung menghentikan mining.
-   - RPC: `getinfo`, `getblockchaininfo`, `getblock`, `getbalance`, `sendtoaddress`, `generatetoaddress`, `listunspent`, `getwallet`, `encryptwallet`, `walletpassphrase`, dll.
+   - RPC: `getinfo`, `getblockchaininfo`, `getblock`, `getbalance`, `sendtoaddress`, `generatetoaddress`, `listunspent`, `getwallet`, `encryptwallet`, `walletpassphrase`, `getpeerinfo`, dll.
 
 4. **Dompet:**
    - Dompet multi-alamat (file JSON `wallet.dat`).
@@ -44,43 +45,40 @@ ZenaChain adalah blockchain berbasis Rust (konsep diadaptasi dari Dogecoin/Litec
    - Sesi buka kunci (`walletpassphrase`) menyimpan password di memori.
    - Tidak bisa membuat alamat baru atau mengirim dana jika dompet terkunci.
 
-5. **Mining & Reward:**
-   - `generatetoaddress` sekarang menghitung `total_reward = subsidy + total_fees`.
-   - Menghapus transaksi palsu "NETWORK" dan "MEMPOOL" dari pembuatan blok.
+5. **Mining & Reward (100% Mirip Bitcoin):**
+   - `Block` struct memiliki field terpisah: `subsidy`, `total_fees`, dan `reward` (penjumlahan keduanya).
+   - `generatetoaddress` menghitung `total_fees` dari mempool dan menambahkannya ke `subsidy`.
+   - Aturan validasi `rule_block_subsidy` dan `rule_block_reward` sudah dipindahkan ke `validation.rs`.
+   - Penambang sekarang mendapatkan imbalan dari Subsidy + Fee.
 
-6. **Crate Crypto:**
+6. **Crypto Crate:**
    - Workspace terpisah `crypto/` untuk SHA3-256 dan AES-256-GCM.
-   - Tidak bergantung pada `src/` untuk primitif kriptografi.
 
 ### 🚧 Sedang Dikerjakan / Tugas Berikutnya:
-1. **Pindahkan Logika Reward+Fee ke `validation.rs`:**
-   - Saat ini, logika `reward + fee` ada di `rpc.rs` (untuk pembuatan blok).
-   - Perlu menambahkan field `subsidy` dan `total_fees` ke struct `Block`.
-   - Implementasikan `rule_block_reward` di `validation.rs` untuk memastikan `block.reward == block.subsidy + block.total_fees`.
-   - **Butuh Hard Fork**: Hapus `~/.zenachain`, regenerate genesis, update `EXPECTED_GENESIS_*`.
+1. **Uji Sinkronisasi Transaksi:**
+   - Kirim transaksi di Node A, pastikan Node B menerimanya di mempool (broadcast Inv/Tx).
+   - Pastikan transaksi yang diterima divalidasi dan disimpan ke mempool Node B.
 
-2. **Enkripsi Dompet:**
-   - Dompet tetap terenkripsi di disk setelah `walletpassphrase`.
-   - Jika node restart, dompet terkunci lagi (password hilang dari memori).
+2. **Update Test:**
+   - File test (`src/tests/*.rs`) mungkin perlu disesuaikan karena struktur `Block` berubah (menambahkan `subsidy` dan `total_fees`).
+   - `zenachain-miner.rs` sudah diperbaiki agar memanggil `Block::new_for` dengan 7 argumen.
 
-3. **Uji Sinkronisasi P2P:**
-   - Perlu uji dua node yang saling sinkron blok dan transaksi lewat jaringan.
-   - Pastikan `accept_block` memanggil `chain.adjust_difficulty()`.
-
-4. **Build Gitian:**
+3. **Build Gitian:**
    - `contrib/gitian-descriptors/` perlu diperbarui agar sesuai dengan `Cargo.toml` (versi Rust, dependensi).
 
 ---
 
 ## 3. Bug Diketahui
-- **Saat ini tidak ada.** (Bug terakhir: `salt` berubah saat membuat alamat ketika dompet terenkripsi; SUDAH DIPERBAIKI dengan menolak `getnewwallet` jika dompet terkunci).
+- **Saat ini tidak ada bug fatal.** 
+- **Catatan Penting:** Jika `Cargo.lock` terhapus karena `rm -rf`, jalankan `cargo generate-lockfile` sebelum `make build` (karena flag `--locked` akan error jika file lock tidak ada).
+- **Peer Spam (Solved):** Sebelumnya Node spam "Connection refused" karena menyimpan port acak. Sudah diperbaiki dengan filter port di `network.rs` dan *backoff* di `addr_book.rs`.
 
 ---
 
 ## 4. Cara Melanjutkan di Chat Baru
 Jika chat limit tercapai, salin seluruh `PROGRESS.md` ini dan tempel ke chat baru, lalu katakan:
 
-> *"Lanjut ZenaChain. Baca PROGRESS.md ini. Kita mau kerjain Tugas Berikutnya nomor 1 (pindahin logika reward ke validation.rs)."*
+> *"Lanjut ZenaChain. Baca PROGRESS.md ini. Kita mau kerjain Tugas Berikutnya (Uji Sinkronisasi Transaksi)."*
 
 AI akan memahami konteks dan melanjutkan dari titik terakhir.
 
@@ -90,5 +88,8 @@ AI akan memahami konteks dan melanjutkan dari titik terakhir.
 - **Consensus Fingerprint:** `src/consensus/mod.rs` -> `consensus_fingerprint()`
 - **Genesis:** `src/consensus/genesis.rs` -> `EXPECTED_GENESIS_HASH`, `GENESIS_TIMESTAMP`
 - **Enkripsi Dompet:** `crypto/src/encryption.rs` -> `aes_encrypt`, `aes_decrypt`, `derive_key`
-- **Logika Mining:** `src/rpc.rs` -> `m_generatetoaddress()`
-- **Aturan Validasi:** `src/validation.rs` -> `validate_block()`, `validate_transaction()`
+- **Mining Logic:** `src/rpc.rs` -> `m_generatetoaddress()`
+- **Aturan Validasi:** `src/validation.rs` -> `validate_block()`, `rule_block_subsidy()`, `rule_block_reward()`
+- **Struktur Blok:** `src/block.rs` -> `Block` struct (`subsidy`, `total_fees`, `reward`).
+- **P2P Network:** `src/p2p/network.rs` -> `Network::run()`, `handle_block()`, `handle_message()`.
+- **Address Book:** `src/p2p/addr_book.rs` -> `mark_failed()`, `candidates()`.
