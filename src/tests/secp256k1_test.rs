@@ -4,7 +4,7 @@
 // file LICENSE or https://opensource.org/license/mit.
 
 use zenachain::secp256k1::{address, keypair::KeyPair, sign, verify};
-use zenachain::utils::sha3_256_hex;
+use zenachain_crypto::sha3_256_hex;
 
 #[test]
 fn generate_keypair_has_correct_lengths() {
