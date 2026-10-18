@@ -5,8 +5,8 @@
 
 //! Main network loop for the ZenaChain peer-to-peer layer.
 
-use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::collections::{HashMap, HashSet};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -35,6 +35,7 @@ pub struct PeerInfo {
     pub addr: String,
     pub outbound: bool,
     pub conn_type: String,
+    pub mapped_as: u32,
     pub state: String,
 }
 
@@ -99,6 +100,7 @@ pub struct Network {
     next_feeler_at: Instant,
     peer_registry: PeerRegistry,
     command_rx: mpsc::Receiver<NetworkCommand>,
+    asmap: Vec<bool>,
 }
 
 impl Network {
@@ -117,6 +119,18 @@ impl Network {
             config.ping_interval,
             config.ping_timeout,
         );
+
+        let asmap = match bitcoin_asmap::decode_asmap("asmap.dat") {
+            Ok(map) => {
+                println!("[p2p] loaded ASMap with {} bits", map.len());
+                map
+            }
+            Err(e) => {
+                eprintln!("[p2p] WARNING: failed to load asmap.dat: {}", e);
+                Vec::new()
+            }
+        };
+
         Network {
             config,
             chain,
@@ -130,6 +144,7 @@ impl Network {
             next_feeler_at: Instant::now() + Duration::from_secs(10),
             peer_registry,
             command_rx,
+            asmap,
         }
     }
 
@@ -237,6 +252,7 @@ impl Network {
                 addr: peer.addr.to_string(),
                 outbound: peer.outbound,
                 conn_type: conn_type_str.to_string(),
+                mapped_as: peer.mapped_as,
                 state: format!("{:?}", peer.state),
             });
         }
@@ -245,7 +261,7 @@ impl Network {
     async fn on_tick(&mut self) {
         self.peer_manager.tick();
         self.addr_book.prune(Duration::from_secs(3600));
-        
+
         let chain = self.chain.read().await;
         let height = chain.height();
         drop(chain);
@@ -261,17 +277,42 @@ impl Network {
             return;
         }
 
-        // Priority 1: Fill full-relay slots
-        if self.peer_manager.can_add_outbound_full_relay() {
-            if let Some(addr) = self.addr_book.candidates(Duration::from_secs(60), 1).first() {
-                self.attempt_connect(*addr, ConnectionType::OutboundFullRelay).await;
+        let mut connected_asns = HashSet::new();
+        for peer in self.peer_manager.all_peers() {
+            if peer.is_connected() {
+                connected_asns.insert(peer.mapped_as);
             }
         }
 
-        // Priority 2: Fill block-relay-only slots
+        if self.peer_manager.can_add_outbound_full_relay() {
+            if let Some(addr) = self
+                .addr_book
+                .candidates(Duration::from_secs(60), 10)
+                .iter()
+                .find(|addr| {
+                    let asn = self.ip_to_asn(addr.ip());
+                    !connected_asns.contains(&asn)
+                })
+            {
+                let asn = self.ip_to_asn(addr.ip());
+                self.attempt_connect(*addr, ConnectionType::OutboundFullRelay, asn)
+                    .await;
+            }
+        }
+
         if self.peer_manager.can_add_outbound_block_relay() {
-            if let Some(addr) = self.addr_book.candidates(Duration::from_secs(60), 1).first() {
-                self.attempt_connect(*addr, ConnectionType::OutboundBlockRelayOnly).await;
+            if let Some(addr) = self
+                .addr_book
+                .candidates(Duration::from_secs(60), 10)
+                .iter()
+                .find(|addr| {
+                    let asn = self.ip_to_asn(addr.ip());
+                    !connected_asns.contains(&asn)
+                })
+            {
+                let asn = self.ip_to_asn(addr.ip());
+                self.attempt_connect(*addr, ConnectionType::OutboundBlockRelayOnly, asn)
+                    .await;
             }
         }
 
@@ -282,15 +323,25 @@ impl Network {
         if Instant::now() < self.next_feeler_at {
             return;
         }
-        if let Some(addr) = self.addr_book.candidates(Duration::from_secs(120), 1).first() {
-            println!("[p2p] feeler connection to {}", addr);
-            self.attempt_connect(*addr, ConnectionType::Feeler).await;
+        if let Some(addr) = self
+            .addr_book
+            .candidates(Duration::from_secs(120), 1)
+            .first()
+        {
+            let asn = self.ip_to_asn(addr.ip());
+            println!("[p2p] feeler connection to {} (AS{})", addr, asn);
+            self.attempt_connect(*addr, ConnectionType::Feeler, asn)
+                .await;
         }
         self.next_feeler_at = Instant::now() + self.config.feeler_interval;
     }
 
-    async fn attempt_connect(&mut self, addr: SocketAddr, conn_type: ConnectionType) {
-        // Prevent self-connection
+    async fn attempt_connect(
+        &mut self,
+        addr: SocketAddr,
+        conn_type: ConnectionType,
+        mapped_as: u32,
+    ) {
         if let Some(local) = self.local_addr {
             if local.ip().is_unspecified() {
                 if addr.port() == local.port() {
@@ -305,7 +356,7 @@ impl Network {
         match TcpStream::connect(addr).await {
             Ok(stream) => {
                 let _ = stream.set_nodelay(true);
-                let id = self.peer_manager.add_peer(addr, conn_type);
+                let id = self.peer_manager.add_peer(addr, conn_type, mapped_as);
                 self.connections.insert(
                     id,
                     Connection {
@@ -335,7 +386,8 @@ impl Network {
             return;
         }
         let _ = stream.set_nodelay(true);
-        let id = self.peer_manager.add_peer(addr, ConnectionType::Inbound);
+        let asn = self.ip_to_asn(addr.ip());
+        let id = self.peer_manager.add_peer(addr, ConnectionType::Inbound, asn);
         self.connections.insert(
             id,
             Connection {
@@ -345,7 +397,7 @@ impl Network {
                 write_buf: Vec::new(),
             },
         );
-        println!("[p2p] inbound connection from {}", addr);
+        println!("[p2p] inbound connection from {} (AS{})", addr, asn);
 
         if let Some(peer) = self.peer_manager.get_mut(id) {
             peer.state = PeerState::Handshaking;
@@ -364,12 +416,12 @@ impl Network {
             None => return,
         };
         let chain = self.chain.read().await;
-        
+
         let relay = match peer.conn_type {
             ConnectionType::OutboundBlockRelayOnly | ConnectionType::Feeler => false,
             _ => true,
         };
-        
+
         let msg = handshake::build_version_with_relay(&chain, &peer, local, relay);
         drop(chain);
         self.queue_message(id, &msg);
@@ -526,14 +578,19 @@ impl Network {
                             .get(id)
                             .map(|p| p.conn_type == ConnectionType::Feeler)
                             .unwrap_or(false);
-                        
+
                         if is_feeler {
-                            println!("[p2p] feeler connection to {} successful, disconnecting", 
-                                self.peer_manager.get(id).map(|p| p.addr).unwrap_or_default());
+                            println!(
+                                "[p2p] feeler connection to {} successful, disconnecting",
+                                self.peer_manager
+                                    .get(id)
+                                    .map(|p| p.addr)
+                                    .unwrap_or_default()
+                            );
                             self.disconnect(id, "feeler complete").await;
                             return;
                         }
-                        
+
                         self.peer_manager
                             .push_event(PeerEvent::HandshakeComplete(id));
                     }
@@ -591,10 +648,12 @@ impl Network {
                     } else if inv.inv_type == InvType::Transaction
                         && !self.inv.has_tx(&inv.hash)
                     {
-                        let is_block_relay = self.peer_manager.get(id)
+                        let is_block_relay = self
+                            .peer_manager
+                            .get(id)
                             .map(|p| p.conn_type == ConnectionType::OutboundBlockRelayOnly)
                             .unwrap_or(false);
-                        
+
                         if !is_block_relay {
                             if chain.mempool.iter().any(|t| t.txid == inv.hash) {
                                 self.inv.add_tx(&inv.hash);
@@ -647,13 +706,15 @@ impl Network {
                 self.handle_block(id, b).await;
             }
             Message::Tx(tx) => {
-                let is_block_relay = self.peer_manager.get(id)
+                let is_block_relay = self
+                    .peer_manager
+                    .get(id)
                     .map(|p| p.conn_type == ConnectionType::OutboundBlockRelayOnly)
                     .unwrap_or(false);
                 if is_block_relay {
                     return;
                 }
-                
+
                 let mut chain = self.chain.write().await;
                 if chain.add_transaction(tx.clone()) {
                     self.inv.add_tx(&tx.txid);
@@ -743,7 +804,10 @@ impl Network {
             Err(e) => {
                 drop(chain);
                 if e.contains("does not follow tip") {
-                    println!("[p2p] block from {} does not follow tip, requesting headers", id);
+                    println!(
+                        "[p2p] block from {} does not follow tip, requesting headers",
+                        id
+                    );
                     self.send_getheaders(id).await;
                 } else {
                     self.punish(id, 50, &format!("block rejected: {}", e)).await;
@@ -825,6 +889,44 @@ impl Network {
         drop(chain);
         self.queue_message(id, &Message::GetHeaders(locator));
     }
+
+    fn ip_to_asn(&self, ip: IpAddr) -> u32 {
+        let ip_bits = ip_to_bits(ip);
+        bitcoin_asmap::interpret(&self.asmap, &ip_bits)
+    }
+}
+
+fn ip_to_bits(ip: IpAddr) -> Vec<bool> {
+    let mut bits = vec![false; 128];
+    match ip {
+        IpAddr::V4(v4) => {
+            bits[80] = true;
+            bits[81] = true;
+            bits[82] = true;
+            bits[83] = true;
+            bits[84] = true;
+            bits[85] = true;
+            bits[86] = true;
+            bits[87] = true;
+            bits[88] = true;
+            bits[89] = true;
+            bits[90] = true;
+            bits[91] = true;
+            bits[92] = true;
+            bits[93] = true;
+            bits[94] = true;
+            bits[95] = true;
+            for i in 0..32 {
+                bits[96 + i] = (v4.octets()[i / 8] >> (7 - (i % 8))) & 1 == 1;
+            }
+        }
+        IpAddr::V6(v6) => {
+            for i in 0..128 {
+                bits[i] = (v6.octets()[i / 8] >> (7 - (i % 8))) & 1 == 1;
+            }
+        }
+    }
+    bits
 }
 
 fn build_locator(chain: &Blockchain) -> BlockLocator {
