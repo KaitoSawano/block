@@ -33,14 +33,20 @@ fn main() {
 
         let height = template["height"].as_u64().unwrap_or(0);
         let previous_hash = template["previous_hash"].as_str().unwrap_or("").to_string();
-        let nbits = template["nbits"].as_u64().unwrap_or(0) as u32;
-        
-        // Ambil data dari template RPC (yang sudah dihitung oleh node)
+        let nbits = match template["nbits"].as_u64().and_then(|v| u32::try_from(v).ok()) {
+            Some(v) => v,
+            None => {
+                println!("[miner] invalid nbits in template");
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                continue;
+            }
+        };
+
         let subsidy_satoshi = template["subsidy_satoshi"].as_u64().unwrap_or(0);
         let total_fees_satoshi = template["total_fees_satoshi"].as_u64().unwrap_or(0);
         let reward_satoshi = template["reward_satoshi"].as_u64().unwrap_or(0);
 
-        let mut mempool: Vec<Transaction> =
+        let mempool: Vec<Transaction> =
             serde_json::from_value(template["mempool"].clone()).unwrap_or_default();
 
         let target_address =
@@ -52,17 +58,9 @@ fn main() {
             continue;
         }
 
-        // Tambahkan transaksi MEMPOOL sebagai penanda (opsional, bisa dihapus)
-        mempool.push(Transaction::new_with_inputs(
-            "MEMPOOL",
-            "CreateNewBlock",
-            0,
-            0,
-            Vec::new(),
-            format!("height={} target={}", height, target_address),
-        ));
-
-        // Panggil Block::new_for dengan 7 argumen (termasuk total_fees)
+        // Construct the block from the template. The subsidy and the fees
+        // are taken directly from the template so that they match the
+        // consensus rules enforced by the node.
         let mut block = Block::new_for(
             height,
             previous_hash,
@@ -73,7 +71,6 @@ fn main() {
             target_address.clone(),
         );
 
-        // Pastikan reward di blok sama dengan yang diharapkan (opsional)
         if block.reward != reward_satoshi {
             println!(
                 "[miner] WARNING: reward mismatch. Block reward: {}, Template reward: {}",
