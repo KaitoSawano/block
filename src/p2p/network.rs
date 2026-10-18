@@ -201,7 +201,10 @@ impl Network {
         }
 
         // Attempt to connect to anchors first.
-        for anchor in &self.anchors {
+        // Clone the anchors so that we do not hold an immutable borrow of
+        // self while calling the mutable method attempt_connect.
+        let anchors_to_connect: Vec<Anchor> = self.anchors.clone();
+        for anchor in &anchors_to_connect {
             if !self.banman.is_banned(&anchor.addr) {
                 let asn = self.ip_to_asn(anchor.addr.ip());
                 println!("[p2p] connecting to anchor {}", anchor.addr);
