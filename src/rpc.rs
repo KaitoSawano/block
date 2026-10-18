@@ -905,41 +905,33 @@ impl RpcHandler {
                 break;
             }
 
-            let (next_index, prev_hash, reward, nbits, txs) = {
+            let (next_index, prev_hash, subsidy, nbits, mempool_txs) = {
                 let mut chain = self.state.chain.blocking_write();
                 let prev = chain.chain.last().unwrap().clone();
                 let next_index = prev.index + 1;
-                let reward = Blockchain::calculate_reward(next_index);
+                let subsidy = Blockchain::calculate_reward(next_index);
 
-                if chain.circulating_supply().saturating_add(reward) > consensus::max_supply() {
+                if chain.circulating_supply().saturating_add(subsidy) > consensus::max_supply() {
                     return RpcResponse::err("max supply reached");
                 }
 
-                let mut txs = std::mem::take(&mut chain.mempool);
-                txs.push(Transaction::new(
-                    "NETWORK",
-                    &addr,
-                    consensus::satoshi() / 100,
-                    0,
-                ));
-                txs.push(Transaction::new_with_inputs(
-                    "MEMPOOL",
-                    "CreateNewBlock",
-                    0,
-                    0,
-                    Vec::new(),
-                    format!("height={} target={}", next_index, addr),
-                ));
-
-                (next_index, prev.hash, reward, chain.nbits, txs)
+                // Take the real transactions from the mempool.
+                let txs = std::mem::take(&mut chain.mempool);
+                (next_index, prev.hash, subsidy, chain.nbits, txs)
             };
+
+            // Calculate the total fees from the mempool transactions.
+            let total_fees = mempool_txs.iter().map(|tx| tx.fee).sum::<u64>();
+
+            // The total reward is the block subsidy plus all transaction fees.
+            let total_reward = subsidy.saturating_add(total_fees);
 
             let mut block = crate::block::Block::new_for(
                 next_index,
                 prev_hash,
-                reward,
+                total_reward,
                 nbits,
-                txs,
+                mempool_txs,
                 addr.clone(),
             );
 
