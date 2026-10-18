@@ -209,12 +209,6 @@ impl Block {
         let ts_ok = b.timestamp == genesis::EXPECTED_GENESIS_TIMESTAMP;
         let nonce_ok = b.nonce == genesis::EXPECTED_GENESIS_NONCE;
 
-        // If ZENAC_SKIP_POW is set, we bypass the exact nonce/hash check
-        // because the mining was skipped and the hash/nonce may not match.
-        if std::env::var("ZENAC_SKIP_POW").is_ok() {
-            return b;
-        }
-
         if hash_ok && merkle_ok && ts_ok && nonce_ok {
             return b;
         }
