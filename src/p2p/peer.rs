@@ -34,6 +34,7 @@ pub struct Peer {
     pub state: PeerState,
     pub conn_type: ConnectionType,
     pub outbound: bool,
+    pub mapped_as: u32, // <-- Tambahan: ASN dari peer ini
     pub local_nonce: u64,
     pub remote_nonce: u64,
     pub protocol_version: u32,
@@ -49,7 +50,7 @@ pub struct Peer {
 }
 
 impl Peer {
-    pub fn new(id: u64, addr: SocketAddr, conn_type: ConnectionType) -> Self {
+    pub fn new(id: u64, addr: SocketAddr, conn_type: ConnectionType, mapped_as: u32) -> Self {
         let now = Instant::now();
         let outbound = matches!(
             conn_type,
@@ -67,6 +68,7 @@ impl Peer {
             },
             conn_type,
             outbound,
+            mapped_as,
             local_nonce: rand_nonce(),
             remote_nonce: 0,
             protocol_version: 0,
@@ -82,6 +84,8 @@ impl Peer {
         }
     }
 
+    // ... (sisa method seperti is_connected, add_misbehavior, dll tetap sama)
+    
     pub fn is_connected(&self) -> bool {
         self.state == PeerState::Connected
     }
