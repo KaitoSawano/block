@@ -10,17 +10,26 @@ pub const GENESIS_SECRET: &str = "ID Today 15/Oct/2026";
 pub const GENESIS_OUTPUT_SCRIPT: &str =
     "OP_DUP OP_HASH160 ZenaChainGenesisOutput OP_EQUALVERIFY OP_CHECKSIG";
 
+/// The timestamp of the genesis block. This is the exact time the block was mined.
+/// It is locked forever and must not change.
 pub const GENESIS_TIMESTAMP: u128 = 1792303198445;
 
+/// The expected hash of the genesis block.
+/// TODO: Update this value after running `cargo run --release --bin zenachain-genesis`.
 pub const EXPECTED_GENESIS_HASH: &str =
-    "000000fc1d6cfc8af9462cbb4bc6326c17a34331c179c8dacb3819388106bacb";
+    "0000000000000000000000000000000000000000000000000000000000000000";
 
+/// The expected merkle root of the genesis block.
+/// TODO: Update this value after running `cargo run --release --bin zenachain-genesis`.
 pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =
-    "a0d24005775f3cd42a6f7d4a03f6d9d650ef814a2d3bc73833a57d1749c3cd6c";
+    "0000000000000000000000000000000000000000000000000000000000000000";
 
+/// The expected timestamp of the genesis block (must match GENESIS_TIMESTAMP).
 pub const EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198445;
 
-pub const EXPECTED_GENESIS_NONCE: u64 = 100948;
+/// The expected nonce of the genesis block.
+/// TODO: Update this value after running `cargo run --release --bin zenachain-genesis`.
+pub const EXPECTED_GENESIS_NONCE: u64 = 0;
 
 pub fn genesis_message() -> &'static str {
     GENESIS_MESSAGE
