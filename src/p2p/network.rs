@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -28,6 +28,17 @@ use crate::p2p::peers;
 use crate::storage;
 use crate::utils::{format_datetime, now_millis};
 use crate::validation;
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PeerInfo {
+    pub id: u64,
+    pub addr: String,
+    pub outbound: bool,
+    pub state: String,
+    pub last_recv: u128,
+}
+
+pub type PeerRegistry = Arc<Mutex<Vec<PeerInfo>>>;
 
 #[derive(Debug, Clone)]
 pub struct NetworkConfig {
@@ -75,10 +86,15 @@ pub struct Network {
     listener: Option<TcpListener>,
     local_addr: Option<SocketAddr>,
     next_connect_at: Instant,
+    peer_registry: PeerRegistry,
 }
 
 impl Network {
-    pub fn new(config: NetworkConfig, chain: Arc<RwLock<Blockchain>>) -> Self {
+    pub fn new(
+        config: NetworkConfig,
+        chain: Arc<RwLock<Blockchain>>,
+        peer_registry: PeerRegistry,
+    ) -> Self {
         let peer_manager = PeerManager::new(
             config.max_peers,
             config.max_outbound,
@@ -97,6 +113,7 @@ impl Network {
             listener: None,
             local_addr: None,
             next_connect_at: Instant::now(),
+            peer_registry,
         }
     }
 
@@ -158,6 +175,21 @@ impl Network {
 
             self.process_connections().await;
             self.process_events().await;
+            self.update_registry();
+        }
+    }
+
+    fn update_registry(&self) {
+        let mut reg = self.peer_registry.lock().unwrap();
+        reg.clear();
+        for peer in self.peer_manager.all_peers() {
+            reg.push(PeerInfo {
+                id: peer.id,
+                addr: peer.addr.to_string(),
+                outbound: peer.outbound,
+                state: format!("{:?}", peer.state),
+                last_recv: 0, // Bisa diisi timestamp jika perlu
+            });
         }
     }
 
@@ -207,10 +239,7 @@ impl Network {
                 }
                 Err(e) => {
                     eprintln!("[p2p] failed to connect to {}: {}", addr, e);
-                    if self.addr_book.mark_failed(&addr) {
-                        // Remove if failures >= 3 (we just let it be filtered out
-                        // by candidates, so no explicit remove needed)
-                    }
+                    let _ = self.addr_book.mark_failed(&addr);
                 }
             }
         }
@@ -437,12 +466,9 @@ impl Network {
                 let mut count = 0;
                 for na in addrs {
                     let sa = na.to_socket();
-
-                    // Only accept addresses on the default P2P port.
                     if sa.port() != crate::blockchain::network::DEFAULT_PORT {
                         continue;
                     }
-
                     if self.addr_book.add(sa) {
                         count += 1;
                     }
@@ -726,9 +752,10 @@ fn build_headers_response(chain: &Blockchain, loc: &BlockLocator) -> Vec<Block> 
 pub fn spawn(
     config: NetworkConfig,
     chain: Arc<RwLock<Blockchain>>,
+    peer_registry: PeerRegistry,
 ) -> tokio::task::JoinHandle<Result<(), String>> {
     tokio::spawn(async move {
-        let mut net = Network::new(config, chain);
+        let mut net = Network::new(config, chain, peer_registry);
         net.run().await
     })
 }
