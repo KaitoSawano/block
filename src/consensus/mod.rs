@@ -16,7 +16,6 @@ use crate::utils::sha3_256_hex;
 /// digest of all consensus parameters, and it binds the genesis block to
 /// the current parameter set.
 pub fn consensus_fingerprint() -> String {
-    // Tepat 27 placeholder {} untuk 27 argumen di bawahnya.
     let payload = format!(
         "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         spec::HASH_ALGO,
