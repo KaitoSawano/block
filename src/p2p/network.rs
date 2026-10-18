@@ -228,6 +228,9 @@ impl Network {
     async fn handle_command(&mut self, cmd: NetworkCommand) {
         match cmd {
             NetworkCommand::BroadcastBlock(hash) => {
+                // Mark the block as known before broadcasting so that we
+                // do not request it back from a peer that relays it to us.
+                self.inv.add_block(&hash);
                 println!("[p2p] broadcasting block {}", hash);
                 self.broadcast_inv_to_full_relay(&[Inventory {
                     inv_type: InvType::Block,
@@ -235,6 +238,8 @@ impl Network {
                 }]);
             }
             NetworkCommand::BroadcastTransaction(txid) => {
+                // Mark the transaction as known for the same reason.
+                self.inv.add_tx(&txid);
                 self.broadcast_inv_to_full_relay(&[Inventory {
                     inv_type: InvType::Transaction,
                     hash: txid,
@@ -337,6 +342,20 @@ impl Network {
             .candidates(Duration::from_secs(120), 1)
             .first()
         {
+            // Skip a feeler connection to ourselves. This mirrors the
+            // self-connection check that Bitcoin Core performs before
+            // opening an outbound connection.
+            if let Some(local) = self.local_addr {
+                if local.ip().is_unspecified() {
+                    if addr.port() == local.port() {
+                        self.next_feeler_at = Instant::now() + self.config.feeler_interval;
+                        return;
+                    }
+                } else if addr.ip() == local.ip() && addr.port() == local.port() {
+                    self.next_feeler_at = Instant::now() + self.config.feeler_interval;
+                    return;
+                }
+            }
             let asn = self.ip_to_asn(addr.ip());
             println!("[p2p] feeler connection to {} (AS{})", addr, asn);
             self.attempt_connect(*addr, ConnectionType::Feeler, asn)
@@ -468,8 +487,6 @@ impl Network {
                 );
                 conn.write_buf.clear();
                 conn.read_buf.clear();
-                // Mark the connection for removal on the next iteration.
-                // The network loop will detect the closed stream.
                 return;
             }
             conn.write_buf.extend_from_slice(&buf);
@@ -532,8 +549,6 @@ impl Network {
         let data = std::mem::take(&mut conn.write_buf);
         if let Err(e) = conn.stream.write_all(&data).await {
             eprintln!("[p2p] write failed to {}: {}", conn.addr, e);
-            // On write failure, the connection is no longer usable.
-            // Disconnect the peer to avoid accumulating buffered data.
             self.disconnect(id, "write error").await;
         }
     }
@@ -614,9 +629,6 @@ impl Network {
                 };
                 match result {
                     Ok(true) => {
-                        // Fetch the peer's connection type and address in a
-                        // single lookup. SocketAddr does not implement
-                        // Default, so unwrap_or_default cannot be used.
                         let (is_feeler, peer_addr) = match self.peer_manager.get(id) {
                             Some(p) => (p.conn_type == ConnectionType::Feeler, p.addr),
                             None => (false, "0.0.0.0:0".parse().unwrap()),
@@ -683,7 +695,14 @@ impl Network {
                 let mut to_request = Vec::new();
                 let chain = self.chain.read().await;
                 for inv in &new_items {
-                    if inv.inv_type == InvType::Block && !self.inv.has_block(&inv.hash) {
+                    if inv.inv_type == InvType::Block {
+                        // Skip blocks that are already in our chain and
+                        // mark them as known so that we do not request them
+                        // again from another peer.
+                        if chain.chain.iter().any(|b| b.hash == inv.hash) {
+                            self.inv.add_block(&inv.hash);
+                            continue;
+                        }
                         to_request.push(inv.clone());
                     } else if inv.inv_type == InvType::Transaction
                         && !self.inv.has_tx(&inv.hash)
@@ -709,9 +728,6 @@ impl Network {
                 }
             }
             Message::GetData(items) => {
-                // Respond to every requested inventory item. The previous
-                // implementation returned after the first item, which
-                // caused synchronization to stall.
                 let chain = self.chain.read().await;
                 let mut to_send: Vec<Message> = Vec::new();
                 for inv in items {
@@ -759,11 +775,6 @@ impl Network {
                     return;
                 }
 
-                // Reject transactions that use special sender identities.
-                // These identities are reserved for transactions created
-                // internally by the node (genesis coinbase, block coinbase)
-                // and must never be accepted from the network. Accepting
-                // them would allow a peer to create coins out of nothing.
                 if validation::is_special_tx(&tx) {
                     self.punish(id, 50, "special transaction from peer").await;
                     return;
@@ -806,7 +817,6 @@ impl Network {
         if headers.is_empty() {
             return;
         }
-        // Reject oversized header batches to prevent CPU exhaustion.
         if headers.len() > peers::HEADERS_PER_REQUEST as usize {
             self.punish(id, 20, "too many headers in one message").await;
             return;
@@ -824,8 +834,6 @@ impl Network {
         }
         let mut to_request = Vec::new();
         for h in &headers {
-            // Validate proof of work only. The subsidy, fees, and coinbase
-            // fields are validated when the full block is received.
             if validation::rule_block_pow(h).is_err() {
                 drop(chain);
                 self.punish(id, 50, "invalid header proof of work").await;
@@ -859,6 +867,12 @@ impl Network {
             }
             Err(e) => {
                 drop(chain);
+                // A block that is already in our chain is not an error.
+                // Mark it as known and do not request headers.
+                if e.contains("already exists") {
+                    self.inv.add_block(&block.hash);
+                    return;
+                }
                 if e.contains("does not follow tip") {
                     println!(
                         "[p2p] block from {} does not follow tip, requesting headers",
