@@ -17,6 +17,8 @@ use tokio::sync::{mpsc, RwLock};
 use crate::block::Block;
 use crate::blockchain::Blockchain;
 use crate::p2p::addr_book::AddrBook;
+use crate::p2p::anchors::{self, Anchor, MAX_BLOCK_RELAY_ONLY_ANCHORS};
+use crate::p2p::banman::BanMan;
 use crate::p2p::dns_seed;
 use crate::p2p::framing::{read_message, write_message};
 use crate::p2p::handshake;
@@ -109,6 +111,11 @@ pub struct Network {
     peer_registry: PeerRegistry,
     command_rx: mpsc::Receiver<NetworkCommand>,
     asmap: HashMap<String, u32>,
+    banman: BanMan,
+    anchors: Vec<Anchor>,
+    /// Current block-relay-only outbound peers, used to update anchors
+    /// on clean shutdown.
+    block_relay_peers: Vec<SocketAddr>,
 }
 
 impl Network {
@@ -135,6 +142,21 @@ impl Network {
             });
         println!("[p2p] loaded custom ASMap with {} entries", asmap.len());
 
+        // Load anchors from disk. These are tried for connection before
+        // any other outbound peers.
+        let anchors = anchors::load_anchors();
+        if !anchors.is_empty() {
+            println!(
+                "[p2p] loaded {} anchor(s) from {}",
+                anchors.len(),
+                anchors::ANCHORS_DATABASE_FILENAME
+            );
+        }
+        // Delete the anchors file after loading so that an unclean
+        // shutdown does not cause reconnection to a potentially
+        // malicious anchor.
+        anchors::delete_anchors_file();
+
         Network {
             config,
             chain,
@@ -149,6 +171,9 @@ impl Network {
             peer_registry,
             command_rx,
             asmap,
+            banman: BanMan::new(),
+            anchors,
+            block_relay_peers: Vec::new(),
         }
     }
 
@@ -172,6 +197,16 @@ impl Network {
             let n = self.addr_book.add_many(&seeds);
             if n > 0 {
                 println!("[p2p] {} peers discovered from DNS seeds", n);
+            }
+        }
+
+        // Attempt to connect to anchors first.
+        for anchor in &self.anchors {
+            if !self.banman.is_banned(&anchor.addr) {
+                let asn = self.ip_to_asn(anchor.addr.ip());
+                println!("[p2p] connecting to anchor {}", anchor.addr);
+                self.attempt_connect(anchor.addr, ConnectionType::OutboundBlockRelayOnly, asn)
+                    .await;
             }
         }
 
@@ -222,7 +257,28 @@ impl Network {
             self.update_registry();
         }
 
+        // Clean shutdown: persist anchors and ban list.
+        self.save_anchors_on_shutdown();
+        if let Err(e) = self.banman.dump_banlist() {
+            eprintln!("[p2p] failed to dump banlist: {}", e);
+        }
+
         Ok(())
+    }
+
+    /// Save the current block-relay-only outbound peers as anchors.
+    fn save_anchors_on_shutdown(&self) {
+        let anchors: Vec<Anchor> = self
+            .block_relay_peers
+            .iter()
+            .take(MAX_BLOCK_RELAY_ONLY_ANCHORS)
+            .map(|addr| Anchor { addr: *addr })
+            .collect();
+        if let Err(e) = anchors::save_anchors(&anchors) {
+            eprintln!("[p2p] failed to save anchors: {}", e);
+        } else if !anchors.is_empty() {
+            println!("[p2p] saved {} anchor(s)", anchors.len());
+        }
     }
 
     async fn handle_command(&mut self, cmd: NetworkCommand) {
@@ -304,6 +360,10 @@ impl Network {
                 .candidates(Duration::from_secs(60), 10)
                 .iter()
                 .find(|addr| {
+                    // Skip banned and discouraged addresses.
+                    if self.banman.is_banned(addr) || self.banman.is_discouraged(&addr.ip()) {
+                        return false;
+                    }
                     let asn = self.ip_to_asn(addr.ip());
                     !connected_asns.contains(&asn)
                 })
@@ -320,6 +380,9 @@ impl Network {
                 .candidates(Duration::from_secs(60), 10)
                 .iter()
                 .find(|addr| {
+                    if self.banman.is_banned(addr) || self.banman.is_discouraged(&addr.ip()) {
+                        return false;
+                    }
                     let asn = self.ip_to_asn(addr.ip());
                     !connected_asns.contains(&asn)
                 })
@@ -337,14 +400,23 @@ impl Network {
         if Instant::now() < self.next_feeler_at {
             return;
         }
+        let connected_addrs: HashSet<SocketAddr> = self
+            .peer_manager
+            .all_peers()
+            .iter()
+            .filter(|p| p.is_connected())
+            .map(|p| p.addr)
+            .collect();
+
         if let Some(addr) = self
             .addr_book
             .candidates(Duration::from_secs(120), 1)
             .first()
         {
-            // Skip a feeler connection to ourselves. This mirrors the
-            // self-connection check that Bitcoin Core performs before
-            // opening an outbound connection.
+            if self.banman.is_banned(addr) || self.banman.is_discouraged(&addr.ip()) {
+                self.next_feeler_at = Instant::now() + self.config.feeler_interval;
+                return;
+            }
             if let Some(local) = self.local_addr {
                 if local.ip().is_unspecified() {
                     if addr.port() == local.port() {
@@ -355,6 +427,10 @@ impl Network {
                     self.next_feeler_at = Instant::now() + self.config.feeler_interval;
                     return;
                 }
+            }
+            if connected_addrs.contains(addr) {
+                self.next_feeler_at = Instant::now() + self.config.feeler_interval;
+                return;
             }
             let asn = self.ip_to_asn(addr.ip());
             println!("[p2p] feeler connection to {} (AS{})", addr, asn);
@@ -370,6 +446,9 @@ impl Network {
         conn_type: ConnectionType,
         mapped_as: u32,
     ) {
+        if self.banman.is_banned(&addr) {
+            return;
+        }
         if let Some(local) = self.local_addr {
             if local.ip().is_unspecified() {
                 if addr.port() == local.port() {
@@ -405,6 +484,14 @@ impl Network {
                     peer.state = PeerState::Handshaking;
                 }
 
+                // Track block-relay-only peers for anchor persistence.
+                if conn_type == ConnectionType::OutboundBlockRelayOnly {
+                    self.block_relay_peers.push(addr);
+                    if self.block_relay_peers.len() > MAX_BLOCK_RELAY_ONLY_ANCHORS {
+                        self.block_relay_peers.remove(0);
+                    }
+                }
+
                 self.send_version(id).await;
             }
             Err(e) => {
@@ -415,6 +502,10 @@ impl Network {
     }
 
     async fn on_inbound(&mut self, stream: TcpStream, addr: SocketAddr) {
+        if self.banman.is_banned(&addr) {
+            eprintln!("[p2p] rejecting inbound from banned address {}", addr);
+            return;
+        }
         if !self.peer_manager.can_accept_inbound() {
             eprintln!("[p2p] rejecting inbound {}: peer limit reached", addr);
             return;
@@ -728,6 +819,7 @@ impl Network {
                 }
             }
             Message::GetData(items) => {
+                // Respond to every requested inventory item.
                 let chain = self.chain.read().await;
                 let mut to_send: Vec<Message> = Vec::new();
                 for inv in items {
@@ -775,6 +867,11 @@ impl Network {
                     return;
                 }
 
+                // Reject transactions that use special sender identities.
+                // These identities are reserved for transactions created
+                // internally by the node (genesis coinbase, block coinbase)
+                // and must never be accepted from the network. Accepting
+                // them would allow a peer to create coins out of nothing.
                 if validation::is_special_tx(&tx) {
                     self.punish(id, 50, "special transaction from peer").await;
                     return;
@@ -817,6 +914,7 @@ impl Network {
         if headers.is_empty() {
             return;
         }
+        // Reject oversized header batches to prevent CPU exhaustion.
         if headers.len() > peers::HEADERS_PER_REQUEST as usize {
             self.punish(id, 20, "too many headers in one message").await;
             return;
@@ -834,6 +932,8 @@ impl Network {
         }
         let mut to_request = Vec::new();
         for h in &headers {
+            // Validate proof of work only. The subsidy, fees, and coinbase
+            // fields are validated when the full block is received.
             if validation::rule_block_pow(h).is_err() {
                 drop(chain);
                 self.punish(id, 50, "invalid header proof of work").await;
@@ -908,18 +1008,15 @@ impl Network {
         }
     }
 
-    async fn punish(&mut self, id: u64, score: u32, reason: &str) {
-        let ban = {
-            let peer = match self.peer_manager.get_mut(id) {
-                Some(p) => p,
-                None => return,
-            };
-            peer.add_misbehavior(score)
+    async fn punish(&mut self, id: u64, _score: u32, reason: &str) {
+        // Bitcoin Core v28+ discourages a peer immediately on misbehavior
+        // rather than accumulating a ban score.
+        let peer_ip = match self.peer_manager.get(id) {
+            Some(p) => p.addr.ip(),
+            None => return,
         };
-        if ban {
-            self.peer_manager.ban(id, reason);
-            self.disconnect(id, reason).await;
-        }
+        self.banman.discourage(peer_ip);
+        self.disconnect(id, reason).await;
     }
 
     async fn disconnect(&mut self, id: u64, reason: &str) {
