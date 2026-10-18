@@ -47,6 +47,8 @@ pub mod checkpoint {
 }
 
 pub mod network {
+    /// Magic bytes for ZenaChain: "ZENA" in ASCII hexadecimal.
+    /// This value replaces the Bitcoin magic (0xf9beb4d9) to avoid conflicts.
     pub const NETWORK_MAGIC: [u8; 4] = [0x5a, 0x45, 0x4e, 0x41];
     pub const NETWORK_NAME: &str = "main";
     pub const DEFAULT_PORT: u16 = 8333;
@@ -67,6 +69,8 @@ pub use consensus::genesis_coinbase_txid;
 pub use genesis::genesis_message;
 pub use genesis::genesis_output_script;
 pub use genesis::genesis_secret;
+pub use genesis::genesis_timestamp;
+pub use network::DEFAULT_PORT;
 pub use spec::coin_name;
 pub use spec::decimals;
 pub use spec::difficulty_adjust_interval;
@@ -153,14 +157,24 @@ impl Blockchain {
     pub fn mine_pending(&mut self) -> Result<u64, String> {
         let prev = self.chain.last().unwrap().clone();
         let next_index = prev.index + 1;
-        let reward = Self::calculate_reward(next_index);
+        let subsidy = Self::calculate_reward(next_index);
+        let total_fees: u64 = self.mempool.iter().map(|tx| tx.fee).sum();
+        let reward = subsidy.saturating_add(total_fees);
 
         if self.circulating_supply().saturating_add(reward) > spec::MAX_SUPPLY {
             return Err("max supply reached".into());
         }
 
         let txs = std::mem::take(&mut self.mempool);
-        let mut new_block = Block::new(next_index, prev.hash.clone(), reward, self.nbits, txs);
+        let mut new_block = Block::new_for(
+            next_index,
+            prev.hash.clone(),
+            subsidy,
+            total_fees,
+            self.nbits,
+            txs,
+            String::new(),
+        );
         if !pow::mine(&mut new_block, self.nbits) {
             return Err("mining failed: nonce exhausted".into());
         }
