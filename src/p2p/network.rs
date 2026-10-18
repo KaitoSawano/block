@@ -22,6 +22,7 @@ use crate::p2p::framing::{read_message, write_message};
 use crate::p2p::handshake;
 use crate::p2p::inv::InventoryManager;
 use crate::p2p::message::{BlockLocator, Inventory, InvType, Message};
+use crate::p2p::peer::PeerState;
 use crate::p2p::peer_manager::{PeerEvent, PeerManager};
 use crate::p2p::peers;
 use crate::storage;
@@ -197,6 +198,12 @@ impl Network {
                         },
                     );
                     println!("[p2p] outbound connection to {}", addr);
+                    
+                    // Set state to Handshaking BEFORE sending version
+                    if let Some(peer) = self.peer_manager.get_mut(id) {
+                        peer.state = PeerState::Handshaking;
+                    }
+                    
                     self.send_version(id).await;
                 }
                 Err(e) => {
@@ -225,6 +232,12 @@ impl Network {
             },
         );
         println!("[p2p] inbound connection from {}", addr);
+        
+        // Set state to Handshaking BEFORE sending version
+        if let Some(peer) = self.peer_manager.get_mut(id) {
+            peer.state = PeerState::Handshaking;
+        }
+        
         self.send_version(id).await;
     }
 
@@ -549,9 +562,9 @@ impl Network {
                 self.punish(id, 50, "invalid header proof of work").await;
                 return;
             }
-            if validation::rule_block_reward(h).is_err() {
+            if validation::rule_block_subsidy(h).is_err() {
                 drop(chain);
-                self.punish(id, 50, "invalid header reward").await;
+                self.punish(id, 50, "invalid header subsidy").await;
                 return;
             }
             if !self.inv.has_block(&h.hash) {
