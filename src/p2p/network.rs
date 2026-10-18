@@ -205,14 +205,12 @@ impl Network {
         match cmd {
             NetworkCommand::BroadcastBlock(hash) => {
                 println!("[p2p] broadcasting block {}", hash);
-                // Only send to full-relay peers
                 self.broadcast_inv_to_full_relay(&[Inventory {
                     inv_type: InvType::Block,
                     hash,
                 }]);
             }
             NetworkCommand::BroadcastTransaction(txid) => {
-                // Only send to full-relay peers
                 self.broadcast_inv_to_full_relay(&[Inventory {
                     inv_type: InvType::Transaction,
                     hash: txid,
@@ -367,7 +365,6 @@ impl Network {
         };
         let chain = self.chain.read().await;
         
-        // For block-relay-only and feeler, set relay = false
         let relay = match peer.conn_type {
             ConnectionType::OutboundBlockRelayOnly | ConnectionType::Feeler => false,
             _ => true,
@@ -524,7 +521,6 @@ impl Network {
                 };
                 match result {
                     Ok(true) => {
-                        // If this is a feeler connection, disconnect immediately
                         let is_feeler = self
                             .peer_manager
                             .get(id)
@@ -595,7 +591,6 @@ impl Network {
                     } else if inv.inv_type == InvType::Transaction
                         && !self.inv.has_tx(&inv.hash)
                     {
-                        // Ignore transactions from block-relay-only peers
                         let is_block_relay = self.peer_manager.get(id)
                             .map(|p| p.conn_type == ConnectionType::OutboundBlockRelayOnly)
                             .unwrap_or(false);
@@ -652,7 +647,6 @@ impl Network {
                 self.handle_block(id, b).await;
             }
             Message::Tx(tx) => {
-                // Ignore transactions from block-relay-only peers
                 let is_block_relay = self.peer_manager.get(id)
                     .map(|p| p.conn_type == ConnectionType::OutboundBlockRelayOnly)
                     .unwrap_or(false);
