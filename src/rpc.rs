@@ -1144,6 +1144,11 @@ fn m_importprivkey(req: &RpcRequest) -> RpcResponse {
         salt: String::new(),
         nonce: String::new(),
     });
+
+    // PERBAIKAN: Tolak import jika dompet terkunci
+    if w.encrypted {
+        return RpcResponse::err("wallet is encrypted. Use walletpassphrase to unlock it first.");
+    }
     
     if w.get_entry(&entry.address).is_none() {
         w.entries.push(entry.clone());
@@ -1170,6 +1175,11 @@ fn m_getnewwallet() -> RpcResponse {
         salt: String::new(),
         nonce: String::new(),
     });
+
+    // PERBAIKAN: Tolak buat alamat baru jika dompet terkunci
+    if w.encrypted {
+        return RpcResponse::err("wallet is encrypted. Use walletpassphrase to unlock it first.");
+    }
     
     let addr = w.add_new_address("default".to_string());
     let entry = w.get_entry(&addr).unwrap().clone();
