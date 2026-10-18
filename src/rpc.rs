@@ -253,6 +253,8 @@ impl RpcHandler {
             "dumpprivkey" => m_dumpprivkey(req),
             "importprivkey" => m_importprivkey(req),
             "getnewwallet" => m_getnewwallet(),
+            "encryptwallet" => m_encryptwallet(req),
+            "walletpassphrase" => m_walletpassphrase(req),
             "getaddressinfo" => m_getaddressinfo(req),
             "setlabel" => m_setlabel(req),
             "backupwallet" => m_backupwallet(req),
@@ -1138,6 +1140,9 @@ fn m_importprivkey(req: &RpcRequest) -> RpcResponse {
     let mut w = Wallet::load_default().unwrap_or_else(|_| Wallet {
         entries: Vec::new(),
         created_at: crate::utils::now_millis(),
+        encrypted: false,
+        salt: String::new(),
+        nonce: String::new(),
     });
     
     if w.get_entry(&entry.address).is_none() {
@@ -1161,6 +1166,9 @@ fn m_getnewwallet() -> RpcResponse {
     let mut w = Wallet::load_default().unwrap_or_else(|_| Wallet {
         entries: Vec::new(),
         created_at: crate::utils::now_millis(),
+        encrypted: false,
+        salt: String::new(),
+        nonce: String::new(),
     });
     
     let addr = w.add_new_address("default".to_string());
@@ -1174,6 +1182,49 @@ fn m_getnewwallet() -> RpcResponse {
             "created_at": entry.created_at,
         })),
         Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
+    }
+}
+
+fn m_encryptwallet(req: &RpcRequest) -> RpcResponse {
+    let pass = match req.params.first().and_then(|v| v.as_str()) {
+        Some(p) => p.to_string(),
+        None => return RpcResponse::err("encryptwallet requires a password"),
+    };
+
+    let mut w = match Wallet::load_default() {
+        Ok(w) => w,
+        Err(_) => return RpcResponse::err("wallet not found"),
+    };
+
+    if let Err(e) = w.encrypt(&pass) {
+        return RpcResponse::err(&format!("failed to encrypt wallet: {}", e));
+    }
+
+    match w.save_default() {
+        Ok(_) => RpcResponse::ok(json!({
+            "message": "wallet encrypted successfully",
+        })),
+        Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
+    }
+}
+
+fn m_walletpassphrase(req: &RpcRequest) -> RpcResponse {
+    let pass = match req.params.first().and_then(|v| v.as_str()) {
+        Some(p) => p.to_string(),
+        None => return RpcResponse::err("walletpassphrase requires a password"),
+    };
+
+    let w = match Wallet::load_default() {
+        Ok(w) => w,
+        Err(_) => return RpcResponse::err("wallet not found"),
+    };
+
+    match w.decrypt(&pass) {
+        Ok(_) => RpcResponse::ok(json!({
+            "message": "wallet decrypted successfully",
+            "addresses": w.entries.len(),
+        })),
+        Err(e) => RpcResponse::err(&format!("failed to decrypt wallet: {}", e)),
     }
 }
 
