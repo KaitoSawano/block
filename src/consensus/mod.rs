@@ -10,7 +10,7 @@ pub mod pow;
 pub mod rules;
 pub mod spec;
 
-use crate::utils::sha3_256_hex;
+use zenachain_crypto::sha3_256_hex;
 
 /// Compute the consensus fingerprint. The fingerprint is the SHA3-256
 /// digest of all consensus parameters, and it binds the genesis block to

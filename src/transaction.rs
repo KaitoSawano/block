@@ -5,7 +5,7 @@
 
 //! Transaction structure and signature operations.
 
-use crate::utils::sha3_256_hex;
+use zenachain_crypto::sha3_256_hex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

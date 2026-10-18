@@ -5,7 +5,7 @@
 
 //! Address derivation for ZenaChain.
 
-use crate::utils::sha3_256_hex;
+use zenachain_crypto::sha3_256_hex;
 
 use super::PUBLIC_KEY_SIZE;
 

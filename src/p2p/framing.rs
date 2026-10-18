@@ -12,7 +12,7 @@
 //! the analogue of Bitcoin's double-SHA256 checksum.
 
 use crate::blockchain::network::NETWORK_MAGIC;
-use crate::utils::sha3_256_hex;
+use zenachain_crypto::sha3_256_hex;
 use std::io::{self, Read, Write};
 
 pub const COMMAND_LEN: usize = 12;
