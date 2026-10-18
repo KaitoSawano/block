@@ -140,15 +140,12 @@ impl Block {
         b
     }
 
-    /// Compute the genesis block without verifying the expected constants.
     pub fn genesis_unchecked() -> Self {
         Self::genesis_mined()
     }
 
-    /// Mine the genesis block using the genesis consensus parameters.
     fn genesis_mined() -> Self {
-        // CRITICAL FIX: Use the hardcoded timestamp from genesis.rs, NOT now_millis().
-        // This ensures the genesis block is deterministic and never changes.
+        // Use the hardcoded timestamp from genesis.rs
         let ts = genesis::GENESIS_TIMESTAMP;
         let coinbase_txid = blockchain::genesis_coinbase_txid();
         let genesis_output_script = genesis::GENESIS_OUTPUT_SCRIPT.to_string();
@@ -193,10 +190,6 @@ impl Block {
         b
     }
 
-    /// Return the genesis block. This function verifies that the computed
-    /// block matches the expected constants in `consensus::genesis`. If the
-    /// constants do not match, the function prints the new values and
-    /// terminates the process.
     pub fn genesis() -> Self {
         let b = Self::genesis_mined();
 
