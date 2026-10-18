@@ -114,7 +114,7 @@ struct RpcState {
     interrupt: Arc<AtomicBool>,
     rpc_user: String,
     rpc_password: String,
-    wallet_password: Arc<RwLock<Option<String>>>, // <-- Menyimpan password di memori
+    wallet_password: Arc<RwLock<Option<String>>>,
 }
 
 pub struct RpcServer {
@@ -254,16 +254,16 @@ impl RpcHandler {
             "getlistwallet" => m_getlistwallet(self.state.chain.clone()),
             "dumpprivkey" => m_dumpprivkey(req),
             "importprivkey" => m_importprivkey(req),
-            "getnewwallet" => self.m_getnewwallet(),       // <-- Panggil method self
+            "getnewwallet" => self.m_getnewwallet(),
             "encryptwallet" => m_encryptwallet(req),
-            "walletpassphrase" => self.m_walletpassphrase(req), // <-- Panggil method self
+            "walletpassphrase" => self.m_walletpassphrase(req),
             "getaddressinfo" => m_getaddressinfo(req),
             "setlabel" => m_setlabel(req),
             "backupwallet" => m_backupwallet(req),
             "getaddtowallet" => m_getaddtowallet(),
             "getaddtoaddress" => m_getaddtoaddress(req),
             "generatetoaddress" => self.m_generatetoaddress(req),
-            "sendtoaddress" => self.m_sendtoaddress(req),  // <-- Panggil method self
+            "sendtoaddress" => self.m_sendtoaddress(req),
             "stop" => self.m_stop(),
             "getrawtransaction" => self.m_getrawtransaction(req),
             "decoderawtransaction" => self.m_decoderawtransaction(req),
@@ -1037,6 +1037,16 @@ impl RpcHandler {
         let txid = tx.txid.clone();
         chain.mempool.push(tx);
 
+        // Log the transaction into the mempool.
+        println!(
+            "[mempool] Accepted transaction {} from {} to {} amount={} fee={}",
+            txid,
+            entry.address,
+            to,
+            to_coin(amount_sat),
+            to_coin(DEFAULT_FEE_SATOSHI)
+        );
+
         if let Err(e) = storage::save_chain(&chain) {
             return RpcResponse::err(&format!("failed to save chain: {}", e));
         }
@@ -1082,7 +1092,6 @@ impl RpcHandler {
         let addr = w.add_new_address("default".to_string());
         let entry = w.get_entry(&addr).unwrap().clone();
 
-        // Simpan sebagai plaintext (setelah didekripsi)
         match w.save_default() {
             Ok(_) => RpcResponse::ok(json!({
                 "address": entry.address,
