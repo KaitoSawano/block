@@ -29,6 +29,8 @@ pub struct Block {
     pub nonce: u64,
     pub nbits: u32,
     pub reward: u64,
+    pub subsidy: u64,
+    pub total_fees: u64,
     pub coinbase_txid: String,
     pub blockchain_size: u64,
     pub genesis_output_script: String,
@@ -94,18 +96,19 @@ impl Block {
             index,
             previous_hash,
             reward,
+            0,
             nbits,
             transactions,
             String::new(),
         )
     }
 
-    /// Create a new block. The `reward` field must already include the
-    /// block subsidy plus the sum of all transaction fees.
+    /// Create a new block. The `reward` field is calculated as `subsidy + total_fees`.
     pub fn new_for(
         index: u64,
         previous_hash: String,
-        reward: u64,
+        subsidy: u64,
+        total_fees: u64,
         nbits: u32,
         transactions: Vec<Transaction>,
         mined_for: String,
@@ -113,6 +116,7 @@ impl Block {
         let ts = now_millis();
         let coinbase_txid = sha3_256_hex(format!("{}|{}|{}", index, mined_for, ts).as_bytes());
         let merkle_root = Self::compute_merkle_root(&transactions);
+        let reward = subsidy.saturating_add(total_fees);
 
         let size = (previous_hash.len()
             + merkle_root.len()
@@ -132,6 +136,8 @@ impl Block {
             nonce: 0,
             nbits,
             reward,
+            subsidy,
+            total_fees,
             coinbase_txid,
             blockchain_size: size,
             genesis_output_script: String::new(),
@@ -165,6 +171,9 @@ impl Block {
             + transactions.iter().map(|t| t.txid.len()).sum::<usize>()
             + 256) as u64;
 
+        let subsidy = crate::consensus::spec::INITIAL_REWARD;
+        let total_fees = 0;
+
         let mut b = Block {
             nversion: rules::BLOCK_VERSION,
             index: 0,
@@ -176,7 +185,9 @@ impl Block {
             hash: String::new(),
             nonce: 0,
             nbits,
-            reward: crate::consensus::spec::INITIAL_REWARD,
+            reward: subsidy,
+            subsidy,
+            total_fees,
             coinbase_txid,
             blockchain_size: size,
             genesis_output_script,
@@ -224,7 +235,7 @@ impl Block {
 
     pub fn calculate_hash(&self) -> String {
         let mut payload = format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.nversion,
             self.index,
             self.timestamp,
@@ -235,6 +246,8 @@ impl Block {
             self.nonce,
             self.nbits,
             self.reward,
+            self.subsidy,
+            self.total_fees,
             self.coinbase_txid,
             self.blockchain_size,
             self.genesis_output_script,
