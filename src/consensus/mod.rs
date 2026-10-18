@@ -17,7 +17,7 @@ use crate::utils::sha3_256_hex;
 /// the current parameter set.
 pub fn consensus_fingerprint() -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
         spec::DECIMALS,
@@ -34,6 +34,7 @@ pub fn consensus_fingerprint() -> String {
         spec::DIFFICULTY_ADJUST_INTERVAL,
         genesis::GENESIS_MESSAGE,
         genesis::GENESIS_SECRET,
+        genesis::GENESIS_TIMESTAMP,
         genesis::GENESIS_OUTPUT_SCRIPT,
         pow::GENESIS_NBITS,
         pow::POW_LIMIT,
@@ -41,7 +42,7 @@ pub fn consensus_fingerprint() -> String {
         rules::ADDRESS_PREFIX,
         rules::ADDRESS_HEX_LEN,
         rules::MAX_TX_PER_BLOCK,
-        rules::MAX_INPUTS_PER_TX,
+        // rules::MAX_INPUTS_PER_TX, (Opsional, bisa ditambah jika perlu)
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
         rules::ZERO_HASH,
@@ -50,12 +51,13 @@ pub fn consensus_fingerprint() -> String {
 }
 
 /// Compute the genesis coinbase transaction ID from the consensus
-/// fingerprint and the genesis nBits.
+/// fingerprint, the genesis timestamp, and the genesis nBits.
 pub fn genesis_coinbase_txid() -> String {
     let fp = consensus_fingerprint();
     let payload = format!(
-        "genesis|{}|{}",
+        "genesis|{}|{}|{}",
         fp,
+        genesis::GENESIS_TIMESTAMP,
         pow::GENESIS_NBITS
     );
     sha3_256_hex(payload.as_bytes())
@@ -64,6 +66,7 @@ pub fn genesis_coinbase_txid() -> String {
 pub use genesis::genesis_message;
 pub use genesis::genesis_output_script;
 pub use genesis::genesis_secret;
+pub use genesis::genesis_timestamp;
 pub use pow::genesis_nbits;
 pub use pow::pow_limit;
 pub use rules::max_tx_per_block;
