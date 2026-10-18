@@ -72,6 +72,20 @@ fn main() {
             rpc::call_and_print("importprivkey", vec![json!(args[2])]);
         }
         "getnewwallet" => rpc::call_and_print("getnewwallet", vec![]),
+        "encryptwallet" => {
+            if args.len() < 3 {
+                println!("usage: zenachain encryptwallet \"<password>\"");
+                return;
+            }
+            rpc::call_and_print("encryptwallet", vec![json!(args[2])]);
+        }
+        "walletpassphrase" => {
+            if args.len() < 3 {
+                println!("usage: zenachain walletpassphrase \"<password>\"");
+                return;
+            }
+            rpc::call_and_print("walletpassphrase", vec![json!(args[2])]);
+        }
         "getaddtowallet" => rpc::call_and_print("getaddtowallet", vec![]),
         "getaddtoaddress" => {
             if args.len() < 3 {
@@ -216,6 +230,8 @@ fn print_help() {
     println!("  zenachain setlabel \"<address>\" \"<label>\"      set a label for a wallet address");
     println!("  zenachain backupwallet \"<destination>\"        backup the wallet.dat file");
     println!("  zenachain getnewwallet                        create a new address in the wallet");
+    println!("  zenachain encryptwallet \"<password>\"          encrypt the wallet with a password");
+    println!("  zenachain walletpassphrase \"<password>\"       unlock the wallet (for testing)");
     println!("  zenachain getaddtowallet                      use the default wallet address as the mining target");
     println!("  zenachain getaddtoaddress \"<address>\"         set a manual mining address");
     println!("  zenachain generatetoaddress <n> \"<address>\"   mine n blocks directly to the given address");
