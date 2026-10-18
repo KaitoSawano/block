@@ -31,6 +31,13 @@ impl SyncState {
     /// Validate a block received from a peer and append it to the chain.
     /// The difficulty is adjusted after the block is appended.
     pub fn accept_block(chain: &mut Blockchain, block: Block) -> Result<(), String> {
+        // If the block is already in our chain, treat it as already
+        // processed. This mirrors Bitcoin Core, where a block that is
+        // already known is accepted without further validation.
+        if chain.chain.iter().any(|b| b.hash == block.hash) {
+            return Err("block already exists".into());
+        }
+
         let prev = match chain.chain.last() {
             Some(p) => p.clone(),
             None => return Err("chain is empty".into()),
