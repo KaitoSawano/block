@@ -427,7 +427,12 @@ impl RpcHandler {
             "reward": to_coin(reward),
             "subsidy": to_coin(subsidy),
             "total_fees": to_coin(total_fees),
+            // The following fields are consumed by the standalone miner.
+            // They must be present so that the miner can construct a block
+            // whose subsidy and fees match the consensus rules.
             "reward_satoshi": reward,
+            "subsidy_satoshi": subsidy,
+            "total_fees_satoshi": total_fees,
             "mempool": c.mempool,
         }))
     }
@@ -460,7 +465,7 @@ impl RpcHandler {
 
         drop(chain);
 
-        // Broadcast new block to P2P network
+        // Broadcast the new block to the P2P network.
         let tx = self.state.network_cmd_tx.clone();
         let hash = block.hash.clone();
         let _ = tx.blocking_send(NetworkCommand::BroadcastBlock(hash));
@@ -583,7 +588,9 @@ impl RpcHandler {
 
     fn m_getblockcount(&self) -> RpcResponse {
         let chain = self.state.chain.blocking_read();
-        RpcResponse::ok(json!(chain.chain.len() as u64))
+        // Return the height, not the number of blocks. This matches the
+        // behavior of Bitcoin, where the genesis block has height 0.
+        RpcResponse::ok(json!(chain.height()))
     }
 
     fn m_getbestblockhash(&self) -> RpcResponse {
@@ -1002,7 +1009,7 @@ impl RpcHandler {
                 }
             }
 
-            // Broadcast new block to P2P network
+            // Broadcast the new block to the P2P network.
             let tx = self.state.network_cmd_tx.clone();
             let hash = block.hash.clone();
             let _ = tx.blocking_send(NetworkCommand::BroadcastBlock(hash));
@@ -1103,7 +1110,7 @@ impl RpcHandler {
 
         drop(chain);
 
-        // Broadcast new transaction to P2P network
+        // Broadcast the new transaction to the P2P network.
         let tx = self.state.network_cmd_tx.clone();
         let tid = txid.clone();
         let _ = tx.blocking_send(NetworkCommand::BroadcastTransaction(tid));
