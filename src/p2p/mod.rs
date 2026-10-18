@@ -8,8 +8,16 @@
 //! The networking layer uses raw TCP with Bitcoin-style framing,
 //! Version/Verack handshaking, headers-first synchronization, and
 //! Inv/GetData relay. It does not depend on libp2p.
+//!
+//! Anti-eclipse mechanisms follow Bitcoin Core:
+//! - Anchors (`anchors.rs`): up to two block-relay-only connections are
+//!   persisted across restarts to resist eclipse attacks.
+//! - Ban manager (`banman.rs`): persistent manual bans and ephemeral
+//!   discouragement of misbehaving peers.
 
 pub mod addr_book;
+pub mod anchors;
+pub mod banman;
 pub mod dns_seed;
 pub mod framing;
 pub mod handshake;
