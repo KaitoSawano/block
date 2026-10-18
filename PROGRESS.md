@@ -26,18 +26,22 @@ ZenaChain adalah blockchain berbasis Rust (konsep diadaptasi dari Dogecoin/Litec
    - Genesis block dikunci dengan timestamp dan hash statis.
    - `consensus_fingerprint` mengikat semua parameter ekonomi.
    - Perubahan aturan konsensus memaksa pembuatan genesis baru (Hard Fork).
+   - **Pemisahan Subsidy & Fee:** `Block` memiliki field `subsidy`, `total_fees`, dan `reward`. Aturan validasi (`rule_block_subsidy`, `rule_block_reward`) ada di `validation.rs`.
 
-2. **Jaringan P2P (Berfungsi Penuh):**
+2. **Jaringan P2P (Berfungsi Penuh & Instan):**
    - Transportasi TCP mentah, framing ala Bitcoin.
    - Handshake Version/Verack berhasil.
-   - Sinkronisasi headers-first dan relay blok berhasil (Node 2 menerima blok dari Node 1).
-   - **Address Book Optimization:** Hanya menerima alamat dengan port default (8333), memberikan *backoff* (gagal 3x = hapus), dan mencegah spam "Connection refused".
-   - **Self-Connection Detection:** Node mem-ban peer yang mengirim blok duplikat/lama (fitur keamanan).
+   - Sinkronisasi headers-first dan relay blok berhasil.
+   - **Push Notification (NEW):** Menggunakan `tokio::sync::mpsc` (Channel) untuk komunikasi RPC -> P2P. Saat blok ditambang atau transaksi dibuat, RPC langsung mengirim sinyal ke Network untuk broadcast `Inv` secara instan (tanpa delay).
+   - **Address Book Optimization:** Filter port default (8333) dan *backoff* (gagal 3x = hapus).
+   - **Self-Connection Detection:** Node tidak lagi menghubungi dirinya sendiri.
 
 3. **RPC Server:**
    - Multi-threaded.
    - Perintah `stop` langsung menghentikan mining.
-   - RPC: `getinfo`, `getblockchaininfo`, `getblock`, `getbalance`, `sendtoaddress`, `generatetoaddress`, `listunspent`, `getwallet`, `encryptwallet`, `walletpassphrase`, `getpeerinfo`, dll.
+   - **`getpeerinfo` (NEW):** Menampilkan daftar peer yang terhubung secara *real-time* (ID, alamat, outbound, state).
+   - **`getnetworkinfo` (UPDATED):** `connection_count` sekarang menghitung koneksi asli dari `PeerRegistry`.
+   - RPC: `getinfo`, `getblockchaininfo`, `getblock`, `getbalance`, `sendtoaddress`, `generatetoaddress`, `listunspent`, `getwallet`, `encryptwallet`, `walletpassphrase`, dll.
 
 4. **Dompet:**
    - Dompet multi-alamat (file JSON `wallet.dat`).
@@ -45,33 +49,27 @@ ZenaChain adalah blockchain berbasis Rust (konsep diadaptasi dari Dogecoin/Litec
    - Sesi buka kunci (`walletpassphrase`) menyimpan password di memori.
    - Tidak bisa membuat alamat baru atau mengirim dana jika dompet terkunci.
 
-5. **Mining & Reward (100% Mirip Bitcoin):**
-   - `Block` struct memiliki field terpisah: `subsidy`, `total_fees`, dan `reward` (penjumlahan keduanya).
-   - `generatetoaddress` menghitung `total_fees` dari mempool dan menambahkannya ke `subsidy`.
-   - Aturan validasi `rule_block_subsidy` dan `rule_block_reward` sudah dipindahkan ke `validation.rs`.
-   - Penambang sekarang mendapatkan imbalan dari Subsidy + Fee.
-
-6. **Crypto Crate:**
+5. **Crypto Crate:**
    - Workspace terpisah `crypto/` untuk SHA3-256 dan AES-256-GCM.
 
 ### 🚧 Sedang Dikerjakan / Tugas Berikutnya:
-1. **Uji Sinkronisasi Transaksi:**
-   - Kirim transaksi di Node A, pastikan Node B menerimanya di mempool (broadcast Inv/Tx).
-   - Pastikan transaksi yang diterima divalidasi dan disimpan ke mempool Node B.
-
+1. **Uji Sinkronisasi Transaksi (Push):**
+   - Kirim transaksi di Node A, pastikan Node B langsung menerimanya di mempool lewat sinyal `BroadcastTransaction`.
+   
 2. **Update Test:**
-   - File test (`src/tests/*.rs`) mungkin perlu disesuaikan karena struktur `Block` berubah (menambahkan `subsidy` dan `total_fees`).
+   - File test (`src/tests/*.rs`) perlu disesuaikan dengan struktur `Block` baru (`subsidy`, `total_fees`).
    - `zenachain-miner.rs` sudah diperbaiki agar memanggil `Block::new_for` dengan 7 argumen.
 
 3. **Build Gitian:**
-   - `contrib/gitian-descriptors/` perlu diperbarui agar sesuai dengan `Cargo.toml` (versi Rust, dependensi).
+   - `contrib/gitian-descriptors/` perlu diperbarui agar sesuai dengan `Cargo.toml`.
 
 ---
 
 ## 3. Bug Diketahui
-- **Saat ini tidak ada bug fatal.** 
-- **Catatan Penting:** Jika `Cargo.lock` terhapus karena `rm -rf`, jalankan `cargo generate-lockfile` sebelum `make build` (karena flag `--locked` akan error jika file lock tidak ada).
-- **Peer Spam (Solved):** Sebelumnya Node spam "Connection refused" karena menyimpan port acak. Sudah diperbaiki dengan filter port di `network.rs` dan *backoff* di `addr_book.rs`.
+- **Saat ini tidak ada bug fatal.**
+- **Catatan Penting:** Jika `Cargo.lock` terhapus karena `rm -rf`, jalankan `cargo generate-lockfile` sebelum `make build`.
+- **Peer Spam (Solved):** Port acak sudah difilter, dan node tidak lagi menghubungi dirinya sendiri.
+- **Sinkronisasi Lambat (Solved):** Broadcast instan via channel sudah diterapkan.
 
 ---
 
@@ -91,5 +89,6 @@ AI akan memahami konteks dan melanjutkan dari titik terakhir.
 - **Mining Logic:** `src/rpc.rs` -> `m_generatetoaddress()`
 - **Aturan Validasi:** `src/validation.rs` -> `validate_block()`, `rule_block_subsidy()`, `rule_block_reward()`
 - **Struktur Blok:** `src/block.rs` -> `Block` struct (`subsidy`, `total_fees`, `reward`).
-- **P2P Network:** `src/p2p/network.rs` -> `Network::run()`, `handle_block()`, `handle_message()`.
+- **P2P Network:** `src/p2p/network.rs` -> `Network::run()`, `handle_command()`, `handle_message()`.
 - **Address Book:** `src/p2p/addr_book.rs` -> `mark_failed()`, `candidates()`.
+- **Push Notification:** `src/p2p/network.rs` -> `NetworkCommand` enum, `command_rx.recv()`.
