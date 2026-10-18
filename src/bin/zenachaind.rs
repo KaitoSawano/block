@@ -9,12 +9,12 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
 use zenachain::block::Block;
 use zenachain::blockchain::Blockchain;
 use zenachain::config::Config;
-use zenachain::p2p::network::{NetworkConfig, PeerRegistry, spawn};
+use zenachain::p2p::network::{NetworkCommand, NetworkConfig, PeerRegistry, spawn};
 use zenachain::rpc::RpcServer;
 use zenachain::storage;
 
@@ -45,6 +45,9 @@ async fn main() {
 
     let peer_registry: PeerRegistry = Arc::new(Mutex::new(Vec::new()));
 
+    // Channel untuk komunikasi RPC -> P2P
+    let (cmd_tx, cmd_rx) = mpsc::channel::<NetworkCommand>(100);
+
     let listen_addr = match config.listen_addr.parse() {
         Ok(a) => a,
         Err(e) => {
@@ -72,7 +75,7 @@ async fn main() {
     let cfg_for_rpc = config.clone();
     let rpc_registry = peer_registry.clone();
     let rpc_shutdown = {
-        let mut server = RpcServer::new(chain_for_rpc.clone(), &cfg_for_rpc, rpc_registry);
+        let mut server = RpcServer::new(chain_for_rpc.clone(), &cfg_for_rpc, rpc_registry, cmd_tx);
         let flag = server.shutdown_flag();
         tokio::task::spawn_blocking(move || {
             server.listen();
@@ -80,7 +83,7 @@ async fn main() {
         flag
     };
 
-    let net_handle = spawn(net_config, chain.clone(), peer_registry);
+    let net_handle = spawn(net_config, chain.clone(), peer_registry, cmd_rx);
 
     install_signal_handlers();
 
