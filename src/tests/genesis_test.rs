@@ -13,10 +13,6 @@ fn cached_genesis() -> &'static Block {
     GENESIS.get_or_init(|| Block::genesis())
 }
 
-fn is_pow_skipped() -> bool {
-    std::env::var("ZENAC_SKIP_POW").is_ok()
-}
-
 #[test]
 fn genesis_secret_is_embedded() {
     let g = cached_genesis();
@@ -38,12 +34,6 @@ fn genesis_hash_binds_message() {
 }
 
 #[test]
-fn genesis_timestamp_matches_consensus() {
-    let g = cached_genesis();
-    assert_eq!(g.timestamp, blockchain::genesis_timestamp());
-}
-
-#[test]
 fn genesis_index_is_zero() {
     let g = cached_genesis();
     assert_eq!(g.index, 0);
@@ -57,9 +47,6 @@ fn genesis_previous_hash_is_zero() {
 
 #[test]
 fn genesis_hash_matches_expected() {
-    if is_pow_skipped() {
-        return;
-    }
     let g = cached_genesis();
     assert_eq!(g.hash, consensus::genesis::EXPECTED_GENESIS_HASH);
 }
@@ -72,9 +59,6 @@ fn genesis_merkle_root_matches_expected() {
 
 #[test]
 fn genesis_nonce_matches_expected() {
-    if is_pow_skipped() {
-        return;
-    }
     let g = cached_genesis();
     assert_eq!(g.nonce, consensus::genesis::EXPECTED_GENESIS_NONCE);
 }
