@@ -22,6 +22,7 @@ fn main() {
         "getinfo" => rpc::call_and_print("getinfo", vec![]),
         "getblockchaininfo" => rpc::call_and_print("getblockchaininfo", vec![]),
         "getnetworkinfo" => rpc::call_and_print("getnetworkinfo", vec![]),
+        "getpeerinfo" => rpc::call_and_print("getpeerinfo", vec![]),
         "getcheckpoints" => rpc::call_and_print("getcheckpoints", vec![]),
         "getblocktemplate" => rpc::call_and_print("getblocktemplate", vec![]),
         "getblockcount" => rpc::call_and_print("getblockcount", vec![]),
@@ -207,6 +208,7 @@ fn print_help() {
     println!("  zenachain getinfo                             network information");
     println!("  zenachain getblockchaininfo                   blockchain information");
     println!("  zenachain getnetworkinfo                      network parameters");
+    println!("  zenachain getpeerinfo                         list connected peers");
     println!("  zenachain getcheckpoints                      list of active checkpoints");
     println!("  zenachain getblocktemplate                    block template for miners");
     println!("  zenachain getblockcount                       number of blocks in the chain");
