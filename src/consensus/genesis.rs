@@ -29,7 +29,7 @@ pub const EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198445;
 
 /// The expected nonce of the genesis block.
 /// TODO: Update this value after running `cargo run --release --bin zenachain-genesis`.
-pub const EXPECTED_GENESIS_NONCE: u64 = 0;
+pub const EXPECTED_GENESIS_NONCE: u64 = 420282;
 
 pub fn genesis_message() -> &'static str {
     GENESIS_MESSAGE
