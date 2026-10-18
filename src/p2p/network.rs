@@ -55,6 +55,7 @@ pub type PeerRegistry = Arc<Mutex<Vec<PeerInfo>>>;
 pub enum NetworkCommand {
     BroadcastBlock(String),
     BroadcastTransaction(String),
+    Shutdown,
 }
 
 #[derive(Debug, Clone)]
@@ -246,6 +247,10 @@ impl Network {
                 }
                 cmd = self.command_rx.recv() => {
                     match cmd {
+                        Some(NetworkCommand::Shutdown) => {
+                            println!("[p2p] shutdown requested");
+                            break;
+                        }
                         Some(cmd) => self.handle_command(cmd).await,
                         // The command channel has been closed. Stop the
                         // network loop to avoid a busy loop.
@@ -304,6 +309,9 @@ impl Network {
                     hash: txid,
                 }]);
             }
+            NetworkCommand::Shutdown => {
+                // Handled in the run() loop.
+            }
         }
     }
 
@@ -334,15 +342,8 @@ impl Network {
     async fn on_tick(&mut self) {
         self.peer_manager.tick();
         self.addr_book.prune(Duration::from_secs(3600));
-
-        let chain = self.chain.read().await;
-        let height = chain.height();
-        drop(chain);
-        if height > 0 {
-            for id in self.peer_manager.connected_peers() {
-                self.send_getheaders(id).await;
-            }
-        }
+        // Do NOT send GetHeaders on every tick. Headers are requested on
+        // handshake completion and when a new block inventory is received.
     }
 
     async fn try_connect(&mut self) {
@@ -922,17 +923,36 @@ impl Network {
             self.punish(id, 20, "too many headers in one message").await;
             return;
         }
+
         let chain = self.chain.read().await;
-        let tip = match chain.chain.last() {
-            Some(b) => b.clone(),
-            None => return,
-        };
         let first = &headers[0];
-        if first.index != tip.index + 1 || first.previous_hash != tip.hash {
+
+        // The first header must connect to a block that we already have.
+        // It does not have to be the tip: the peer may resend headers that
+        // we have already processed.
+        let connects = chain
+            .chain
+            .iter()
+            .any(|b| b.index + 1 == first.index && b.hash == first.previous_hash);
+        if !connects {
             drop(chain);
-            self.punish(id, 20, "headers do not connect to the tip").await;
+            self.punish(id, 20, "headers do not connect to any known block")
+                .await;
             return;
         }
+
+        // Validate that the headers are sequential.
+        for window in headers.windows(2) {
+            if window[1].index != window[0].index + 1
+                || window[1].previous_hash != window[0].hash
+            {
+                drop(chain);
+                self.punish(id, 20, "headers are not sequential").await;
+                return;
+            }
+        }
+
+        let tip_index = chain.chain.last().map(|b| b.index).unwrap_or(0);
         let mut to_request = Vec::new();
         for h in &headers {
             // Validate proof of work only. The subsidy, fees, and coinbase
@@ -942,7 +962,8 @@ impl Network {
                 self.punish(id, 50, "invalid header proof of work").await;
                 return;
             }
-            if !self.inv.has_block(&h.hash) {
+            // Only request blocks that are newer than our tip.
+            if h.index > tip_index && !self.inv.has_block(&h.hash) {
                 to_request.push(Inventory {
                     inv_type: InvType::Block,
                     hash: h.hash.clone(),
