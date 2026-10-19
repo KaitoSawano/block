@@ -23,17 +23,12 @@ use zenachain::storage;
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    // Parse flags.
     let mut use_testnet = false;
     for arg in &args[1..] {
         match arg.as_str() {
             "-testnet" | "--testnet" => use_testnet = true,
             "--help" | "-h" => {
-                println!("Usage: zenachaind [options]");
-                println!("Options:");
-                println!("  -testnet, --testnet    Run on the testnet");
-                println!("  --help                 Show this help message");
-                println!("  --version              Show version");
+                println!("Usage: zenachaind [-testnet|--testnet]");
                 return;
             }
             "--version" => {
@@ -73,7 +68,10 @@ async fn main() {
 
     if !std::path::Path::new(&Config::default_path()).exists() {
         let _ = config.save_default();
-        println!("[config] configuration file created at {}", Config::default_path());
+        println!(
+            "[config] configuration file created at {}",
+            Config::default_path()
+        );
     }
 
     let _ = Block::genesis();
@@ -184,7 +182,10 @@ fn install_signal_handlers() {
                     loop {
                         if sig.recv().await.is_some() {
                             println!();
-                            println!("[signal] {} received. The node continues to run.", name);
+                            println!(
+                                "[signal] {} received. The node continues to run.",
+                                name
+                            );
                             println!("[signal] Use `./zenachain stop` to stop the node.");
                         }
                     }
