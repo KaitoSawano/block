@@ -68,16 +68,25 @@ impl SyncState {
         }
 
         // Apply every transaction in the block to the account state.
+        // If any transaction fails to apply, abort the block and return
+        // an error. This keeps the chain state consistent with the
+        // block that is about to be appended.
         for tx in &block.transactions {
-            chain.apply_transaction(tx);
+            if let Err(e) = chain.apply_transaction(tx) {
+                return Err(format!(
+                    "failed to apply tx {} in block {}: {}",
+                    tx.txid, block.index, e
+                ));
+            }
         }
 
         // Credit the miner with the block reward (subsidy + fees).
-        let miner_balance = chain
-            .balances
-            .entry(block.mined_for.clone())
-            .or_insert(0);
-        *miner_balance = miner_balance.saturating_add(block.reward);
+        if let Err(e) = chain.credit_reward(&block.mined_for, block.reward) {
+            return Err(format!(
+                "failed to credit reward for block {}: {}",
+                block.index, e
+            ));
+        }
 
         chain.chain.push(block);
         chain.adjust_difficulty();
