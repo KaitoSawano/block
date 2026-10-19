@@ -7,12 +7,15 @@
 
 use zenachain_crypto::sha3_256_hex;
 
+use crate::consensus::spec;
+
 use super::PUBLIC_KEY_SIZE;
 
-/// Compute the ZENA address for a secp256k1 public key.
+/// Compute the address for a secp256k1 public key, using the address
+/// prefix of the currently active network.
 ///
-/// Format: "ZENA" followed by the first 40 hexadecimal characters of
-/// SHA3-256(compressed_pubkey || "addr").
+/// Format: `<prefix>` followed by the first 40 hexadecimal characters
+/// of SHA3-256(compressed_pubkey || "addr").
 pub fn address_from_public_key(public_key: &[u8]) -> Result<String, String> {
     if public_key.len() != PUBLIC_KEY_SIZE {
         return Err(format!(
@@ -24,5 +27,6 @@ pub fn address_from_public_key(public_key: &[u8]) -> Result<String, String> {
 
     let payload = [public_key, b"addr"].concat();
     let hash = sha3_256_hex(&payload);
-    Ok(format!("ZENA{}", &hash[..40]))
+    let prefix = spec::current_network().address_prefix();
+    Ok(format!("{}{}", prefix, &hash[..40]))
 }
