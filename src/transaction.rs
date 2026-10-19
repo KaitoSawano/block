@@ -3,199 +3,174 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
-//! UTXO-based transaction model, modeled after Bitcoin Core.
+//! Account-based transaction model with per-address nonces.
 //!
-//! A transaction consists of a list of inputs (`TxIn`) and a list of
-//! outputs (`TxOut`). Each input references a previous output via an
-//! `OutPoint` (txid and output index) and carries a `script_sig` that
-//! satisfies the `script_pubkey` of the referenced output. The
-//! signature commits to a `SignatureHash` (SIGHASH_ALL) computed from a
-//! binary serialization of the transaction, not from a string format.
+//! The transaction identifier (`txid`) commits to every field except
+//! the signature, following the Bitcoin convention. The signature
+//! commits to a `signing_hash` that includes the sender nonce, so that
+//! a transaction cannot be replayed or reordered without invalidating
+//! the signature.
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use zenachain_crypto::sha3_256_hex;
 
-/// SIGHASH_ALL: the default Bitcoin signature hash type.
-/// The signature commits to all inputs and all outputs.
-pub const SIGHASH_ALL: u32 = 0x00000001;
-
-/// A reference to a previous transaction output.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct OutPoint {
-    pub txid: String,
-    pub vout: u32,
-}
-
-/// A transaction input.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TxIn {
-    pub prevout: OutPoint,
-    pub script_sig: Vec<u8>,
-    pub sequence: u32,
-}
-
-/// A transaction output.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TxOut {
-    pub value: u64,
-    pub script_pubkey: Vec<u8>,
-}
-
-/// A UTXO-based transaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
-    pub version: i32,
-    pub vin: Vec<TxIn>,
-    pub vout: Vec<TxOut>,
-    pub lock_time: u32,
     pub txid: String,
+    pub from: String,
+    pub to: String,
+    pub amount: u64,
+    pub fee: u64,
+    pub nonce: u64,
+    pub note: String,
+    pub public_key: String,
+    pub signature: String,
+    pub output_script: String,
 }
 
 impl Transaction {
-    pub fn new() -> Self {
-        Transaction {
-            version: 1,
-            vin: Vec::new(),
-            vout: Vec::new(),
-            lock_time: 0,
+    pub fn new(from: &str, to: &str, amount: u64, fee: u64, nonce: u64) -> Self {
+        Self::new_with_note(from, to, amount, fee, nonce, String::new())
+    }
+
+    pub fn new_with_note(
+        from: &str,
+        to: &str,
+        amount: u64,
+        fee: u64,
+        nonce: u64,
+        note: String,
+    ) -> Self {
+        let mut tx = Transaction {
             txid: String::new(),
-        }
+            from: from.into(),
+            to: to.into(),
+            amount,
+            fee,
+            nonce,
+            note,
+            public_key: String::new(),
+            signature: String::new(),
+            output_script: String::new(),
+        };
+        tx.txid = tx.compute_txid();
+        tx
+    }
+
+    pub fn coinbase(note: String) -> Self {
+        let mut tx = Transaction {
+            txid: String::new(),
+            from: "COINBASE".into(),
+            to: "MINER".into(),
+            amount: 0,
+            fee: 0,
+            nonce: 0,
+            note,
+            public_key: String::new(),
+            signature: String::new(),
+            output_script: String::new(),
+        };
+        tx.txid = tx.compute_txid();
+        tx
+    }
+
+    pub fn secret(note: String) -> Self {
+        let mut tx = Transaction {
+            txid: String::new(),
+            from: "GENESIS".into(),
+            to: "ZENAC".into(),
+            amount: 0,
+            fee: 0,
+            nonce: 0,
+            note,
+            public_key: String::new(),
+            signature: String::new(),
+            output_script: String::new(),
+        };
+        tx.txid = tx.compute_txid();
+        tx
     }
 
     /// Compute the transaction identifier.
-    /// The identifier commits to the version, all inputs (with empty
-    /// script_sig), all outputs, and the lock time. It does not commit
-    /// to the script_sig, following Bitcoin's legacy txid definition.
+    ///
+    /// The identifier commits to every field except the signature. This
+    /// matches Bitcoin's legacy txid definition, where the signature
+    /// does not change the txid.
     pub fn compute_txid(&self) -> String {
-        let mut clone = self.clone();
-        for input in &mut clone.vin {
-            input.script_sig.clear();
-        }
-        let serialized = clone.serialize_for_txid();
-        let first = Sha256::digest(&serialized);
-        let second = Sha256::digest(&first);
-        hex::encode(second)
+        let payload = format!(
+            "{}|{}|{}|{}|{}|{}|{}|{}",
+            self.from,
+            self.to,
+            self.amount,
+            self.fee,
+            self.nonce,
+            self.note,
+            self.public_key,
+            self.output_script
+        );
+        sha3_256_hex(payload.as_bytes())
     }
 
-    fn serialize_for_txid(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        out.extend_from_slice(&self.version.to_le_bytes());
-        out.push(self.vin.len() as u8);
-        for input in &self.vin {
-            let txid_bytes = hex::decode(&input.prevout.txid).unwrap_or_else(|_| vec![0u8; 32]);
-            out.extend_from_slice(&txid_bytes);
-            out.extend_from_slice(&input.prevout.vout.to_le_bytes());
-            out.push(0); // empty script_sig
-            out.extend_from_slice(&input.sequence.to_le_bytes());
-        }
-        out.push(self.vout.len() as u8);
-        for output in &self.vout {
-            out.extend_from_slice(&output.value.to_le_bytes());
-            out.push(output.script_pubkey.len() as u8);
-            out.extend_from_slice(&output.script_pubkey);
-        }
-        out.extend_from_slice(&self.lock_time.to_le_bytes());
-        out
+    /// Compute the signing hash.
+    ///
+    /// The signing hash includes the nonce so that the signature binds
+    /// the transaction to a specific position in the sender's sequence.
+    /// The signature field is excluded because a signature cannot commit
+    /// to itself.
+    pub fn signing_hash(&self) -> String {
+        let payload = format!(
+            "{}|{}|{}|{}|{}|{}|{}|{}",
+            self.from,
+            self.to,
+            self.amount,
+            self.fee,
+            self.nonce,
+            self.note,
+            self.public_key,
+            self.output_script
+        );
+        sha3_256_hex(payload.as_bytes())
     }
 
-    /// Compute the SignatureHash (SIGHASH_ALL) for a given input index.
-    pub fn signature_hash(&self, input_index: usize, prevout_script: &[u8]) -> Result<[u8; 32], String> {
-        if input_index >= self.vin.len() {
-            return Err("input index out of range".into());
-        }
-
-        let mut modified = self.clone();
-        for input in &mut modified.vin {
-            input.script_sig.clear();
-        }
-        modified.vin[input_index].script_sig = prevout_script.to_vec();
-
-        let mut serialized = modified.serialize_for_sighash();
-        serialized.extend_from_slice(&SIGHASH_ALL.to_le_bytes());
-
-        let first = Sha256::digest(&serialized);
-        let second = Sha256::digest(&first);
-        let mut result = [0u8; 32];
-        result.copy_from_slice(&second);
-        Ok(result)
-    }
-
-    fn serialize_for_sighash(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-        out.extend_from_slice(&self.version.to_le_bytes());
-        out.push(self.vin.len() as u8);
-        for input in &self.vin {
-            let txid_bytes = hex::decode(&input.prevout.txid).unwrap_or_else(|_| vec![0u8; 32]);
-            out.extend_from_slice(&txid_bytes);
-            out.extend_from_slice(&input.prevout.vout.to_le_bytes());
-            out.push(input.script_sig.len() as u8);
-            out.extend_from_slice(&input.script_sig);
-            out.extend_from_slice(&input.sequence.to_le_bytes());
-        }
-        out.push(self.vout.len() as u8);
-        for output in &self.vout {
-            out.extend_from_slice(&output.value.to_le_bytes());
-            out.push(output.script_pubkey.len() as u8);
-            out.extend_from_slice(&output.script_pubkey);
-        }
-        out.extend_from_slice(&self.lock_time.to_le_bytes());
-        out
-    }
-
-    /// Sign a specific input with the given secret key and the
-    /// script_pubkey of the previous output.
-    pub fn sign_input(
-        &mut self,
-        input_index: usize,
-        secret_key: &[u8],
-        prevout_script: &[u8],
-    ) -> Result<(), String> {
+    pub fn sign(&mut self, secret_hex: &str) -> Result<(), String> {
         use crate::secp256k1::{keypair::KeyPair, sign};
 
-        let sighash = self.signature_hash(input_index, prevout_script)?;
-        let kp = KeyPair::from_secret(secret_key)?;
-        let sig = sign::sign(&kp.secret_key, &sighash)?;
+        let sk = hex::decode(secret_hex).map_err(|e| e.to_string())?;
+        let kp = KeyPair::from_secret(&sk)?;
 
-        // P2PKH script_sig: <signature> <pubkey>
-        // Format: 1-byte sig_len | sig | pubkey
-        let mut script_sig = Vec::new();
-        script_sig.push(sig.len() as u8);
-        script_sig.extend_from_slice(&sig);
-        script_sig.extend_from_slice(&kp.public_key);
-        self.vin[input_index].script_sig = script_sig;
-
+        // Set the public key before computing the signing hash so that
+        // the signature commits to the signer identity.
+        self.public_key = kp.public_key_hex();
         self.txid = self.compute_txid();
+
+        // Sign the signing hash, which excludes the signature field.
+        let msg = hex::decode(self.signing_hash()).map_err(|e| e.to_string())?;
+        let sig = sign::sign(&kp.secret_key, &msg)?;
+        self.signature = hex::encode(sig);
+
         Ok(())
     }
 
-    /// Verify the signature of a specific input.
-    pub fn verify_input(&self, input_index: usize, prevout_script: &[u8]) -> bool {
-        use crate::secp256k1::verify;
-
-        if input_index >= self.vin.len() {
-            return false;
-        }
-        let script_sig = &self.vin[input_index].script_sig;
-        if script_sig.is_empty() {
-            return false;
-        }
-        let sig_len = script_sig[0] as usize;
-        if script_sig.len() < 1 + sig_len + 33 {
-            return false;
-        }
-        let sig = &script_sig[1..1 + sig_len];
-        let pubkey = &script_sig[1 + sig_len..1 + sig_len + 33];
-
-        let sighash = match self.signature_hash(input_index, prevout_script) {
-            Ok(h) => h,
-            Err(_) => return false,
-        };
-        verify::verify(pubkey, &sighash, sig)
+    pub fn verify_signature(&self) -> bool {
+        crate::validation::rule_signature(self).is_ok()
     }
-}
 
-impl Default for Transaction {
-    fn default() -> Self {
-        Self::new()
+    pub fn expected_address(&self) -> Option<String> {
+        if self.public_key.is_empty() {
+            return None;
+        }
+        let pk = hex::decode(&self.public_key).ok()?;
+        crate::secp256k1::address::address_from_public_key(&pk).ok()
+    }
+
+    pub fn is_valid(&self) -> bool {
+        crate::validation::rule_txid_consistent(self).is_ok()
+            && crate::validation::rule_address_format(&self.from).is_ok()
+            && crate::validation::rule_address_format(&self.to).is_ok()
+            && crate::validation::rule_self_send(self).is_ok()
+            && crate::validation::rule_amount_nonzero(self).is_ok()
+            && crate::validation::rule_note_length(self).is_ok()
+            && crate::validation::rule_signature(self).is_ok()
+            && crate::validation::rule_address_matches_pubkey(self).is_ok()
     }
 }
