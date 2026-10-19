@@ -5,7 +5,146 @@
 
 //! Economic consensus parameters for ZenaChain.
 //!
-//! Every parameter in this module is included in `consensus_fingerprint`.
+//! Every parameter in this module is included in `consensus_fingerprint`,
+//! except for the network selector (`Network`), which determines which
+//! genesis block, address prefix, magic bytes, and ports are used.
+//! Changing a mainnet parameter is a hard fork. Adding a testnet
+//! parameter is not, because it does not affect the mainnet.
+
+use std::sync::OnceLock;
+
+/// Active network. This value is not part of the consensus fingerprint;
+/// it selects which parameter set is used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Network {
+    Main,
+    Test,
+}
+
+impl Network {
+    /// Return the network name as used in configuration files.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Network::Main => "main",
+            Network::Test => "test",
+        }
+    }
+
+    /// Parse a network name. Returns `None` if the name is unknown.
+    pub fn from_name(s: &str) -> Option<Self> {
+        match s {
+            "main" => Some(Network::Main),
+            "test" | "testnet" => Some(Network::Test),
+            _ => None,
+        }
+    }
+
+    /// Return the address prefix for this network.
+    pub fn address_prefix(&self) -> &'static str {
+        match self {
+            Network::Main => ADDRESS_PREFIX_MAIN,
+            Network::Test => ADDRESS_PREFIX_TEST,
+        }
+    }
+
+    /// Return the network magic bytes.
+    pub fn magic(&self) -> [u8; 4] {
+        match self {
+            Network::Main => NETWORK_MAGIC_MAIN,
+            Network::Test => NETWORK_MAGIC_TEST,
+        }
+    }
+
+    /// Return the magic bytes as a lowercase hex string.
+    pub fn magic_hex(&self) -> String {
+        let m = self.magic();
+        format!("{:02x}{:02x}{:02x}{:02x}", m[0], m[1], m[2], m[3])
+    }
+
+    /// Return the default P2P port.
+    pub fn default_port(&self) -> u16 {
+        match self {
+            Network::Main => DEFAULT_PORT_MAIN,
+            Network::Test => DEFAULT_PORT_TEST,
+        }
+    }
+
+    /// Return the default RPC port.
+    pub fn default_rpc_port(&self) -> u16 {
+        match self {
+            Network::Main => DEFAULT_RPC_PORT_MAIN,
+            Network::Test => DEFAULT_RPC_PORT_TEST,
+        }
+    }
+
+    /// Return the data directory name (without the home prefix).
+    pub fn datadir_name(&self) -> &'static str {
+        match self {
+            Network::Main => DATADIR_NAME_MAIN,
+            Network::Test => DATADIR_NAME_TEST,
+        }
+    }
+
+    /// Return the genesis timestamp for this network.
+    pub fn genesis_timestamp(&self) -> u128 {
+        match self {
+            Network::Main => GENESIS_TIMESTAMP_MAIN,
+            Network::Test => GENESIS_TIMESTAMP_TEST,
+        }
+    }
+
+    /// Return the genesis nBits for this network.
+    pub fn genesis_nbits(&self) -> u32 {
+        match self {
+            Network::Main => GENESIS_NBITS_MAIN,
+            Network::Test => GENESIS_NBITS_TEST,
+        }
+    }
+
+    /// Return the expected genesis nonce for this network. The testnet
+    /// nonce is computed at build time by `zenachain-genesis` and
+    /// pasted into this module; until then it is zero.
+    pub fn expected_genesis_nonce(&self) -> u64 {
+        match self {
+            Network::Main => EXPECTED_GENESIS_NONCE_MAIN,
+            Network::Test => EXPECTED_GENESIS_NONCE_TEST,
+        }
+    }
+}
+
+impl Default for Network {
+    fn default() -> Self {
+        Network::Main
+    }
+}
+
+static CURRENT_NETWORK: OnceLock<Network> = OnceLock::new();
+
+/// Return the currently active network. The network is selected by the
+/// `ZENAC_NETWORK` environment variable (`main` or `test`) or by the
+/// `-testnet` / `--testnet` command-line flag. If neither is set, the
+/// mainnet is used.
+pub fn current_network() -> Network {
+    *CURRENT_NETWORK.get_or_init(|| {
+        if let Ok(v) = std::env::var("ZENAC_NETWORK") {
+            if let Some(n) = Network::from_name(&v) {
+                return n;
+            }
+        }
+        Network::Main
+    })
+}
+
+/// Set the active network. This must be called once, before any other
+/// function reads `current_network()`. It is intended to be called by
+/// the daemon and CLI entry points after parsing the `-testnet` flag.
+pub fn set_current_network(network: Network) {
+    let _ = CURRENT_NETWORK.set(network);
+}
+
+// ----------------------------------------------------------------------
+// Coin identity (shared by all networks)
+// ----------------------------------------------------------------------
 
 pub const COIN_NAME: &str = "ZenaChain";
 pub const SYMBOL: &str = "ZENAC";
@@ -31,6 +170,36 @@ pub const POW_TARGET_SPACING_SECS: u64 = 15;
 pub const POW_TARGET_TIMESPAN_SECS: u64 = DIFFICULTY_ADJUST_INTERVAL * POW_TARGET_SPACING_SECS;
 pub const MINER_CONFIRMATION_WINDOW: u64 = 69_120;
 pub const DIFFICULTY_ADJUST_INTERVAL: u64 = 69_120;
+
+// ----------------------------------------------------------------------
+// Mainnet parameters
+// ----------------------------------------------------------------------
+
+pub const NETWORK_MAGIC_MAIN: [u8; 4] = [0x5a, 0x45, 0x4e, 0x41]; // "ZENA"
+pub const ADDRESS_PREFIX_MAIN: &str = "ZENA";
+pub const DEFAULT_PORT_MAIN: u16 = 8333;
+pub const DEFAULT_RPC_PORT_MAIN: u16 = 8332;
+pub const DATADIR_NAME_MAIN: &str = ".zenachain";
+pub const GENESIS_TIMESTAMP_MAIN: u128 = 1792303198445;
+pub const GENESIS_NBITS_MAIN: u32 = 0x1e0ffff0;
+pub const EXPECTED_GENESIS_NONCE_MAIN: u64 = 420282;
+
+// ----------------------------------------------------------------------
+// Testnet parameters
+// ----------------------------------------------------------------------
+
+pub const NETWORK_MAGIC_TEST: [u8; 4] = [0x5a, 0x54, 0x45, 0x53]; // "ZTES"
+pub const ADDRESS_PREFIX_TEST: &str = "ZTES";
+pub const DEFAULT_PORT_TEST: u16 = 9422;
+pub const DEFAULT_RPC_PORT_TEST: u16 = 12255;
+pub const DATADIR_NAME_TEST: &str = ".zenachain-testnet";
+pub const GENESIS_TIMESTAMP_TEST: u128 = 1792303198446;
+pub const GENESIS_NBITS_TEST: u32 = 0x207fffff;
+pub const EXPECTED_GENESIS_NONCE_TEST: u64 = 0;
+
+// ----------------------------------------------------------------------
+// Legacy accessors (kept for compatibility; they return mainnet values)
+// ----------------------------------------------------------------------
 
 pub fn coin_name() -> &'static str {
     COIN_NAME
