@@ -1121,18 +1121,25 @@ impl RpcHandler {
             }
         }
 
+        let need = match amount_sat.checked_add(DEFAULT_FEE_SATOSHI) {
+            Some(v) => v,
+            None => {
+                return RpcResponse::err("amount + fee overflows u64");
+            }
+        };
+
         let from_address = if req.params.len() >= 3 {
             req.params[2].as_str().unwrap_or("").to_string()
         } else {
             let chain = self.state.chain.blocking_read();
-            let need = match amount_sat.checked_add(DEFAULT_FEE_SATOSHI) {
-                Some(v) => v,
-                None => {
-                    return RpcResponse::err("amount + fee overflows u64");
-                }
-            };
             let mut best: Option<(String, u64)> = None;
             for entry in &wallet.entries {
+                // Skip the destination address. A self-send is rejected
+                // by rule_self_send, and selecting the destination as the
+                // source would make the transaction fail.
+                if entry.address == to {
+                    continue;
+                }
                 let bal = chain.balance_of(&entry.address);
                 if bal >= need {
                     match &best {
@@ -1145,8 +1152,24 @@ impl RpcHandler {
             match best {
                 Some((addr, _)) => addr,
                 None => {
+                    // Distinguish between "wallet total is insufficient"
+                    // and "no single address is sufficient" so that the
+                    // user knows what to do.
+                    let chain = self.state.chain.blocking_read();
+                    let total: u64 = wallet
+                        .entries
+                        .iter()
+                        .map(|e| chain.balance_of(&e.address))
+                        .sum();
+                    drop(chain);
+                    if total < need {
+                        return RpcResponse::err(&format!(
+                            "insufficient wallet balance: required {} sat (amount {} + fee {}), available {} sat",
+                            need, amount_sat, DEFAULT_FEE_SATOSHI, total
+                        ));
+                    }
                     return RpcResponse::err(
-                        "no wallet address has sufficient balance to cover amount + fee",
+                        "no single wallet address has sufficient balance; use a different source address",
                     );
                 }
             }
