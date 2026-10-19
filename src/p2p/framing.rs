@@ -5,7 +5,7 @@
 
 //! Message framing for the ZenaChain peer-to-peer protocol.
 
-use crate::blockchain::network::NETWORK_MAGIC;
+use crate::consensus::spec;
 use std::io::{self, Read, Write};
 use zenachain_crypto::sha3_256_hex;
 
@@ -31,11 +31,15 @@ pub fn read_message<R: Read>(reader: &mut R) -> io::Result<(String, Vec<u8>)> {
     let mut header = [0u8; HEADER_LEN];
     reader.read_exact(&mut header)?;
 
+    let expected_magic = spec::current_network().magic();
     let magic = &header[0..4];
-    if magic != NETWORK_MAGIC {
+    if magic != expected_magic {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("magic mismatch: {:02x?}", magic),
+            format!(
+                "magic mismatch: got {:02x?}, expected {:02x?}",
+                magic, expected_magic
+            ),
         ));
     }
 
@@ -81,7 +85,8 @@ pub fn write_message<W: Write>(writer: &mut W, command: &str, payload: &[u8]) ->
     }
 
     let mut header = [0u8; HEADER_LEN];
-    header[0..4].copy_from_slice(&NETWORK_MAGIC);
+    let magic = spec::current_network().magic();
+    header[0..4].copy_from_slice(&magic);
 
     let cmd_bytes = command.as_bytes();
     header[4..4 + cmd_bytes.len()].copy_from_slice(cmd_bytes);
