@@ -144,15 +144,15 @@ fn main() {
             }
             rpc::call_and_print("testmempoolaccept", vec![json!(args[2])]);
         }
-        "listunspent" => {
+        "getmempoolinfo" => rpc::call_and_print("getmempoolinfo", vec![]),
+        "getnonce" => {
             let params = if args.len() >= 3 {
                 vec![json!(args[2])]
             } else {
                 vec![]
             };
-            rpc::call_and_print("listunspent", params);
+            rpc::call_and_print("getnonce", params);
         }
-        "getmempoolinfo" => rpc::call_and_print("getmempoolinfo", vec![]),
         "generatetoaddress" => {
             if args.len() < 4 {
                 println!("usage: zenachain generatetoaddress <count> \"<address>\"");
@@ -225,8 +225,8 @@ fn print_help() {
     println!("  zenachain getrawtransaction \"<txid>\"          transaction details for the given txid");
     println!("  zenachain decoderawtransaction \"<txid>\"       decode a transaction in a readable format");
     println!("  zenachain testmempoolaccept \"<txid>\"          test whether a transaction would be accepted into the mempool");
-    println!("  zenachain listunspent [address]               list wallet UTXOs");
     println!("  zenachain getmempoolinfo                      mempool summary");
+    println!("  zenachain getnonce [address]                  next expected nonce for an address");
     println!("  zenachain getlistwallet                       list all addresses in the wallet");
     println!("  zenachain getaddressinfo \"<address>\"          get detailed information for an address");
     println!("  zenachain setlabel \"<address>\" \"<label>\"      set a label for a wallet address");
