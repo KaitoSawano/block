@@ -5,11 +5,13 @@
 
 //! Persistent storage for the blockchain state.
 
+use std::collections::HashMap;
+use std::io::Error;
+
 use crate::block::Block;
 use crate::blockchain::Blockchain;
 use crate::datadir;
 use crate::mempool::Mempool;
-use std::io::Error;
 
 pub const BLOCKS_PER_FILE: usize = 1000;
 
@@ -23,7 +25,9 @@ pub fn save_chain(chain: &Blockchain) -> std::io::Result<()> {
 }
 
 /// Load the blockchain state from disk.
-/// This function verifies that the loaded chain starts with a valid genesis block.
+/// This function verifies that the loaded chain starts with a valid
+/// genesis block and restores the balances and nonces from the
+/// chainstate file.
 pub fn load_chain() -> std::io::Result<Blockchain> {
     if !datadir::chainstate_file().exists() {
         return Ok(Blockchain::new());
@@ -34,7 +38,8 @@ pub fn load_chain() -> std::io::Result<Blockchain> {
         return Ok(Blockchain::new());
     }
 
-    // Verify that the first block loaded from disk is the correct genesis block.
+    // Verify that the first block loaded from disk is the correct
+    // genesis block.
     let expected_genesis = Block::genesis();
     if blocks[0].hash != expected_genesis.hash {
         return Err(Error::other(
@@ -47,6 +52,8 @@ pub fn load_chain() -> std::io::Result<Blockchain> {
         chain: blocks,
         nbits: state.nbits,
         mempool,
+        balances: state.balances,
+        nonces: state.nonces,
     })
 }
 
@@ -55,14 +62,22 @@ pub struct ChainState {
     pub total_blocks: u64,
     pub nbits: u32,
     pub updated_at: u128,
+    /// Account balances. Key: address, value: satoshi.
+    #[serde(default)]
+    pub balances: HashMap<String, u64>,
+    /// Account nonces. Key: address, value: next expected nonce.
+    #[serde(default)]
+    pub nonces: HashMap<String, u64>,
 }
 
-/// Save the chain state (block count and nbits) to disk.
+/// Save the chain state (block count, nbits, balances, nonces) to disk.
 pub fn save_chainstate(chain: &Blockchain) -> std::io::Result<()> {
     let state = ChainState {
         total_blocks: chain.chain.len() as u64,
         nbits: chain.nbits,
         updated_at: crate::utils::now_millis(),
+        balances: chain.balances.clone(),
+        nonces: chain.nonces.clone(),
     };
     let json = serde_json::to_string_pretty(&state).map_err(Error::other)?;
     std::fs::write(datadir::chainstate_file(), json)
