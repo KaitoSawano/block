@@ -5,6 +5,8 @@
 
 //! Blockchain state and consensus-related operations.
 
+use std::collections::HashMap;
+
 use crate::block::Block;
 use crate::consensus::{self, genesis, pow as cpow, rules, spec};
 use crate::pow;
@@ -24,10 +26,7 @@ pub mod checkpoint {
     }];
 
     pub fn find(height: u64) -> Option<&'static str> {
-        CHECKPOINTS
-            .iter()
-            .find(|c| c.height == height)
-            .map(|c| c.hash)
+        CHECKPOINTS.iter().find(|c| c.height == height).map(|c| c.hash)
     }
 
     pub fn is_checkpoint(height: u64) -> bool {
@@ -47,8 +46,6 @@ pub mod checkpoint {
 }
 
 pub mod network {
-    /// Magic bytes for ZenaChain: "ZENA" in ASCII hexadecimal.
-    /// This value replaces the Bitcoin magic (0xf9beb4d9) to avoid conflicts.
     pub const NETWORK_MAGIC: [u8; 4] = [0x5a, 0x45, 0x4e, 0x41];
     pub const NETWORK_NAME: &str = "main";
     pub const DEFAULT_PORT: u16 = 8333;
@@ -105,14 +102,34 @@ pub struct Blockchain {
     pub chain: Vec<Block>,
     pub nbits: u32,
     pub mempool: Vec<Transaction>,
+    /// Account balances. Key: address, value: satoshi.
+    pub balances: HashMap<String, u64>,
+    /// Account nonces. Key: address, value: next expected nonce.
+    pub nonces: HashMap<String, u64>,
 }
 
 impl Blockchain {
     pub fn new() -> Self {
+        let genesis = Block::genesis();
+        let mut balances = HashMap::new();
+        let mut nonces = HashMap::new();
+
+        // Initialize the genesis coinbase balance.
+        // The genesis block credits its reward to the "GENESIS" address,
+        // which is not spendable but keeps the supply accounting
+        // consistent.
+        balances.insert(
+            "GENESIS".to_string(),
+            genesis.reward,
+        );
+        nonces.insert("GENESIS".to_string(), 0);
+
         Blockchain {
-            chain: vec![Block::genesis()],
+            chain: vec![genesis],
             nbits: cpow::GENESIS_NBITS,
             mempool: Vec::new(),
+            balances,
+            nonces,
         }
     }
 
@@ -141,6 +158,34 @@ impl Blockchain {
     pub fn blocks_until_halving(&self) -> u64 {
         let next = (self.current_era() + 1) * spec::SUBSIDY_HALVING_INTERVAL;
         next.saturating_sub(self.height())
+    }
+
+    /// Return the balance of an address from the chain state.
+    pub fn balance_of(&self, addr: &str) -> u64 {
+        self.balances.get(addr).copied().unwrap_or(0)
+    }
+
+    /// Return the next expected nonce for an address.
+    pub fn nonce_of(&self, addr: &str) -> u64 {
+        self.nonces.get(addr).copied().unwrap_or(0)
+    }
+
+    /// Apply a transaction to the chain state.
+    ///
+    /// This function updates the balances and nonces. It must only be
+    /// called after the transaction has been fully validated.
+    pub fn apply_transaction(&mut self, tx: &Transaction) {
+        // Deduct the amount and the fee from the sender.
+        let from_balance = self.balances.entry(tx.from.clone()).or_insert(0);
+        *from_balance = from_balance.saturating_sub(tx.amount.saturating_add(tx.fee));
+
+        // Credit the amount to the recipient.
+        let to_balance = self.balances.entry(tx.to.clone()).or_insert(0);
+        *to_balance = to_balance.saturating_add(tx.amount);
+
+        // Increment the sender nonce.
+        let nonce = self.nonces.entry(tx.from.clone()).or_insert(0);
+        *nonce = nonce.saturating_add(1);
     }
 
     pub fn add_transaction(&mut self, tx: Transaction) -> bool {
@@ -172,12 +217,22 @@ impl Blockchain {
             subsidy,
             total_fees,
             self.nbits,
-            txs,
+            txs.clone(),
             String::new(),
         );
         if !pow::mine(&mut new_block, self.nbits) {
             return Err("mining failed: nonce exhausted".into());
         }
+
+        // Apply all transactions to the chain state.
+        for tx in &txs {
+            self.apply_transaction(tx);
+        }
+
+        // Credit the block reward to the miner.
+        let miner_balance = self.balances.entry(new_block.mined_for.clone()).or_insert(0);
+        *miner_balance = miner_balance.saturating_add(reward);
+
         let nonce = new_block.nonce;
         self.chain.push(new_block);
         self.adjust_difficulty();
