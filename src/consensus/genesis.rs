@@ -6,8 +6,8 @@
 //! Genesis consensus parameters for ZenaChain.
 //!
 //! Each network has its own genesis block. The mainnet genesis is
-//! locked forever; the testnet genesis may be regenerated when the
-//! consensus rules change.
+//! locked forever; the testnet and regtest genesis blocks may be
+//! regenerated when the consensus rules change.
 
 use crate::consensus::spec::{self, Network};
 
@@ -55,6 +55,24 @@ pub const TESTNET_EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198446;
 pub const TESTNET_EXPECTED_GENESIS_NONCE: u64 = 0;
 
 // ----------------------------------------------------------------------
+// Regtest genesis
+// ----------------------------------------------------------------------
+//
+// The regtest genesis is mined at build time by the `zenachain-genesis`
+// binary with the `-regtest` flag. The resulting hash, merkle root,
+// timestamp, and nonce must be pasted into this module.
+
+pub const REGTEST_GENESIS_TIMESTAMP: u128 = 1792303198447;
+
+pub const REGTEST_EXPECTED_GENESIS_HASH: &str = "";
+
+pub const REGTEST_EXPECTED_GENESIS_MERKLE_ROOT: &str = "";
+
+pub const REGTEST_EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198447;
+
+pub const REGTEST_EXPECTED_GENESIS_NONCE: u64 = 0;
+
+// ----------------------------------------------------------------------
 // Network-aware accessors
 // ----------------------------------------------------------------------
 
@@ -79,6 +97,7 @@ pub fn expected_genesis_hash_for(network: Network) -> &'static str {
     match network {
         Network::Main => EXPECTED_GENESIS_HASH,
         Network::Test => TESTNET_EXPECTED_GENESIS_HASH,
+        Network::Regtest => REGTEST_EXPECTED_GENESIS_HASH,
     }
 }
 
@@ -87,6 +106,7 @@ pub fn expected_genesis_merkle_root_for(network: Network) -> &'static str {
     match network {
         Network::Main => EXPECTED_GENESIS_MERKLE_ROOT,
         Network::Test => TESTNET_EXPECTED_GENESIS_MERKLE_ROOT,
+        Network::Regtest => REGTEST_EXPECTED_GENESIS_MERKLE_ROOT,
     }
 }
 
@@ -95,6 +115,7 @@ pub fn expected_genesis_timestamp_for(network: Network) -> u128 {
     match network {
         Network::Main => EXPECTED_GENESIS_TIMESTAMP,
         Network::Test => TESTNET_EXPECTED_GENESIS_TIMESTAMP,
+        Network::Regtest => REGTEST_EXPECTED_GENESIS_TIMESTAMP,
     }
 }
 
@@ -103,6 +124,7 @@ pub fn expected_genesis_nonce_for(network: Network) -> u64 {
     match network {
         Network::Main => EXPECTED_GENESIS_NONCE,
         Network::Test => TESTNET_EXPECTED_GENESIS_NONCE,
+        Network::Regtest => REGTEST_EXPECTED_GENESIS_NONCE,
     }
 }
 
