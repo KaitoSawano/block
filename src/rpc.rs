@@ -1027,12 +1027,41 @@ impl RpcHandler {
             }
         }
 
+        let amount_sat = zenac_to_satoshi(amount_zenac);
+        if amount_sat == 0 {
+            return RpcResponse::err("amount too small");
+        }
+
+        // Select the sender address.
+        //
+        // If the caller provided a third parameter, use it. Otherwise,
+        // pick the wallet address with the highest balance that can
+        // cover the amount and the fee. This mirrors the coin selection
+        // behavior of Bitcoin Core, where the wallet automatically
+        // chooses the inputs needed to fund the transaction.
         let from_address = if req.params.len() >= 3 {
             req.params[2].as_str().unwrap_or("").to_string()
         } else {
-            match wallet.default_address() {
-                Some(e) => e.address.clone(),
-                None => return RpcResponse::err("wallet has no addresses"),
+            let chain = self.state.chain.blocking_read();
+            let need = amount_sat.saturating_add(DEFAULT_FEE_SATOSHI);
+            let mut best: Option<(String, u64)> = None;
+            for entry in &wallet.entries {
+                let bal = chain.balance_of(&entry.address);
+                if bal >= need {
+                    match &best {
+                        Some((_, b)) if *b >= bal => {}
+                        _ => best = Some((entry.address.clone(), bal)),
+                    }
+                }
+            }
+            drop(chain);
+            match best {
+                Some((addr, _)) => addr,
+                None => {
+                    return RpcResponse::err(
+                        "no wallet address has sufficient balance",
+                    );
+                }
             }
         };
 
@@ -1040,11 +1069,6 @@ impl RpcHandler {
             Some(e) => e.clone(),
             None => return RpcResponse::err("from address not found in wallet"),
         };
-
-        let amount_sat = zenac_to_satoshi(amount_zenac);
-        if amount_sat == 0 {
-            return RpcResponse::err("amount too small");
-        }
 
         // Read the current nonce for the sender from the chain state.
         let nonce = {
