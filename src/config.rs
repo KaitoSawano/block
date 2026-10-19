@@ -5,12 +5,13 @@
 
 //! Configuration file parsing and persistence.
 
+use crate::consensus::spec::{self, Network};
 use crate::datadir;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub network: String,
+    pub network: Network,
     pub rpc_addr: String,
     pub rpc_user: String,
     pub rpc_password: String,
@@ -23,12 +24,13 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Self {
+        let network = spec::current_network();
         Config {
-            network: "main".to_string(),
-            rpc_addr: "127.0.0.1:8332".to_string(),
+            network,
+            rpc_addr: format!("127.0.0.1:{}", network.default_rpc_port()),
             rpc_user: "zenachain".to_string(),
             rpc_password: "rahasia".to_string(),
-            listen_addr: "0.0.0.0:8333".to_string(),
+            listen_addr: format!("0.0.0.0:{}", network.default_port()),
             bootstrap: Vec::new(),
             mining_address: "ZENAMINERDEFAULT".to_string(),
             created_at: crate::utils::now_millis(),
@@ -67,7 +69,15 @@ impl Config {
             let value = value.trim().trim_matches('"');
 
             match key {
-                "network" => cfg.network = value.to_string(),
+                "network" => {
+                    if let Some(n) = Network::from_name(value) {
+                        cfg.network = n;
+                        // Recompute ports from the network unless
+                        // overridden later in the file.
+                        cfg.rpc_addr = format!("127.0.0.1:{}", n.default_rpc_port());
+                        cfg.listen_addr = format!("0.0.0.0:{}", n.default_port());
+                    }
+                }
                 "rpcport" => cfg.rpc_addr = format!("127.0.0.1:{}", value),
                 "rpcbind" => cfg.rpc_addr = value.to_string(),
                 "rpcuser" => cfg.rpc_user = value.to_string(),
@@ -91,7 +101,7 @@ impl Config {
 
         let mut out = String::new();
         out.push_str("# ZenaChain configuration\n");
-        out.push_str(&format!("network={}\n", self.network));
+        out.push_str(&format!("network={}\n", self.network.name()));
         out.push_str(&format!("rpcport={}\n", rpcport));
         out.push_str(&format!("rpcuser={}\n", self.rpc_user));
         out.push_str(&format!("rpcpassword={}\n", self.rpc_password));
@@ -113,9 +123,6 @@ impl Default for Config {
     }
 }
 
-/// Normalize the listen address. If the value is still in the libp2p
-/// multiaddr format (`/ip4/0.0.0.0/tcp/8333`), convert it to a socket
-/// address (`0.0.0.0:8333`). Otherwise, return the value unchanged.
 fn normalize_listen_addr(value: &str) -> String {
     if value.starts_with('/') {
         let parts: Vec<&str> = value.trim_start_matches('/').split('/').collect();
@@ -130,7 +137,7 @@ fn normalize_listen_addr(value: &str) -> String {
                 return format!("{}:{}", ip, port);
             }
         }
-        return "0.0.0.0:8333".to_string();
+        return format!("0.0.0.0:{}", spec::current_network().default_port());
     }
     value.to_string()
 }
