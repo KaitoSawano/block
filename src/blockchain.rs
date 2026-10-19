@@ -102,9 +102,7 @@ pub struct Blockchain {
     pub chain: Vec<Block>,
     pub nbits: u32,
     pub mempool: Vec<Transaction>,
-    /// Account balances. Key: address, value: satoshi.
     pub balances: HashMap<String, u64>,
-    /// Account nonces. Key: address, value: next expected nonce.
     pub nonces: HashMap<String, u64>,
 }
 
@@ -118,10 +116,7 @@ impl Blockchain {
         // The genesis block credits its reward to the "GENESIS" address,
         // which is not spendable but keeps the supply accounting
         // consistent.
-        balances.insert(
-            "GENESIS".to_string(),
-            genesis.reward,
-        );
+        balances.insert("GENESIS".to_string(), genesis.reward);
         nonces.insert("GENESIS".to_string(), 0);
 
         Blockchain {
@@ -160,30 +155,21 @@ impl Blockchain {
         next.saturating_sub(self.height())
     }
 
-    /// Return the balance of an address from the chain state.
     pub fn balance_of(&self, addr: &str) -> u64 {
         self.balances.get(addr).copied().unwrap_or(0)
     }
 
-    /// Return the next expected nonce for an address.
     pub fn nonce_of(&self, addr: &str) -> u64 {
         self.nonces.get(addr).copied().unwrap_or(0)
     }
 
-    /// Apply a transaction to the chain state.
-    ///
-    /// This function updates the balances and nonces. It must only be
-    /// called after the transaction has been fully validated.
     pub fn apply_transaction(&mut self, tx: &Transaction) {
-        // Deduct the amount and the fee from the sender.
         let from_balance = self.balances.entry(tx.from.clone()).or_insert(0);
         *from_balance = from_balance.saturating_sub(tx.amount.saturating_add(tx.fee));
 
-        // Credit the amount to the recipient.
         let to_balance = self.balances.entry(tx.to.clone()).or_insert(0);
         *to_balance = to_balance.saturating_add(tx.amount);
 
-        // Increment the sender nonce.
         let nonce = self.nonces.entry(tx.from.clone()).or_insert(0);
         *nonce = nonce.saturating_add(1);
     }
@@ -224,12 +210,10 @@ impl Blockchain {
             return Err("mining failed: nonce exhausted".into());
         }
 
-        // Apply all transactions to the chain state.
         for tx in &txs {
             self.apply_transaction(tx);
         }
 
-        // Credit the block reward to the miner.
         let miner_balance = self.balances.entry(new_block.mined_for.clone()).or_insert(0);
         *miner_balance = miner_balance.saturating_add(reward);
 
