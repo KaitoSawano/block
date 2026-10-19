@@ -14,40 +14,57 @@ use tokio::sync::{mpsc, RwLock};
 use zenachain::block::Block;
 use zenachain::blockchain::Blockchain;
 use zenachain::config::Config;
+use zenachain::consensus::spec::{self, Network};
 use zenachain::p2p::network::{NetworkCommand, NetworkConfig, PeerRegistry, spawn};
 use zenachain::rpc::RpcServer;
 use zenachain::storage;
 
 #[tokio::main]
 async fn main() {
-    // Reject positional arguments. The daemon does not accept RPC
-    // commands; those must be sent through the `zenachain` CLI.
     let args: Vec<String> = std::env::args().collect();
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("Usage: zenachaind [options]");
-        println!("Options:");
-        println!("  --help       Show this help message");
-        println!("  --version    Show version");
-        return;
-    }
-    if args.iter().any(|a| a == "--version") {
-        println!("zenachaind {}", env!("CARGO_PKG_VERSION"));
-        return;
-    }
+
+    // Parse flags.
+    let mut use_testnet = false;
     for arg in &args[1..] {
-        if !arg.starts_with('-') {
-            eprintln!("error: zenachaind does not accept positional arguments");
-            eprintln!("use `zenachain <command>` for RPC commands");
-            std::process::exit(1);
+        match arg.as_str() {
+            "-testnet" | "--testnet" => use_testnet = true,
+            "--help" | "-h" => {
+                println!("Usage: zenachaind [options]");
+                println!("Options:");
+                println!("  -testnet, --testnet    Run on the testnet");
+                println!("  --help                 Show this help message");
+                println!("  --version              Show version");
+                return;
+            }
+            "--version" => {
+                println!("zenachaind {}", env!("CARGO_PKG_VERSION"));
+                return;
+            }
+            other if other.starts_with('-') => {
+                eprintln!("error: unknown option: {}", other);
+                std::process::exit(1);
+            }
+            _ => {
+                eprintln!("error: zenachaind does not accept positional arguments");
+                eprintln!("use `zenachain <command>` for RPC commands");
+                std::process::exit(1);
+            }
         }
     }
 
-    println!("ZenaChain server starting");
+    let network = if use_testnet {
+        Network::Test
+    } else {
+        Network::Main
+    };
+    spec::set_current_network(network);
+
+    println!("ZenaChain server starting (network: {})", network.name());
     println!("Use `./zenachain stop` to stop the node.");
     println!("Ctrl+C, kill, and SIGHUP do not stop the node (same as Bitcoin).");
 
     let config = Config::load_or_default();
-    println!("[config] network      : {}", config.network);
+    println!("[config] network      : {}", config.network.name());
     println!("[config] rpc_addr     : {}", config.rpc_addr);
     println!("[config] listen_addr  : {}", config.listen_addr);
     println!("[config] bootstrap    : {:?}", config.bootstrap);
@@ -67,9 +84,7 @@ async fn main() {
 
     let peer_registry: PeerRegistry = Arc::new(Mutex::new(Vec::new()));
 
-    // Channel for RPC -> P2P communication.
     let (cmd_tx, cmd_rx) = mpsc::channel::<NetworkCommand>(100);
-    // Clone the sender so that the main loop can request a shutdown.
     let cmd_tx_for_shutdown = cmd_tx.clone();
 
     let listen_addr = match config.listen_addr.parse() {
@@ -99,7 +114,13 @@ async fn main() {
     let cfg_for_rpc = config.clone();
     let rpc_registry = peer_registry.clone();
     let (rpc_shutdown, rpc_handle) = {
-        let mut server = RpcServer::new(chain_for_rpc.clone(), &cfg_for_rpc, rpc_registry, cmd_tx);
+        let mut server = RpcServer::new(
+            chain_for_rpc.clone(),
+            &cfg_for_rpc,
+            rpc_registry,
+            cmd_tx,
+            network,
+        );
         let flag = server.shutdown_flag();
         let handle = tokio::task::spawn_blocking(move || server.listen());
         (flag, handle)
@@ -107,9 +128,6 @@ async fn main() {
 
     let net_handle = spawn(net_config, chain.clone(), peer_registry, cmd_rx);
 
-    // Await the network handle in a separate task so that bind errors
-    // are detected and the process exits if the P2P listener cannot be
-    // created.
     tokio::spawn(async move {
         match net_handle.await {
             Ok(Ok(())) => println!("[p2p] network loop exited"),
@@ -142,12 +160,8 @@ async fn main() {
     }
     drop(guard);
 
-    // Ask the network loop to shut down cleanly so that anchors and the
-    // ban list are persisted.
     let _ = cmd_tx_for_shutdown.send(NetworkCommand::Shutdown).await;
-    // Wait for the RPC server to finish.
     let _ = tokio::time::timeout(Duration::from_secs(5), rpc_handle).await;
-    // Wait for the network loop to finish.
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     println!("[node] shutdown complete");
