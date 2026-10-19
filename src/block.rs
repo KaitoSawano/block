@@ -103,7 +103,8 @@ impl Block {
         )
     }
 
-    /// Create a new block. The `reward` field is calculated as `subsidy + total_fees`.
+    /// Create a new block. The `reward` field is calculated as
+    /// `subsidy + total_fees`.
     pub fn new_for(
         index: u64,
         previous_hash: String,
@@ -257,13 +258,14 @@ impl Block {
         );
         for tx in &self.transactions {
             payload.push_str(&format!(
-                "\n{}|{}|{}|{}|{}|{}|{}|{}",
+                "\n{}|{}|{}|{}|{}|{}|{}|{}|{}",
                 tx.from,
                 tx.to,
                 tx.amount,
                 tx.fee,
+                tx.nonce,
                 tx.note,
-                tx.inputs.join(","),
+                tx.output_script,
                 tx.public_key,
                 tx.signature
             ));
