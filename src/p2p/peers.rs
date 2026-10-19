@@ -14,5 +14,9 @@ pub const DEFAULT_BOOTSTRAP: &[&str] = &[];
 
 pub const MAX_PEERS: usize = 32;
 pub const MAX_OUTBOUND: usize = 8;
-pub const HEADERS_PER_REQUEST: u64 = 2_000;
+
+// Set the maximum number of headers per request to 5,000 for faster
+// testnet synchronization. For mainnet, this should be lowered to 2000.
+pub const HEADERS_PER_REQUEST: u64 = 5_000;
+
 pub const GENESIS_HEIGHT: u64 = 0;
