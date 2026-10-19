@@ -17,6 +17,10 @@ use serde::{Deserialize, Serialize};
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const USER_AGENT: &str = "/zenachain:0.1.0/";
 
+// The maximum payload length has been increased to 32 MB to
+// accommodate larger header batches (5,000 headers) during sync.
+pub const MAX_PAYLOAD_LEN: usize = 32 * 1024 * 1024;
+
 /// Inventory type: transaction or block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InvType {
@@ -414,10 +418,6 @@ impl Message {
                     b.nbits = nbits;
                     b.hash = hash;
                     b.reward = reward;
-                    // Recompute the subsidy from the block height so that
-                    // header validation succeeds. The subsidy is a pure
-                    // function of the height and is not transmitted on the
-                    // wire.
                     b.subsidy = Blockchain::calculate_reward(index);
                     headers.push(b);
                 }
