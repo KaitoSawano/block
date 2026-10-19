@@ -8,8 +8,6 @@
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
-use crate::blockchain::network::NETWORK_MAGIC;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PeerState {
     Disconnected,
@@ -34,7 +32,7 @@ pub struct Peer {
     pub state: PeerState,
     pub conn_type: ConnectionType,
     pub outbound: bool,
-    pub mapped_as: u32, // <-- Tambahan: ASN dari peer ini
+    pub mapped_as: u32,
     pub local_nonce: u64,
     pub remote_nonce: u64,
     pub protocol_version: u32,
@@ -84,8 +82,6 @@ impl Peer {
         }
     }
 
-    // ... (sisa method seperti is_connected, add_misbehavior, dll tetap sama)
-    
     pub fn is_connected(&self) -> bool {
         self.state == PeerState::Connected
     }
@@ -134,10 +130,6 @@ impl Peer {
             Some(t) => self.pending_ping.is_some() && t.elapsed() > timeout,
             None => false,
         }
-    }
-
-    pub fn expected_magic(&self) -> [u8; 4] {
-        NETWORK_MAGIC
     }
 }
 
