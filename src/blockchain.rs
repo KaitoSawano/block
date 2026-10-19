@@ -46,18 +46,25 @@ pub mod checkpoint {
 }
 
 pub mod network {
-    pub const NETWORK_MAGIC: [u8; 4] = [0x5a, 0x45, 0x4e, 0x41];
-    pub const NETWORK_NAME: &str = "main";
-    pub const DEFAULT_PORT: u16 = 8333;
+    use crate::consensus::spec;
+
     pub const PRUNE_AFTER_HEIGHT: u64 = 100_000;
     pub const ASSUMED_BLOCKCHAIN_SIZE: u64 = 496;
     pub const ASSUMED_CHAIN_STATE_SIZE: u64 = 6;
 
+    /// Return the network name for the active network.
+    pub fn network_name() -> &'static str {
+        spec::current_network().name()
+    }
+
+    /// Return the default P2P port for the active network.
+    pub fn default_port() -> u16 {
+        spec::current_network().default_port()
+    }
+
+    /// Return the magic bytes for the active network as a hex string.
     pub fn network_magic_hex() -> String {
-        format!(
-            "{:02x}{:02x}{:02x}{:02x}",
-            NETWORK_MAGIC[0], NETWORK_MAGIC[1], NETWORK_MAGIC[2], NETWORK_MAGIC[3]
-        )
+        spec::current_network().magic_hex()
     }
 }
 
@@ -69,7 +76,6 @@ pub use genesis::genesis_message;
 pub use genesis::genesis_output_script;
 pub use genesis::genesis_secret;
 pub use genesis::genesis_timestamp;
-pub use network::DEFAULT_PORT;
 pub use spec::coin_name;
 pub use spec::decimals;
 pub use spec::difficulty_adjust_interval;
@@ -96,7 +102,7 @@ pub fn pow_limit() -> &'static str {
     cpow::POW_LIMIT
 }
 pub fn genesis_nbits() -> u32 {
-    cpow::GENESIS_NBITS
+    spec::current_network().genesis_nbits()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,8 +167,6 @@ impl Blockchain {
         self.nonces.get(addr).copied().unwrap_or(0)
     }
 
-    /// Return the next nonce for an address, taking into account any
-    /// transactions from that address that are already in the mempool.
     pub fn next_nonce_for(&self, addr: &str) -> u64 {
         let base = self.nonce_of(addr);
         let mut next = base;
@@ -178,7 +182,6 @@ impl Blockchain {
         }
     }
 
-    /// Apply a transaction to the chain state.
     pub fn apply_transaction(&mut self, tx: &Transaction) -> Result<(), String> {
         let total = tx
             .amount
@@ -206,7 +209,6 @@ impl Blockchain {
         Ok(())
     }
 
-    /// Credit a block reward to the miner.
     pub fn credit_reward(&mut self, miner: &str, reward: u64) -> Result<(), String> {
         let balance = self.balances.get(miner).copied().unwrap_or(0);
         let new_balance = balance
@@ -216,7 +218,6 @@ impl Blockchain {
         Ok(())
     }
 
-    /// Add a transaction to the mempool after full validation.
     pub fn add_transaction(&mut self, tx: Transaction) -> bool {
         if self.mempool.iter().any(|t| t.txid == tx.txid) {
             return false;
@@ -332,7 +333,7 @@ fn target_to_nbits(target: &[u8; 32]) -> u32 {
         i += 1;
     }
     if i == 32 {
-        return cpow::GENESIS_NBITS;
+        return spec::current_network().genesis_nbits();
     }
 
     let size = 32 - i;
