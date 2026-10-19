@@ -8,6 +8,7 @@
 use crate::block::Block;
 use crate::blockchain::Blockchain;
 use crate::consensus::rules;
+use crate::consensus::spec::{self, Network};
 use crate::pow;
 use crate::secp256k1::{address, verify};
 use crate::transaction::Transaction;
@@ -45,13 +46,14 @@ impl fmt::Display for ValidationError {
 }
 
 pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
-    if !addr.starts_with(ADDRESS_PREFIX) {
+    let prefix = spec::current_network().address_prefix();
+    if !addr.starts_with(prefix) {
         return Err(ValidationError::new(
             "E001",
-            format!("address does not start with {}: {}", ADDRESS_PREFIX, addr),
+            format!("address does not start with {}: {}", prefix, addr),
         ));
     }
-    let hex_part = &addr[ADDRESS_PREFIX.len()..];
+    let hex_part = &addr[prefix.len()..];
     if hex_part.len() != ADDRESS_HEX_LEN {
         return Err(ValidationError::new(
             "E002",
@@ -423,8 +425,13 @@ pub fn rule_total_supply(chain: &Blockchain) -> Result<(), ValidationError> {
     Ok(())
 }
 
-pub fn rule_genesis_fingerprint(block: &Block) -> Result<(), ValidationError> {
-    let expected_txid = crate::blockchain::genesis_coinbase_txid();
+/// Ensure that the genesis coinbase transaction identifier matches the
+/// consensus fingerprint for the given network.
+pub fn rule_genesis_fingerprint_for(
+    block: &Block,
+    network: Network,
+) -> Result<(), ValidationError> {
+    let expected_txid = crate::blockchain::genesis_coinbase_txid_for(network);
     if block.coinbase_txid != expected_txid {
         return Err(ValidationError::new(
             "E042",
@@ -435,6 +442,10 @@ pub fn rule_genesis_fingerprint(block: &Block) -> Result<(), ValidationError> {
         ));
     }
     Ok(())
+}
+
+pub fn rule_genesis_fingerprint(block: &Block) -> Result<(), ValidationError> {
+    rule_genesis_fingerprint_for(block, spec::current_network())
 }
 
 pub fn rule_block_merkle_root(block: &Block) -> Result<(), ValidationError> {
@@ -509,10 +520,6 @@ pub fn validate_transaction(chain: &Blockchain, tx: &Transaction) -> Result<(), 
     Ok(())
 }
 
-/// Validate every transaction in a block against a lightweight overlay
-/// of the account state. The overlay tracks only the balances and
-/// nonces that are affected by the transactions in this block, so the
-/// entire chain state is not cloned.
 pub fn validate_block_transactions(
     chain: &Blockchain,
     transactions: &[Transaction],
@@ -527,7 +534,6 @@ pub fn validate_block_transactions(
             continue;
         }
 
-        // Validate the nonce against the overlay first, then the chain.
         let base_nonce = overlay_nonces
             .get(&tx.from)
             .copied()
@@ -542,7 +548,6 @@ pub fn validate_block_transactions(
             ));
         }
 
-        // Validate the balance against the overlay first, then the chain.
         let base_balance = overlay_balances
             .get(&tx.from)
             .copied()
