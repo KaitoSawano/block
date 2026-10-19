@@ -112,10 +112,6 @@ impl Blockchain {
         let mut balances = HashMap::new();
         let mut nonces = HashMap::new();
 
-        // Initialize the genesis coinbase balance.
-        // The genesis block credits its reward to the "GENESIS" address,
-        // which is not spendable but keeps the supply accounting
-        // consistent.
         balances.insert("GENESIS".to_string(), genesis.reward);
         nonces.insert("GENESIS".to_string(), 0);
 
@@ -163,18 +159,80 @@ impl Blockchain {
         self.nonces.get(addr).copied().unwrap_or(0)
     }
 
-    pub fn apply_transaction(&mut self, tx: &Transaction) {
-        let from_balance = self.balances.entry(tx.from.clone()).or_insert(0);
-        *from_balance = from_balance.saturating_sub(tx.amount.saturating_add(tx.fee));
-
-        let to_balance = self.balances.entry(tx.to.clone()).or_insert(0);
-        *to_balance = to_balance.saturating_add(tx.amount);
-
-        let nonce = self.nonces.entry(tx.from.clone()).or_insert(0);
-        *nonce = nonce.saturating_add(1);
+    /// Return the next nonce for an address, taking into account any
+    /// transactions from that address that are already in the mempool.
+    pub fn next_nonce_for(&self, addr: &str) -> u64 {
+        let base = self.nonce_of(addr);
+        let mut next = base;
+        loop {
+            let has = self
+                .mempool
+                .iter()
+                .any(|tx| tx.from == addr && tx.nonce == next);
+            if !has {
+                return next;
+            }
+            next = next.saturating_add(1);
+        }
     }
 
+    /// Apply a transaction to the chain state.
+    ///
+    /// The function returns an error if the sender balance would
+    /// underflow or if the recipient balance would overflow. Callers
+    /// must not call this function before the transaction has been
+    /// fully validated.
+    pub fn apply_transaction(&mut self, tx: &Transaction) -> Result<(), String> {
+        let total = tx
+            .amount
+            .checked_add(tx.fee)
+            .ok_or_else(|| "amount + fee overflows u64".to_string())?;
+
+        let from_balance = self.balances.get(&tx.from).copied().unwrap_or(0);
+        let new_from = from_balance
+            .checked_sub(total)
+            .ok_or_else(|| format!("sender {} underflow", tx.from))?;
+        self.balances.insert(tx.from.clone(), new_from);
+
+        let to_balance = self.balances.get(&tx.to).copied().unwrap_or(0);
+        let new_to = to_balance
+            .checked_add(tx.amount)
+            .ok_or_else(|| format!("recipient {} overflow", tx.to))?;
+        self.balances.insert(tx.to.clone(), new_to);
+
+        let nonce = self.nonces.get(&tx.from).copied().unwrap_or(0);
+        let new_nonce = nonce
+            .checked_add(1)
+            .ok_or_else(|| format!("nonce overflow for {}", tx.from))?;
+        self.nonces.insert(tx.from.clone(), new_nonce);
+
+        Ok(())
+    }
+
+    /// Credit a block reward to the miner.
+    pub fn credit_reward(&mut self, miner: &str, reward: u64) -> Result<(), String> {
+        let balance = self.balances.get(miner).copied().unwrap_or(0);
+        let new_balance = balance
+            .checked_add(reward)
+            .ok_or_else(|| format!("miner {} overflow", miner))?;
+        self.balances.insert(miner.to_string(), new_balance);
+        Ok(())
+    }
+
+    /// Add a transaction to the mempool after full validation,
+    /// including a check for nonce collisions with other mempool
+    /// transactions from the same sender.
     pub fn add_transaction(&mut self, tx: Transaction) -> bool {
+        if self.mempool.iter().any(|t| t.txid == tx.txid) {
+            return false;
+        }
+        if self
+            .mempool
+            .iter()
+            .any(|t| t.from == tx.from && t.nonce == tx.nonce)
+        {
+            return false;
+        }
         if validation::validate_transaction(self, &tx).is_err() {
             return false;
         }
@@ -211,11 +269,10 @@ impl Blockchain {
         }
 
         for tx in &txs {
-            self.apply_transaction(tx);
+            self.apply_transaction(tx)?;
         }
 
-        let miner_balance = self.balances.entry(new_block.mined_for.clone()).or_insert(0);
-        *miner_balance = miner_balance.saturating_add(reward);
+        self.credit_reward(&new_block.mined_for, reward)?;
 
         let nonce = new_block.nonce;
         self.chain.push(new_block);
