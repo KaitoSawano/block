@@ -277,6 +277,11 @@ impl Blockchain {
     }
 
     pub fn adjust_difficulty(&mut self) {
+        // Regtest: never change the difficulty to allow instant mining.
+        if spec::current_network() == spec::Network::Regtest {
+            return;
+        }
+
         let height = self.height();
         if height == 0 || !height.is_multiple_of(spec::DIFFICULTY_ADJUST_INTERVAL) {
             return;
