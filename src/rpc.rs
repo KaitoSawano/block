@@ -1082,13 +1082,19 @@ impl RpcHandler {
         if wallet.encrypted {
             let pass_opt = self.state.wallet_password.blocking_read().clone();
             match pass_opt {
-                Some(pass) => {
-                    match wallet.decrypt(&pass) {
-                        Ok(decrypted) => wallet = decrypted,
-                        Err(_) => return RpcResponse::err("wallet is locked. Run walletpassphrase first."),
+                Some(pass) => match wallet.decrypt(&pass) {
+                    Ok(decrypted) => wallet = decrypted,
+                    Err(_) => {
+                        return RpcResponse::err(
+                            "wallet is locked. Run walletpassphrase first.",
+                        )
                     }
+                },
+                None => {
+                    return RpcResponse::err(
+                        "wallet is locked. Run walletpassphrase first.",
+                    )
                 }
-                None => return RpcResponse::err("wallet is locked. Run walletpassphrase first."),
             }
         }
 
@@ -1110,7 +1116,11 @@ impl RpcHandler {
             drop(chain);
             match best {
                 Some((addr, _)) => addr,
-                None => return RpcResponse::err("wallet has no addresses other than the destination"),
+                None => {
+                    return RpcResponse::err(
+                        "wallet has no addresses other than the destination",
+                    )
+                }
             }
         };
 
@@ -1148,7 +1158,9 @@ impl RpcHandler {
                         let s = format!("{:.8}", v);
                         match parse_zenac_to_satoshi(&s) {
                             Ok(v) => v,
-                            Err(e) => return RpcResponse::err(&format!("invalid amount: {}", e)),
+                            Err(e) => {
+                                return RpcResponse::err(&format!("invalid amount: {}", e))
+                            }
                         }
                     }
                     None => return RpcResponse::err("invalid amount"),
@@ -1273,13 +1285,19 @@ impl RpcHandler {
         if w.encrypted {
             let pass_opt = self.state.wallet_password.blocking_read().clone();
             match pass_opt {
-                Some(pass) => {
-                    match w.decrypt(&pass) {
-                        Ok(decrypted) => w = decrypted,
-                        Err(_) => return RpcResponse::err("wallet is locked. Run walletpassphrase first."),
+                Some(pass) => match w.decrypt(&pass) {
+                    Ok(decrypted) => w = decrypted,
+                    Err(_) => {
+                        return RpcResponse::err(
+                            "wallet is locked. Run walletpassphrase first.",
+                        )
                     }
+                },
+                None => {
+                    return RpcResponse::err(
+                        "wallet is locked. Run walletpassphrase first.",
+                    )
                 }
-                None => return RpcResponse::err("wallet is locked. Run walletpassphrase first."),
             }
         }
 
@@ -1413,7 +1431,9 @@ fn m_importprivkey(req: &RpcRequest) -> RpcResponse {
     });
 
     if w.encrypted {
-        return RpcResponse::err("wallet is encrypted. Use walletpassphrase to unlock it first.");
+        return RpcResponse::err(
+            "wallet is encrypted. Use walletpassphrase to unlock it first.",
+        );
     }
 
     if w.get_entry(&entry.address).is_none() {
@@ -1606,10 +1626,7 @@ pub fn call_and_print(method: &str, params: Vec<Value>) {
         }
         Err(e) => {
             let cfg = Config::load_or_default();
-            println!(
-                "[rpc] cannot connect to node at {}: {}",
-                cfg.rpc_addr, e
-            );
+            println!("[rpc] cannot connect to node at {}: {}", cfg.rpc_addr, e);
             println!("[rpc] start zenachaind first.");
         }
     }
