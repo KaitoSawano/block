@@ -11,10 +11,7 @@ use crate::consensus::rules;
 use crate::pow;
 use crate::secp256k1::{address, verify};
 use crate::transaction::Transaction;
-use crate::wallet::Wallet;
-use std::collections::HashSet;
 use std::fmt;
-use zenachain_crypto::sha3_256_hex;
 
 pub use rules::ADDRESS_HEX_LEN;
 pub use rules::ADDRESS_PREFIX;
@@ -104,36 +101,6 @@ pub fn rule_note_length(tx: &Transaction) -> Result<(), ValidationError> {
     Ok(())
 }
 
-pub fn rule_input_count(tx: &Transaction) -> Result<(), ValidationError> {
-    if tx.inputs.len() > MAX_INPUTS_PER_TX {
-        return Err(ValidationError::new(
-            "E007",
-            format!("input count exceeds {}", MAX_INPUTS_PER_TX),
-        ));
-    }
-    Ok(())
-}
-
-/// Compute the signing hash of a transaction.
-///
-/// The signing hash excludes the `signature` field, because a signature
-/// cannot commit to itself. The `public_key` is included so that the
-/// signature commits to the signer identity.
-pub fn signing_hash(tx: &Transaction) -> String {
-    let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}",
-        tx.from,
-        tx.to,
-        tx.amount,
-        tx.fee,
-        tx.note,
-        tx.inputs.join(","),
-        tx.output_script,
-        tx.public_key
-    );
-    sha3_256_hex(payload.as_bytes())
-}
-
 pub fn rule_signature(tx: &Transaction) -> Result<(), ValidationError> {
     if is_special_tx(tx) {
         return Ok(());
@@ -148,9 +115,7 @@ pub fn rule_signature(tx: &Transaction) -> Result<(), ValidationError> {
         .map_err(|_| ValidationError::new("E010", "public key is not hexadecimal"))?;
     let sig = hex::decode(&tx.signature)
         .map_err(|_| ValidationError::new("E010", "signature is not hexadecimal"))?;
-    // The signature commits to the signing hash, which excludes the
-    // signature field itself.
-    let msg = hex::decode(&signing_hash(tx))
+    let msg = hex::decode(tx.signing_hash())
         .map_err(|_| ValidationError::new("E010", "signing hash is not hexadecimal"))?;
     if !verify::verify(&pk, &msg, &sig) {
         return Err(ValidationError::new(
@@ -195,84 +160,21 @@ pub fn rule_txid_consistent(tx: &Transaction) -> Result<(), ValidationError> {
     Ok(())
 }
 
-pub fn spent_inputs(chain: &Blockchain) -> HashSet<String> {
-    let mut spent = HashSet::new();
-    for block in &chain.chain {
-        for tx in &block.transactions {
-            for input in &tx.inputs {
-                spent.insert(input.clone());
-            }
-        }
-    }
-    spent
-}
-
-pub fn mempool_inputs(chain: &Blockchain) -> HashSet<String> {
-    let mut used = HashSet::new();
-    for tx in &chain.mempool {
-        for input in &tx.inputs {
-            used.insert(input.clone());
-        }
-    }
-    used
-}
-
-pub fn rule_no_double_spend(chain: &Blockchain, tx: &Transaction) -> Result<(), ValidationError> {
+pub fn rule_nonce(chain: &Blockchain, tx: &Transaction) -> Result<(), ValidationError> {
     if is_special_tx(tx) {
         return Ok(());
     }
-    let spent_chain = spent_inputs(chain);
-    let spent_mempool = mempool_inputs(chain);
-    let mut conflicts = Vec::new();
-    for input in &tx.inputs {
-        if spent_chain.contains(input) || spent_mempool.contains(input) {
-            conflicts.push(input.clone());
-        }
-    }
-    if !conflicts.is_empty() {
+    let expected = chain.nonce_of(&tx.from);
+    if tx.nonce != expected {
         return Err(ValidationError::new(
-            "E020",
-            format!("inputs already spent: {}", conflicts.join(",")),
+            "E022",
+            format!(
+                "invalid nonce: got {}, expected {}",
+                tx.nonce, expected
+            ),
         ));
     }
     Ok(())
-}
-
-pub fn mature_balance(chain: &Blockchain, addr: &str) -> u64 {
-    let spent = spent_inputs(chain);
-    let current_height = chain.height();
-    let mut mature: u64 = 0;
-    for block in &chain.chain {
-        for tx in &block.transactions {
-            if tx.to == addr {
-                let outpoint = format!("{}:0", tx.txid);
-                if !spent.contains(&outpoint) {
-                    mature = mature.saturating_add(tx.amount);
-                }
-            }
-        }
-        if block.mined_for == addr && block.reward > 0 {
-            let mature_at = block.index.saturating_add(COINBASE_MATURITY);
-            if mature_at <= current_height {
-                mature = mature.saturating_add(block.reward);
-            }
-        }
-    }
-    mature
-}
-
-pub fn immature_balance(chain: &Blockchain, addr: &str) -> u64 {
-    let current_height = chain.height();
-    let mut immature: u64 = 0;
-    for block in &chain.chain {
-        if block.mined_for == addr && block.reward > 0 {
-            let mature_at = block.index.saturating_add(COINBASE_MATURITY);
-            if mature_at > current_height {
-                immature = immature.saturating_add(block.reward);
-            }
-        }
-    }
-    immature
 }
 
 pub fn rule_sufficient_balance(
@@ -282,7 +184,7 @@ pub fn rule_sufficient_balance(
     if is_special_tx(tx) {
         return Ok(());
     }
-    let balance = mature_balance(chain, &tx.from);
+    let balance = chain.balance_of(&tx.from);
     let need = tx.amount.saturating_add(tx.fee);
     if balance < need {
         return Err(ValidationError::new(
@@ -323,7 +225,6 @@ pub fn rule_block_tx_count(block: &Block) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Ensure that the block subsidy matches the consensus schedule.
 pub fn rule_block_subsidy(block: &Block) -> Result<(), ValidationError> {
     let expected = Blockchain::calculate_reward(block.index);
     if block.subsidy != expected {
@@ -338,7 +239,6 @@ pub fn rule_block_subsidy(block: &Block) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Ensure that the total reward equals the subsidy plus the declared fees.
 pub fn rule_block_reward(block: &Block) -> Result<(), ValidationError> {
     let expected = block.subsidy.saturating_add(block.total_fees);
     if block.reward != expected {
@@ -353,9 +253,6 @@ pub fn rule_block_reward(block: &Block) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Ensure that the declared total fees equal the sum of the fees of all
-/// transactions in the block. This prevents a miner from inflating the
-/// reward by declaring arbitrary fees.
 pub fn rule_block_total_fees(block: &Block) -> Result<(), ValidationError> {
     let computed: u64 = block.transactions.iter().map(|tx| tx.fee).sum();
     if block.total_fees != computed {
@@ -370,16 +267,11 @@ pub fn rule_block_total_fees(block: &Block) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Ensure that the coinbase transaction identifier is consistent with the
-/// block index, the mining target, and the block timestamp. This prevents a
-/// miner from claiming a reward for an arbitrary address.
 pub fn rule_block_coinbase_consistent(block: &Block) -> Result<(), ValidationError> {
     if block.index == 0 {
-        // The genesis coinbase identifier is defined by the consensus
-        // fingerprint and is validated separately.
         return Ok(());
     }
-    let expected = sha3_256_hex(
+    let expected = zenachain_crypto::sha3_256_hex(
         format!("{}|{}|{}", block.index, block.mined_for, block.timestamp).as_bytes(),
     );
     if block.coinbase_txid != expected {
@@ -394,8 +286,6 @@ pub fn rule_block_coinbase_consistent(block: &Block) -> Result<(), ValidationErr
     Ok(())
 }
 
-/// Ensure that the mining target address is a valid address. The genesis
-/// block is exempt because it uses the literal string "GENESIS".
 pub fn rule_mined_for_valid(block: &Block) -> Result<(), ValidationError> {
     if block.index == 0 {
         return Ok(());
@@ -615,10 +505,9 @@ pub fn validate_transaction(chain: &Blockchain, tx: &Transaction) -> Result<(), 
     rule_self_send(tx)?;
     rule_amount_nonzero(tx)?;
     rule_note_length(tx)?;
-    rule_input_count(tx)?;
     rule_signature(tx)?;
     rule_address_matches_pubkey(tx)?;
-    rule_no_double_spend(chain, tx)?;
+    rule_nonce(chain, tx)?;
     rule_sufficient_balance(chain, tx)?;
     Ok(())
 }
@@ -627,8 +516,13 @@ pub fn validate_block_transactions(
     chain: &Blockchain,
     transactions: &[Transaction],
 ) -> Result<(), ValidationError> {
+    // Validate each transaction against a temporary copy of the chain
+    // state. This ensures that chained transactions within the same
+    // block are validated in order.
+    let mut temp = chain.clone();
     for tx in transactions {
-        validate_transaction(chain, tx)?;
+        validate_transaction(&temp, tx)?;
+        temp.apply_transaction(tx);
     }
     Ok(())
 }
@@ -703,19 +597,4 @@ pub fn validate_mempool(chain: &Blockchain) -> Vec<ValidationError> {
         }
     }
     errors
-}
-
-pub fn wallet_has_balance(
-    wallet: &Wallet,
-    chain: &Blockchain,
-    amount_sat: u64,
-    fee_sat: u64,
-) -> bool {
-    for entry in &wallet.entries {
-        let balance = mature_balance(chain, &entry.address);
-        if balance >= amount_sat.saturating_add(fee_sat) {
-            return true;
-        }
-    }
-    false
 }
