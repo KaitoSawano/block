@@ -24,22 +24,16 @@ pub const GENESIS_OUTPUT_SCRIPT: &str =
 // Mainnet genesis
 // ----------------------------------------------------------------------
 
-/// The timestamp of the mainnet genesis block. This is the exact time
-/// the block was mined. It is locked forever and must not change.
 pub const GENESIS_TIMESTAMP: u128 = 1792303198445;
 
-/// The expected hash of the mainnet genesis block.
 pub const EXPECTED_GENESIS_HASH: &str =
     "00000efb658a36715e611a97ce22343e5e1ccd3243157680eb998316648a439f";
 
-/// The expected merkle root of the mainnet genesis block.
 pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =
     "a0d24005775f3cd42a6f7d4a03f6d9d650ef814a2d3bc73833a57d1749c3cd6c";
 
-/// The expected timestamp of the mainnet genesis block.
 pub const EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198445;
 
-/// The expected nonce of the mainnet genesis block.
 pub const EXPECTED_GENESIS_NONCE: u64 = 420282;
 
 // ----------------------------------------------------------------------
@@ -48,78 +42,80 @@ pub const EXPECTED_GENESIS_NONCE: u64 = 420282;
 //
 // The testnet genesis is mined at build time by the `zenachain-genesis`
 // binary with the `-testnet` flag. The resulting hash, merkle root,
-// timestamp, and nonce must be pasted into this module. Until they are
-// pasted, the testnet genesis will fail the `Block::genesis()` check and
-// the daemon will exit with the expected values printed to stderr.
+// timestamp, and nonce must be pasted into this module.
 
-/// The timestamp of the testnet genesis block.
 pub const TESTNET_GENESIS_TIMESTAMP: u128 = 1792303198446;
 
-/// The expected hash of the testnet genesis block. This value is
-/// computed by `zenachain-genesis -testnet` and must be pasted here.
 pub const TESTNET_EXPECTED_GENESIS_HASH: &str = "";
 
-/// The expected merkle root of the testnet genesis block.
 pub const TESTNET_EXPECTED_GENESIS_MERKLE_ROOT: &str = "";
 
-/// The expected timestamp of the testnet genesis block.
 pub const TESTNET_EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198446;
 
-/// The expected nonce of the testnet genesis block.
 pub const TESTNET_EXPECTED_GENESIS_NONCE: u64 = 0;
 
 // ----------------------------------------------------------------------
 // Network-aware accessors
 // ----------------------------------------------------------------------
 
-/// Return the genesis message for the active network.
 pub fn genesis_message() -> &'static str {
     GENESIS_MESSAGE
 }
 
-/// Return the genesis secret for the active network.
 pub fn genesis_secret() -> &'static str {
     GENESIS_SECRET
 }
 
-/// Return the genesis timestamp for the active network.
 pub fn genesis_timestamp() -> u128 {
     spec::current_network().genesis_timestamp()
 }
 
-/// Return the genesis output script for the active network.
 pub fn genesis_output_script() -> String {
     GENESIS_OUTPUT_SCRIPT.to_string()
 }
 
-/// Return the expected genesis hash for the active network.
-pub fn expected_genesis_hash() -> &'static str {
-    match spec::current_network() {
+/// Return the expected genesis hash for the given network.
+pub fn expected_genesis_hash_for(network: Network) -> &'static str {
+    match network {
         Network::Main => EXPECTED_GENESIS_HASH,
         Network::Test => TESTNET_EXPECTED_GENESIS_HASH,
     }
 }
 
-/// Return the expected genesis merkle root for the active network.
-pub fn expected_genesis_merkle_root() -> &'static str {
-    match spec::current_network() {
+/// Return the expected genesis merkle root for the given network.
+pub fn expected_genesis_merkle_root_for(network: Network) -> &'static str {
+    match network {
         Network::Main => EXPECTED_GENESIS_MERKLE_ROOT,
         Network::Test => TESTNET_EXPECTED_GENESIS_MERKLE_ROOT,
     }
 }
 
-/// Return the expected genesis timestamp for the active network.
-pub fn expected_genesis_timestamp() -> u128 {
-    match spec::current_network() {
+/// Return the expected genesis timestamp for the given network.
+pub fn expected_genesis_timestamp_for(network: Network) -> u128 {
+    match network {
         Network::Main => EXPECTED_GENESIS_TIMESTAMP,
         Network::Test => TESTNET_EXPECTED_GENESIS_TIMESTAMP,
     }
 }
 
-/// Return the expected genesis nonce for the active network.
-pub fn expected_genesis_nonce() -> u64 {
-    match spec::current_network() {
+/// Return the expected genesis nonce for the given network.
+pub fn expected_genesis_nonce_for(network: Network) -> u64 {
+    match network {
         Network::Main => EXPECTED_GENESIS_NONCE,
         Network::Test => TESTNET_EXPECTED_GENESIS_NONCE,
     }
+}
+
+// Legacy accessors (return mainnet values, kept for compatibility).
+
+pub fn expected_genesis_hash() -> &'static str {
+    EXPECTED_GENESIS_HASH
+}
+
+pub fn expected_genesis_merkle_root() -> &'static str {
+    EXPECTED_GENESIS_MERKLE_ROOT
+}
+
+pub fn expected_genesis_nonce() -> u64 {
+    EXPECTED_GENESIS_NONCE
 }
