@@ -31,12 +31,7 @@ use crate::storage;
 use crate::utils::{format_datetime, now_millis};
 use crate::validation;
 
-// Include the ASMap directly into the binary.
 const ASMAP_JSON: &str = include_str!("asmap.json");
-
-/// Maximum number of bytes that may be buffered for a single peer before
-/// the peer is disconnected. This prevents a slow or malicious peer from
-/// exhausting node memory.
 const MAX_WRITE_BUFFER: usize = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -114,8 +109,6 @@ pub struct Network {
     asmap: HashMap<String, u32>,
     banman: BanMan,
     anchors: Vec<Anchor>,
-    /// Current block-relay-only outbound peers, used to update anchors
-    /// on clean shutdown.
     block_relay_peers: Vec<SocketAddr>,
 }
 
@@ -143,8 +136,6 @@ impl Network {
             });
         println!("[p2p] loaded custom ASMap with {} entries", asmap.len());
 
-        // Load anchors from disk. These are tried for connection before
-        // any other outbound peers.
         let anchors = anchors::load_anchors();
         if !anchors.is_empty() {
             println!(
@@ -153,9 +144,6 @@ impl Network {
                 anchors::ANCHORS_DATABASE_FILENAME
             );
         }
-        // Delete the anchors file after loading so that an unclean
-        // shutdown does not cause reconnection to a potentially
-        // malicious anchor.
         anchors::delete_anchors_file();
 
         Network {
@@ -201,9 +189,6 @@ impl Network {
             }
         }
 
-        // Attempt to connect to anchors first.
-        // Clone the anchors so that we do not hold an immutable borrow of
-        // self while calling the mutable method attempt_connect.
         let anchors_to_connect: Vec<Anchor> = self.anchors.clone();
         for anchor in &anchors_to_connect {
             if !self.banman.is_banned(&anchor.addr) {
@@ -252,8 +237,6 @@ impl Network {
                             break;
                         }
                         Some(cmd) => self.handle_command(cmd).await,
-                        // The command channel has been closed. Stop the
-                        // network loop to avoid a busy loop.
                         None => break,
                     }
                 }
@@ -265,7 +248,6 @@ impl Network {
             self.update_registry();
         }
 
-        // Clean shutdown: persist anchors and ban list.
         self.save_anchors_on_shutdown();
         if let Err(e) = self.banman.dump_banlist() {
             eprintln!("[p2p] failed to dump banlist: {}", e);
@@ -274,7 +256,6 @@ impl Network {
         Ok(())
     }
 
-    /// Save the current block-relay-only outbound peers as anchors.
     fn save_anchors_on_shutdown(&self) {
         let anchors: Vec<Anchor> = self
             .block_relay_peers
@@ -292,8 +273,6 @@ impl Network {
     async fn handle_command(&mut self, cmd: NetworkCommand) {
         match cmd {
             NetworkCommand::BroadcastBlock(hash) => {
-                // Mark the block as known before broadcasting so that we
-                // do not request it back from a peer that relays it to us.
                 self.inv.add_block(&hash);
                 println!("[p2p] broadcasting block {}", hash);
                 self.broadcast_inv_to_full_relay(&[Inventory {
@@ -302,16 +281,13 @@ impl Network {
                 }]);
             }
             NetworkCommand::BroadcastTransaction(txid) => {
-                // Mark the transaction as known for the same reason.
                 self.inv.add_tx(&txid);
                 self.broadcast_inv_to_full_relay(&[Inventory {
                     inv_type: InvType::Transaction,
                     hash: txid,
                 }]);
             }
-            NetworkCommand::Shutdown => {
-                // Handled in the run() loop.
-            }
+            NetworkCommand::Shutdown => {}
         }
     }
 
@@ -342,8 +318,6 @@ impl Network {
     async fn on_tick(&mut self) {
         self.peer_manager.tick();
         self.addr_book.prune(Duration::from_secs(3600));
-        // Do NOT send GetHeaders on every tick. Headers are requested on
-        // handshake completion and when a new block inventory is received.
     }
 
     async fn try_connect(&mut self) {
@@ -364,7 +338,6 @@ impl Network {
                 .candidates(Duration::from_secs(60), 10)
                 .iter()
                 .find(|addr| {
-                    // Skip banned and discouraged addresses.
                     if self.banman.is_banned(addr) || self.banman.is_discouraged(&addr.ip()) {
                         return false;
                     }
@@ -488,7 +461,6 @@ impl Network {
                     peer.state = PeerState::Handshaking;
                 }
 
-                // Track block-relay-only peers for anchor persistence.
                 if conn_type == ConnectionType::OutboundBlockRelayOnly {
                     self.block_relay_peers.push(addr);
                     if self.block_relay_peers.len() > MAX_BLOCK_RELAY_ONLY_ANCHORS {
@@ -573,8 +545,6 @@ impl Network {
             return;
         }
         if let Some(conn) = self.connections.get_mut(&id) {
-            // Enforce a per-peer write buffer limit to prevent memory
-            // exhaustion by a slow or malicious peer.
             if conn.write_buf.len() + buf.len() > MAX_WRITE_BUFFER {
                 eprintln!(
                     "[p2p] write buffer limit reached for peer {}, dropping connection",
@@ -771,7 +741,7 @@ impl Network {
                 let mut count = 0;
                 for na in addrs {
                     let sa = na.to_socket();
-                    if sa.port() != crate::blockchain::network::DEFAULT_PORT {
+                    if sa.port() != crate::blockchain::network::default_port() {
                         continue;
                     }
                     if self.addr_book.add(sa) {
@@ -791,9 +761,6 @@ impl Network {
                 let chain = self.chain.read().await;
                 for inv in &new_items {
                     if inv.inv_type == InvType::Block {
-                        // Skip blocks that are already in our chain and
-                        // mark them as known so that we do not request them
-                        // again from another peer.
                         if chain.chain.iter().any(|b| b.hash == inv.hash) {
                             self.inv.add_block(&inv.hash);
                             continue;
@@ -823,7 +790,6 @@ impl Network {
                 }
             }
             Message::GetData(items) => {
-                // Respond to every requested inventory item.
                 let chain = self.chain.read().await;
                 let mut to_send: Vec<Message> = Vec::new();
                 for inv in items {
@@ -871,11 +837,6 @@ impl Network {
                     return;
                 }
 
-                // Reject transactions that use special sender identities.
-                // These identities are reserved for transactions created
-                // internally by the node (genesis coinbase, block coinbase)
-                // and must never be accepted from the network. Accepting
-                // them would allow a peer to create coins out of nothing.
                 if validation::is_special_tx(&tx) {
                     self.punish(id, 50, "special transaction from peer").await;
                     return;
@@ -918,18 +879,13 @@ impl Network {
         if headers.is_empty() {
             return;
         }
-        // Reject oversized header batches to prevent CPU exhaustion.
         if headers.len() > peers::HEADERS_PER_REQUEST as usize {
             self.punish(id, 20, "too many headers in one message").await;
             return;
         }
-
         let chain = self.chain.read().await;
         let first = &headers[0];
 
-        // The first header must connect to a block that we already have.
-        // It does not have to be the tip: the peer may resend headers that
-        // we have already processed.
         let connects = chain
             .chain
             .iter()
@@ -941,7 +897,6 @@ impl Network {
             return;
         }
 
-        // Validate that the headers are sequential.
         for window in headers.windows(2) {
             if window[1].index != window[0].index + 1
                 || window[1].previous_hash != window[0].hash
@@ -955,14 +910,11 @@ impl Network {
         let tip_index = chain.chain.last().map(|b| b.index).unwrap_or(0);
         let mut to_request = Vec::new();
         for h in &headers {
-            // Validate proof of work only. The subsidy, fees, and coinbase
-            // fields are validated when the full block is received.
             if validation::rule_block_pow(h).is_err() {
                 drop(chain);
                 self.punish(id, 50, "invalid header proof of work").await;
                 return;
             }
-            // Only request blocks that are newer than our tip.
             if h.index > tip_index && !self.inv.has_block(&h.hash) {
                 to_request.push(Inventory {
                     inv_type: InvType::Block,
@@ -991,8 +943,6 @@ impl Network {
             }
             Err(e) => {
                 drop(chain);
-                // A block that is already in our chain is not an error.
-                // Mark it as known and do not request headers.
                 if e.contains("already exists") {
                     self.inv.add_block(&block.hash);
                     return;
@@ -1033,8 +983,6 @@ impl Network {
     }
 
     async fn punish(&mut self, id: u64, _score: u32, reason: &str) {
-        // Bitcoin Core v28+ discourages a peer immediately on misbehavior
-        // rather than accumulating a ban score.
         let peer_ip = match self.peer_manager.get(id) {
             Some(p) => p.addr.ip(),
             None => return,
