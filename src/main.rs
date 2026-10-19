@@ -6,10 +6,26 @@
 //! Command-line interface for ZenaChain.
 
 use serde_json::json;
+use zenachain::consensus::spec::{self, Network};
 use zenachain::rpc;
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
+    let raw_args: Vec<String> = std::env::args().collect();
+
+    // Parse -testnet / --testnet before dispatching RPC.
+    let mut filtered: Vec<String> = vec![raw_args[0].clone()];
+    let mut use_testnet = false;
+    for arg in &raw_args[1..] {
+        if arg == "-testnet" || arg == "--testnet" {
+            use_testnet = true;
+        } else {
+            filtered.push(arg.clone());
+        }
+    }
+    if use_testnet {
+        spec::set_current_network(Network::Test);
+    }
+    let args = filtered;
 
     if args.len() < 2 {
         print_help();
@@ -172,14 +188,7 @@ fn main() {
                 println!("usage: zenachain sendtoaddress <amount> \"<address>\" [\"<from_address>\"]");
                 return;
             }
-            let amount: f64 = match args[2].parse() {
-                Ok(v) => v,
-                Err(_) => {
-                    println!("invalid amount");
-                    return;
-                }
-            };
-            let mut params = vec![json!(amount), json!(args[3])];
+            let mut params: Vec<serde_json::Value> = vec![json!(args[2]), json!(args[3])];
             if args.len() >= 5 {
                 params.push(json!(args[4]));
             }
@@ -203,46 +212,52 @@ fn main() {
 fn print_help() {
     println!("ZenaChain CLI");
     println!("usage:");
-    println!("  zenachain help                                display this help message");
-    println!("  zenachain stop                                save the chain and stop the node");
-    println!("  zenachain getinfo                             network information");
-    println!("  zenachain getblockchaininfo                   blockchain information");
-    println!("  zenachain getnetworkinfo                      network parameters");
-    println!("  zenachain getpeerinfo                         list connected peers");
-    println!("  zenachain getcheckpoints                      list of active checkpoints");
-    println!("  zenachain getblocktemplate                    block template for miners");
-    println!("  zenachain getblockcount                       number of blocks in the chain");
-    println!("  zenachain getbestblockhash                    hash of the latest block");
-    println!("  zenachain getdifficulty                       current proof-of-work difficulty");
-    println!("  zenachain getchaintips                        information about chain tips");
-    println!("  zenachain verifychain                         verify the integrity of the entire chain");
-    println!("  zenachain validatemempool                     validate every transaction in the mempool");
-    println!("  zenachain getgenesishash                      genesis block hash");
-    println!("  zenachain getgenesis                          genesis block details");
-    println!("  zenachain getblockhash <height>               hash of the block at the given height");
-    println!("  zenachain getblockheader \"<hash>\"             block header details for the given hash");
-    println!("  zenachain getblock \"<hash>\"                   block details for the given hash");
-    println!("  zenachain getrawtransaction \"<txid>\"          transaction details for the given txid");
-    println!("  zenachain decoderawtransaction \"<txid>\"       decode a transaction in a readable format");
-    println!("  zenachain testmempoolaccept \"<txid>\"          test whether a transaction would be accepted into the mempool");
-    println!("  zenachain getmempoolinfo                      mempool summary");
-    println!("  zenachain getnonce [address]                  next expected nonce for an address");
-    println!("  zenachain getlistwallet                       list all addresses in the wallet");
-    println!("  zenachain getaddressinfo \"<address>\"          get detailed information for an address");
-    println!("  zenachain setlabel \"<address>\" \"<label>\"      set a label for a wallet address");
-    println!("  zenachain backupwallet \"<destination>\"        backup the wallet.dat file");
-    println!("  zenachain getnewwallet                        create a new address in the wallet");
-    println!("  zenachain encryptwallet \"<password>\"          encrypt the wallet with a password");
-    println!("  zenachain walletpassphrase \"<password>\"       unlock the wallet (for testing)");
-    println!("  zenachain getaddtowallet                      use the default wallet address as the mining target");
-    println!("  zenachain getaddtoaddress \"<address>\"         set a manual mining address");
-    println!("  zenachain generatetoaddress <n> \"<address>\"   mine n blocks directly to the given address");
-    println!("  zenachain sendtoaddress <amount> \"<address>\" [\"<from>\"] send coins from the wallet to the destination");
-    println!("  zenachain dumpprivkey \"<address>\"             display the private key for the given address");
-    println!("  zenachain importprivkey \"<privkey>\"           import a private key into the wallet");
-    println!("  zenachain getbalance [address]                compute the wallet balance");
+    println!("  zenachain [-testnet|--testnet] <command> [args]");
+    println!();
+    println!("global:");
+    println!("  -testnet, --testnet                    use the testnet parameters");
+    println!();
+    println!("commands:");
+    println!("  help                                display this help message");
+    println!("  stop                                save the chain and stop the node");
+    println!("  getinfo                             network information");
+    println!("  getblockchaininfo                   blockchain information");
+    println!("  getnetworkinfo                      network parameters");
+    println!("  getpeerinfo                         list connected peers");
+    println!("  getcheckpoints                      list of active checkpoints");
+    println!("  getblocktemplate                    block template for miners");
+    println!("  getblockcount                       number of blocks in the chain");
+    println!("  getbestblockhash                    hash of the latest block");
+    println!("  getdifficulty                       current proof-of-work difficulty");
+    println!("  getchaintips                        information about chain tips");
+    println!("  verifychain                         verify the integrity of the entire chain");
+    println!("  validatemempool                     validate every transaction in the mempool");
+    println!("  getgenesishash                      genesis block hash");
+    println!("  getgenesis                          genesis block details");
+    println!("  getblockhash <height>               hash of the block at the given height");
+    println!("  getblockheader \"<hash>\"             block header details for the given hash");
+    println!("  getblock \"<hash>\"                   block details for the given hash");
+    println!("  getrawtransaction \"<txid>\"          transaction details for the given txid");
+    println!("  decoderawtransaction \"<txid>\"       decode a transaction in a readable format");
+    println!("  testmempoolaccept \"<txid>\"          test whether a transaction would be accepted into the mempool");
+    println!("  getmempoolinfo                      mempool summary");
+    println!("  getnonce [address]                  next expected nonce for an address");
+    println!("  getlistwallet                       list all addresses in the wallet");
+    println!("  getaddressinfo \"<address>\"          get detailed information for an address");
+    println!("  setlabel \"<address>\" \"<label>\"      set a label for a wallet address");
+    println!("  backupwallet \"<destination>\"        backup the wallet.dat file");
+    println!("  getnewwallet                        create a new address in the wallet");
+    println!("  encryptwallet \"<password>\"          encrypt the wallet with a password");
+    println!("  walletpassphrase \"<password>\"       unlock the wallet (for testing)");
+    println!("  getaddtowallet                      use the default wallet address as the mining target");
+    println!("  getaddtoaddress \"<address>\"         set a manual mining address");
+    println!("  generatetoaddress <n> \"<address>\"   mine n blocks directly to the given address");
+    println!("  sendtoaddress <amount> \"<address>\" [\"<from>\"] send coins from the wallet to the destination");
+    println!("  dumpprivkey \"<address>\"             display the private key for the given address");
+    println!("  importprivkey \"<privkey>\"           import a private key into the wallet");
+    println!("  getbalance [address]                compute the wallet balance");
     println!();
     println!("daemon:");
-    println!("  zenachaind                                    run the node (without mining)");
-    println!("  zenachain-miner                               run the standalone miner");
+    println!("  zenachaind [-testnet|--testnet]      run the node (without mining)");
+    println!("  zenachain-miner                     run the standalone miner");
 }
