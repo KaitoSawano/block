@@ -9,12 +9,13 @@ use zenachain::consensus::spec::{self, Network};
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    let mut use_testnet = false;
+    let mut selected_network = Network::Main;
     for arg in &args[1..] {
         match arg.as_str() {
-            "-testnet" | "--testnet" => use_testnet = true,
+            "-testnet" | "--testnet" => selected_network = Network::Test,
+            "-regtest" | "--regtest" => selected_network = Network::Regtest,
             "--help" | "-h" => {
-                println!("Usage: zenachain-genesis [-testnet|--testnet]");
+                println!("Usage: zenachain-genesis [-testnet|--testnet] [-regtest|--regtest]");
                 return;
             }
             other => {
@@ -24,50 +25,65 @@ fn main() {
         }
     }
 
-    let network = if use_testnet {
-        Network::Test
-    } else {
-        Network::Main
-    };
-    spec::set_current_network(network);
+    spec::set_current_network(selected_network);
 
     let b = Block::genesis_unchecked();
 
     println!();
     println!("============================================================");
-    println!("  ZENACHAIN GENESIS ({})", network.name());
+    println!("  ZENACHAIN GENESIS ({})", selected_network.name());
     println!("  (copy into src/consensus/genesis.rs)");
     println!("============================================================");
     println!();
-    if network == Network::Main {
-        println!("  pub const EXPECTED_GENESIS_HASH: &str =");
-        println!("      \"{}\";", b.hash);
-        println!();
-        println!("  pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =");
-        println!("      \"{}\";", b.merkle_root);
-        println!();
-        println!(
-            "  pub const EXPECTED_GENESIS_TIMESTAMP: u128 = {};",
-            b.timestamp
-        );
-        println!();
-        println!("  pub const EXPECTED_GENESIS_NONCE: u64 = {};", b.nonce);
-    } else {
-        println!("  pub const TESTNET_EXPECTED_GENESIS_HASH: &str =");
-        println!("      \"{}\";", b.hash);
-        println!();
-        println!("  pub const TESTNET_EXPECTED_GENESIS_MERKLE_ROOT: &str =");
-        println!("      \"{}\";", b.merkle_root);
-        println!();
-        println!(
-            "  pub const TESTNET_EXPECTED_GENESIS_TIMESTAMP: u128 = {};",
-            b.timestamp
-        );
-        println!();
-        println!(
-            "  pub const TESTNET_EXPECTED_GENESIS_NONCE: u64 = {};",
-            b.nonce
-        );
+    match selected_network {
+        Network::Main => {
+            println!("  pub const EXPECTED_GENESIS_HASH: &str =");
+            println!("      \"{}\";", b.hash);
+            println!();
+            println!("  pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =");
+            println!("      \"{}\";", b.merkle_root);
+            println!();
+            println!(
+                "  pub const EXPECTED_GENESIS_TIMESTAMP: u128 = {};",
+                b.timestamp
+            );
+            println!();
+            println!("  pub const EXPECTED_GENESIS_NONCE: u64 = {};", b.nonce);
+        }
+        Network::Test => {
+            println!("  pub const TESTNET_EXPECTED_GENESIS_HASH: &str =");
+            println!("      \"{}\";", b.hash);
+            println!();
+            println!("  pub const TESTNET_EXPECTED_GENESIS_MERKLE_ROOT: &str =");
+            println!("      \"{}\";", b.merkle_root);
+            println!();
+            println!(
+                "  pub const TESTNET_EXPECTED_GENESIS_TIMESTAMP: u128 = {};",
+                b.timestamp
+            );
+            println!();
+            println!(
+                "  pub const TESTNET_EXPECTED_GENESIS_NONCE: u64 = {};",
+                b.nonce
+            );
+        }
+        Network::Regtest => {
+            println!("  pub const REGTEST_EXPECTED_GENESIS_HASH: &str =");
+            println!("      \"{}\";", b.hash);
+            println!();
+            println!("  pub const REGTEST_EXPECTED_GENESIS_MERKLE_ROOT: &str =");
+            println!("      \"{}\";", b.merkle_root);
+            println!();
+            println!(
+                "  pub const REGTEST_EXPECTED_GENESIS_TIMESTAMP: u128 = {};",
+                b.timestamp
+            );
+            println!();
+            println!(
+                "  pub const REGTEST_EXPECTED_GENESIS_NONCE: u64 = {};",
+                b.nonce
+            );
+        }
     }
     println!("============================================================");
     println!();
