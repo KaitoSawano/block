@@ -879,10 +879,13 @@ impl Network {
         if headers.is_empty() {
             return;
         }
+        
+        // Verify that the batch size does not exceed the configured limit.
         if headers.len() > peers::HEADERS_PER_REQUEST as usize {
             self.punish(id, 20, "too many headers in one message").await;
             return;
         }
+        
         let chain = self.chain.read().await;
         let first = &headers[0];
 
@@ -940,8 +943,9 @@ impl Network {
                     hash: block.hash.clone(),
                 }]);
                 
-                // TRIGGER BARU: Meminta header selanjutnya jika kita masih ketinggalan.
-                // Ini mencegah sinkronisasi mandek saat mencapai batas 2000 blok.
+                // Immediately request the next batch of headers if we
+                // are still behind. This prevents sync stalls at batch
+                // boundaries.
                 self.send_getheaders(id).await; 
                 
                 println!("[p2p] block {} accepted from {}", block.index, id);
