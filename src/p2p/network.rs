@@ -939,6 +939,11 @@ impl Network {
                     inv_type: InvType::Block,
                     hash: block.hash.clone(),
                 }]);
+                
+                // TRIGGER BARU: Meminta header selanjutnya jika kita masih ketinggalan.
+                // Ini mencegah sinkronisasi mandek saat mencapai batas 2000 blok.
+                self.send_getheaders(id).await; 
+                
                 println!("[p2p] block {} accepted from {}", block.index, id);
             }
             Err(e) => {
