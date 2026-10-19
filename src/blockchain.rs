@@ -62,7 +62,9 @@ pub mod network {
 }
 
 pub use consensus::consensus_fingerprint;
+pub use consensus::consensus_fingerprint_for;
 pub use consensus::genesis_coinbase_txid;
+pub use consensus::genesis_coinbase_txid_for;
 pub use genesis::genesis_message;
 pub use genesis::genesis_output_script;
 pub use genesis::genesis_secret;
@@ -117,7 +119,7 @@ impl Blockchain {
 
         Blockchain {
             chain: vec![genesis],
-            nbits: cpow::GENESIS_NBITS,
+            nbits: spec::current_network().genesis_nbits(),
             mempool: Vec::new(),
             balances,
             nonces,
@@ -177,11 +179,6 @@ impl Blockchain {
     }
 
     /// Apply a transaction to the chain state.
-    ///
-    /// The function returns an error if the sender balance would
-    /// underflow or if the recipient balance would overflow. Callers
-    /// must not call this function before the transaction has been
-    /// fully validated.
     pub fn apply_transaction(&mut self, tx: &Transaction) -> Result<(), String> {
         let total = tx
             .amount
@@ -219,9 +216,7 @@ impl Blockchain {
         Ok(())
     }
 
-    /// Add a transaction to the mempool after full validation,
-    /// including a check for nonce collisions with other mempool
-    /// transactions from the same sender.
+    /// Add a transaction to the mempool after full validation.
     pub fn add_transaction(&mut self, tx: Transaction) -> bool {
         if self.mempool.iter().any(|t| t.txid == tx.txid) {
             return false;
