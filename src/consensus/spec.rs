@@ -20,6 +20,7 @@ use std::sync::OnceLock;
 pub enum Network {
     Main,
     Test,
+    Regtest,
 }
 
 impl Network {
@@ -28,6 +29,7 @@ impl Network {
         match self {
             Network::Main => "main",
             Network::Test => "test",
+            Network::Regtest => "regtest",
         }
     }
 
@@ -36,6 +38,7 @@ impl Network {
         match s {
             "main" => Some(Network::Main),
             "test" | "testnet" => Some(Network::Test),
+            "regtest" => Some(Network::Regtest),
             _ => None,
         }
     }
@@ -45,6 +48,7 @@ impl Network {
         match self {
             Network::Main => ADDRESS_PREFIX_MAIN,
             Network::Test => ADDRESS_PREFIX_TEST,
+            Network::Regtest => ADDRESS_PREFIX_REGTEST,
         }
     }
 
@@ -53,6 +57,7 @@ impl Network {
         match self {
             Network::Main => NETWORK_MAGIC_MAIN,
             Network::Test => NETWORK_MAGIC_TEST,
+            Network::Regtest => NETWORK_MAGIC_REGTEST,
         }
     }
 
@@ -67,6 +72,7 @@ impl Network {
         match self {
             Network::Main => DEFAULT_PORT_MAIN,
             Network::Test => DEFAULT_PORT_TEST,
+            Network::Regtest => DEFAULT_PORT_REGTEST,
         }
     }
 
@@ -75,6 +81,7 @@ impl Network {
         match self {
             Network::Main => DEFAULT_RPC_PORT_MAIN,
             Network::Test => DEFAULT_RPC_PORT_TEST,
+            Network::Regtest => DEFAULT_RPC_PORT_REGTEST,
         }
     }
 
@@ -83,6 +90,7 @@ impl Network {
         match self {
             Network::Main => DATADIR_NAME_MAIN,
             Network::Test => DATADIR_NAME_TEST,
+            Network::Regtest => DATADIR_NAME_REGTEST,
         }
     }
 
@@ -91,6 +99,7 @@ impl Network {
         match self {
             Network::Main => GENESIS_TIMESTAMP_MAIN,
             Network::Test => GENESIS_TIMESTAMP_TEST,
+            Network::Regtest => GENESIS_TIMESTAMP_REGTEST,
         }
     }
 
@@ -99,16 +108,18 @@ impl Network {
         match self {
             Network::Main => GENESIS_NBITS_MAIN,
             Network::Test => GENESIS_NBITS_TEST,
+            Network::Regtest => GENESIS_NBITS_REGTEST,
         }
     }
 
     /// Return the expected genesis nonce for this network. The testnet
-    /// nonce is computed at build time by `zenachain-genesis` and
-    /// pasted into this module; until then it is zero.
+    /// and regtest nonces are computed at build time by `zenachain-genesis`
+    /// and pasted into this module; until then they are zero.
     pub fn expected_genesis_nonce(&self) -> u64 {
         match self {
             Network::Main => EXPECTED_GENESIS_NONCE_MAIN,
             Network::Test => EXPECTED_GENESIS_NONCE_TEST,
+            Network::Regtest => EXPECTED_GENESIS_NONCE_REGTEST,
         }
     }
 }
@@ -122,9 +133,9 @@ impl Default for Network {
 static CURRENT_NETWORK: OnceLock<Network> = OnceLock::new();
 
 /// Return the currently active network. The network is selected by the
-/// `ZENAC_NETWORK` environment variable (`main` or `test`) or by the
-/// `-testnet` / `--testnet` command-line flag. If neither is set, the
-/// mainnet is used.
+/// `ZENAC_NETWORK` environment variable (`main`, `test`, or `regtest`)
+/// or by the `-testnet` / `-regtest` command-line flags. If neither is set,
+/// the mainnet is used.
 pub fn current_network() -> Network {
     *CURRENT_NETWORK.get_or_init(|| {
         if let Ok(v) = std::env::var("ZENAC_NETWORK") {
@@ -138,7 +149,7 @@ pub fn current_network() -> Network {
 
 /// Set the active network. This must be called once, before any other
 /// function reads `current_network()`. It is intended to be called by
-/// the daemon and CLI entry points after parsing the `-testnet` flag.
+/// the daemon and CLI entry points after parsing the command-line flags.
 pub fn set_current_network(network: Network) {
     let _ = CURRENT_NETWORK.set(network);
 }
@@ -197,6 +208,19 @@ pub const DATADIR_NAME_TEST: &str = ".zenachain-testnet";
 pub const GENESIS_TIMESTAMP_TEST: u128 = 1792303198446;
 pub const GENESIS_NBITS_TEST: u32 = 0x207fffff;
 pub const EXPECTED_GENESIS_NONCE_TEST: u64 = 0;
+
+// ----------------------------------------------------------------------
+// Regtest parameters
+// ----------------------------------------------------------------------
+
+pub const NETWORK_MAGIC_REGTEST: [u8; 4] = [0x5a, 0x52, 0x45, 0x47]; // "ZREG"
+pub const ADDRESS_PREFIX_REGTEST: &str = "ZREG";
+pub const DEFAULT_PORT_REGTEST: u16 = 18444;
+pub const DEFAULT_RPC_PORT_REGTEST: u16 = 18443;
+pub const DATADIR_NAME_REGTEST: &str = ".zenachain-regtest";
+pub const GENESIS_TIMESTAMP_REGTEST: u128 = 1792303198447;
+pub const GENESIS_NBITS_REGTEST: u32 = 0x207fffff;
+pub const EXPECTED_GENESIS_NONCE_REGTEST: u64 = 0;
 
 // ----------------------------------------------------------------------
 // Legacy accessors (kept for compatibility; they return mainnet values)
