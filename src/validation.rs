@@ -168,10 +168,7 @@ pub fn rule_nonce(chain: &Blockchain, tx: &Transaction) -> Result<(), Validation
     if tx.nonce != expected {
         return Err(ValidationError::new(
             "E022",
-            format!(
-                "invalid nonce: got {}, expected {}",
-                tx.nonce, expected
-            ),
+            format!("invalid nonce: got {}, expected {}", tx.nonce, expected),
         ));
     }
     Ok(())
@@ -512,18 +509,81 @@ pub fn validate_transaction(chain: &Blockchain, tx: &Transaction) -> Result<(), 
     Ok(())
 }
 
+/// Validate every transaction in a block against a lightweight overlay
+/// of the account state. The overlay tracks only the balances and
+/// nonces that are affected by the transactions in this block, so the
+/// entire chain state is not cloned.
 pub fn validate_block_transactions(
     chain: &Blockchain,
     transactions: &[Transaction],
 ) -> Result<(), ValidationError> {
-    // Validate each transaction against a temporary copy of the chain
-    // state. This ensures that chained transactions within the same
-    // block are validated in order.
-    let mut temp = chain.clone();
+    use std::collections::HashMap;
+
+    let mut overlay_balances: HashMap<String, u64> = HashMap::new();
+    let mut overlay_nonces: HashMap<String, u64> = HashMap::new();
+
     for tx in transactions {
-        validate_transaction(&temp, tx)?;
-        temp.apply_transaction(tx);
+        if is_special_tx(tx) {
+            continue;
+        }
+
+        // Validate the nonce against the overlay first, then the chain.
+        let base_nonce = overlay_nonces
+            .get(&tx.from)
+            .copied()
+            .unwrap_or_else(|| chain.nonce_of(&tx.from));
+        if tx.nonce != base_nonce {
+            return Err(ValidationError::new(
+                "E022",
+                format!(
+                    "invalid nonce for {}: got {}, expected {}",
+                    tx.from, tx.nonce, base_nonce
+                ),
+            ));
+        }
+
+        // Validate the balance against the overlay first, then the chain.
+        let base_balance = overlay_balances
+            .get(&tx.from)
+            .copied()
+            .unwrap_or_else(|| chain.balance_of(&tx.from));
+        let need = match tx.amount.checked_add(tx.fee) {
+            Some(v) => v,
+            None => {
+                return Err(ValidationError::new("E023", "amount + fee overflows u64"));
+            }
+        };
+        if base_balance < need {
+            return Err(ValidationError::new(
+                "E021",
+                format!(
+                    "insufficient balance for {}: required {} sat, available {} sat",
+                    tx.from, need, base_balance
+                ),
+            ));
+        }
+
+        let new_from = base_balance - need;
+        overlay_balances.insert(tx.from.clone(), new_from);
+
+        let to_balance = overlay_balances
+            .get(&tx.to)
+            .copied()
+            .unwrap_or_else(|| chain.balance_of(&tx.to));
+        let new_to = match to_balance.checked_add(tx.amount) {
+            Some(v) => v,
+            None => {
+                return Err(ValidationError::new(
+                    "E024",
+                    "recipient balance overflows u64",
+                ));
+            }
+        };
+        overlay_balances.insert(tx.to.clone(), new_to);
+
+        overlay_nonces.insert(tx.from.clone(), base_nonce + 1);
     }
+
     Ok(())
 }
 
