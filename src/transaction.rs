@@ -93,9 +93,7 @@ impl Transaction {
 
     /// Compute the transaction identifier.
     ///
-    /// The identifier commits to every field except the signature. This
-    /// matches Bitcoin's legacy txid definition, where the signature
-    /// does not change the txid.
+    /// The identifier commits to every field except the signature.
     pub fn compute_txid(&self) -> String {
         let payload = format!(
             "{}|{}|{}|{}|{}|{}|{}|{}",
@@ -138,12 +136,9 @@ impl Transaction {
         let sk = hex::decode(secret_hex).map_err(|e| e.to_string())?;
         let kp = KeyPair::from_secret(&sk)?;
 
-        // Set the public key before computing the signing hash so that
-        // the signature commits to the signer identity.
         self.public_key = kp.public_key_hex();
         self.txid = self.compute_txid();
 
-        // Sign the signing hash, which excludes the signature field.
         let msg = hex::decode(self.signing_hash()).map_err(|e| e.to_string())?;
         let sig = sign::sign(&kp.secret_key, &msg)?;
         self.signature = hex::encode(sig);
