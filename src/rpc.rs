@@ -8,6 +8,7 @@
 use crate::blockchain::{self, Blockchain};
 use crate::config::Config;
 use crate::consensus;
+use crate::consensus::spec::Network;
 use crate::datadir;
 use crate::p2p::network::{NetworkCommand, PeerRegistry};
 use crate::pow;
@@ -111,13 +112,6 @@ fn to_coin(satoshi: u64) -> String {
     format!("{}.{:08}", whole, frac)
 }
 
-/// Parse a ZENAC amount string into satoshis with full precision.
-///
-/// The parser accepts an optional decimal point and up to eight
-/// fractional digits. It does not use floating-point arithmetic, so
-/// large amounts such as "28000000000.00000001" are represented
-/// exactly. The function returns an error on overflow, on more than
-/// eight fractional digits, or on an empty input.
 fn parse_zenac_to_satoshi(s: &str) -> Result<u64, String> {
     let s = s.trim();
     if s.is_empty() {
@@ -175,6 +169,7 @@ fn parse_zenac_to_satoshi(s: &str) -> Result<u64, String> {
 
 struct RpcState {
     chain: Arc<RwLock<Blockchain>>,
+    network: Network,
     shutdown: Arc<AtomicBool>,
     interrupt: Arc<AtomicBool>,
     rpc_user: String,
@@ -182,6 +177,12 @@ struct RpcState {
     wallet_password: Arc<RwLock<Option<String>>>,
     peer_registry: PeerRegistry,
     network_cmd_tx: mpsc::Sender<NetworkCommand>,
+}
+
+impl RpcState {
+    fn fingerprint(&self) -> String {
+        consensus::consensus_fingerprint_for(self.network)
+    }
 }
 
 pub struct RpcServer {
@@ -195,9 +196,11 @@ impl RpcServer {
         cfg: &Config,
         peer_registry: PeerRegistry,
         network_cmd_tx: mpsc::Sender<NetworkCommand>,
+        network: Network,
     ) -> Self {
         let state = Arc::new(RpcState {
             chain,
+            network,
             shutdown: Arc::new(AtomicBool::new(false)),
             interrupt: Arc::new(AtomicBool::new(false)),
             rpc_user: cfg.rpc_user.clone(),
@@ -216,11 +219,6 @@ impl RpcServer {
         self.state.shutdown.clone()
     }
 
-    /// Start the RPC server and block until shutdown is requested.
-    ///
-    /// The function returns an error if the RPC address cannot be bound.
-    /// This allows the daemon to exit if another node is already using
-    /// the same address.
     pub fn listen(&mut self) -> std::io::Result<()> {
         let listener = TcpListener::bind(&self.rpc_addr)?;
         let _ = listener.set_nonblocking(true);
@@ -353,9 +351,9 @@ impl RpcHandler {
         let reg = self.state.peer_registry.lock().unwrap();
         let connected = reg.iter().filter(|p| p.state == "Connected").count();
         RpcResponse::ok(json!({
-            "network": blockchain::network::NETWORK_NAME,
-            "magic": blockchain::network::network_magic_hex(),
-            "default_port": blockchain::network::DEFAULT_PORT,
+            "network": self.state.network.name(),
+            "magic": self.state.network.magic_hex(),
+            "default_port": self.state.network.default_port(),
             "prune_after_height": blockchain::network::PRUNE_AFTER_HEIGHT,
             "assumed_blockchain_size_mb": blockchain::network::ASSUMED_BLOCKCHAIN_SIZE,
             "assumed_chain_state_size_mb": blockchain::network::ASSUMED_CHAIN_STATE_SIZE,
@@ -422,6 +420,7 @@ impl RpcHandler {
             "symbol": consensus::symbol(),
             "version": consensus::version(),
             "protocol_version": consensus::protocol_version(),
+            "network": self.state.network.name(),
             "hash_algo": consensus::hash_algo(),
             "signature_algo": consensus::signature_algo(),
             "height": c.height(),
@@ -442,7 +441,7 @@ impl RpcHandler {
             "valid": c.is_valid(),
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
             "checkpoints_highest": blockchain::checkpoint::highest(),
-            "consensus_fingerprint": consensus::consensus_fingerprint(),
+            "consensus_fingerprint": self.state.fingerprint(),
             "datadir": datadir::as_str(&datadir::datadir()),
         }))
     }
@@ -451,7 +450,7 @@ impl RpcHandler {
         let c = self.state.chain.blocking_read();
         let tip = c.chain.last().unwrap();
         RpcResponse::ok(json!({
-            "chain": "main",
+            "chain": self.state.network.name(),
             "blocks": c.height(),
             "headers": c.height(),
             "bestblockhash": tip.hash,
@@ -471,7 +470,7 @@ impl RpcHandler {
             "subsidy_halving_interval": consensus::subsidy_halving_interval(),
             "blocks_until_halving": c.blocks_until_halving(),
             "difficulty_adjust_interval": consensus::difficulty_adjust_interval(),
-            "consensus_fingerprint": consensus::consensus_fingerprint(),
+            "consensus_fingerprint": self.state.fingerprint(),
             "datadir": datadir::as_str(&datadir::datadir()),
         }))
     }
@@ -738,7 +737,8 @@ impl RpcHandler {
                 "coinbase_txid": g.coinbase_txid,
                 "blockchain_size": g.blockchain_size,
                 "genesis_output_script": g.genesis_output_script,
-                "consensus_fingerprint": consensus::consensus_fingerprint(),
+                "network": self.state.network.name(),
+                "consensus_fingerprint": self.state.fingerprint(),
                 "transactions": g.transactions,
             })),
             None => RpcResponse::err("chain is empty"),
@@ -756,7 +756,7 @@ impl RpcHandler {
                 "pow_limit": consensus::pow_limit(),
                 "signature_algo": consensus::signature_algo(),
                 "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
-                "consensus_fingerprint": consensus::consensus_fingerprint(),
+                "consensus_fingerprint": self.state.fingerprint(),
             })),
             Err(e) => RpcResponse::ok(json!({
                 "valid": false,
@@ -1063,36 +1063,7 @@ impl RpcHandler {
             return RpcResponse::err("sendtoaddress requires an amount and an address");
         }
 
-        let amount_sat = match req.params[0].as_str() {
-            Some(s) => match parse_zenac_to_satoshi(s) {
-                Ok(v) => v,
-                Err(e) => return RpcResponse::err(&format!("invalid amount: {}", e)),
-            },
-            None => match req.params[0].as_f64() {
-                Some(v) => {
-                    if v <= 0.0 {
-                        return RpcResponse::err("amount must be greater than zero");
-                    }
-                    let s = format!("{:.8}", v);
-                    match parse_zenac_to_satoshi(&s) {
-                        Ok(v) => v,
-                        Err(e) => return RpcResponse::err(&format!("invalid amount: {}", e)),
-                    }
-                }
-                None => return RpcResponse::err("invalid amount"),
-            },
-        };
-
-        if amount_sat == 0 {
-            return RpcResponse::err("amount must be greater than zero");
-        }
-
-        if amount_sat > consensus::max_supply() {
-            return RpcResponse::err(&format!(
-                "amount exceeds the maximum supply of {} satoshi",
-                consensus::max_supply()
-            ));
-        }
+        let is_sendall = req.params[0].as_str() == Some("sendall");
 
         let to = match req.params[1].as_str() {
             Some(a) => a.to_string(),
@@ -1121,57 +1092,25 @@ impl RpcHandler {
             }
         }
 
-        let need = match amount_sat.checked_add(DEFAULT_FEE_SATOSHI) {
-            Some(v) => v,
-            None => {
-                return RpcResponse::err("amount + fee overflows u64");
-            }
-        };
-
         let from_address = if req.params.len() >= 3 {
             req.params[2].as_str().unwrap_or("").to_string()
         } else {
             let chain = self.state.chain.blocking_read();
             let mut best: Option<(String, u64)> = None;
             for entry in &wallet.entries {
-                // Skip the destination address. A self-send is rejected
-                // by rule_self_send, and selecting the destination as the
-                // source would make the transaction fail.
                 if entry.address == to {
                     continue;
                 }
                 let bal = chain.balance_of(&entry.address);
-                if bal >= need {
-                    match &best {
-                        Some((_, b)) if *b >= bal => {}
-                        _ => best = Some((entry.address.clone(), bal)),
-                    }
+                match &best {
+                    Some((_, b)) if *b >= bal => {}
+                    _ => best = Some((entry.address.clone(), bal)),
                 }
             }
             drop(chain);
             match best {
                 Some((addr, _)) => addr,
-                None => {
-                    // Distinguish between "wallet total is insufficient"
-                    // and "no single address is sufficient" so that the
-                    // user knows what to do.
-                    let chain = self.state.chain.blocking_read();
-                    let total: u64 = wallet
-                        .entries
-                        .iter()
-                        .map(|e| chain.balance_of(&e.address))
-                        .sum();
-                    drop(chain);
-                    if total < need {
-                        return RpcResponse::err(&format!(
-                            "insufficient wallet balance: required {} sat (amount {} + fee {}), available {} sat",
-                            need, amount_sat, DEFAULT_FEE_SATOSHI, total
-                        ));
-                    }
-                    return RpcResponse::err(
-                        "no single wallet address has sufficient balance; use a different source address",
-                    );
-                }
+                None => return RpcResponse::err("wallet has no addresses other than the destination"),
             }
         };
 
@@ -1183,6 +1122,79 @@ impl RpcHandler {
             Some(e) => e.clone(),
             None => return RpcResponse::err("from address not found in wallet"),
         };
+
+        let amount_sat = if is_sendall {
+            let chain = self.state.chain.blocking_read();
+            let bal = chain.balance_of(&entry.address);
+            drop(chain);
+            if bal <= DEFAULT_FEE_SATOSHI {
+                return RpcResponse::err(&format!(
+                    "balance {} sat is too small to cover the fee of {} sat",
+                    bal, DEFAULT_FEE_SATOSHI
+                ));
+            }
+            bal - DEFAULT_FEE_SATOSHI
+        } else {
+            match req.params[0].as_str() {
+                Some(s) => match parse_zenac_to_satoshi(s) {
+                    Ok(v) => v,
+                    Err(e) => return RpcResponse::err(&format!("invalid amount: {}", e)),
+                },
+                None => match req.params[0].as_f64() {
+                    Some(v) => {
+                        if v <= 0.0 {
+                            return RpcResponse::err("amount must be greater than zero");
+                        }
+                        let s = format!("{:.8}", v);
+                        match parse_zenac_to_satoshi(&s) {
+                            Ok(v) => v,
+                            Err(e) => return RpcResponse::err(&format!("invalid amount: {}", e)),
+                        }
+                    }
+                    None => return RpcResponse::err("invalid amount"),
+                },
+            }
+        };
+
+        if amount_sat == 0 {
+            return RpcResponse::err("amount must be greater than zero");
+        }
+
+        if amount_sat > consensus::max_supply() {
+            return RpcResponse::err(&format!(
+                "amount exceeds the maximum supply of {} satoshi",
+                consensus::max_supply()
+            ));
+        }
+
+        let need = match amount_sat.checked_add(DEFAULT_FEE_SATOSHI) {
+            Some(v) => v,
+            None => return RpcResponse::err("amount + fee overflows u64"),
+        };
+        {
+            let chain = self.state.chain.blocking_read();
+            let bal = chain.balance_of(&entry.address);
+            drop(chain);
+            if bal < need {
+                let chain = self.state.chain.blocking_read();
+                let total: u64 = wallet
+                    .entries
+                    .iter()
+                    .map(|e| chain.balance_of(&e.address))
+                    .sum();
+                drop(chain);
+                if total < need {
+                    return RpcResponse::err(&format!(
+                        "insufficient wallet balance: required {} sat (amount {} + fee {}), available {} sat",
+                        need, amount_sat, DEFAULT_FEE_SATOSHI, total
+                    ));
+                }
+                return RpcResponse::err(&format!(
+                    "selected address {} has insufficient balance: required {} sat, available {} sat; use a different source address",
+                    entry.address, need, bal
+                ));
+            }
+        }
 
         let nonce = {
             let chain = self.state.chain.blocking_read();
@@ -1240,13 +1252,14 @@ impl RpcHandler {
             "fee_satoshi": DEFAULT_FEE_SATOSHI,
             "fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
             "nonce": nonce,
+            "sendall": is_sendall,
             "mempool_len": self.state.chain.blocking_read().mempool.len(),
         }))
     }
 
     fn m_getnewwallet(&mut self) -> RpcResponse {
         if let Err(e) = datadir::ensure_dirs() {
-            return RpcResponse::err(&format!("failed to prepare .zenachain: {}", e));
+            return RpcResponse::err(&format!("failed to prepare datadir: {}", e));
         }
 
         let mut w = Wallet::load_default().unwrap_or_else(|_| Wallet {
