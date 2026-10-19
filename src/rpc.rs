@@ -28,7 +28,6 @@ use tokio::sync::{mpsc, RwLock};
 pub const DEFAULT_RPC_ADDR: &str = "127.0.0.1:8332";
 pub const DEFAULT_FEE_SATOSHI: u64 = 100_000;
 
-/// Number of satoshis in one ZENAC.
 const SATOSHI_PER_ZENAC: u64 = 100_000_000;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -124,8 +123,6 @@ fn parse_zenac_to_satoshi(s: &str) -> Result<u64, String> {
     if s.is_empty() {
         return Err("empty amount".into());
     }
-
-    // Reject negative amounts.
     if s.starts_with('-') {
         return Err("amount must not be negative".into());
     }
@@ -147,8 +144,6 @@ fn parse_zenac_to_satoshi(s: &str) -> Result<u64, String> {
             .map_err(|_| format!("invalid whole part: {}", whole_str))?
     };
 
-    // Reject more than eight fractional digits to avoid silent
-    // truncation.
     if frac_str.len() > 8 {
         return Err(format!(
             "too many fractional digits: {} (maximum is 8)",
@@ -518,16 +513,14 @@ impl RpcHandler {
             return RpcResponse::err(&format!("block rejected: {}", e));
         }
 
-        // Apply all transactions to the chain state and credit the
-        // miner with the block reward.
         for tx in &block.transactions {
-            chain.apply_transaction(tx);
+            if let Err(e) = chain.apply_transaction(tx) {
+                return RpcResponse::err(&format!("failed to apply tx: {}", e));
+            }
         }
-        let miner_balance = chain
-            .balances
-            .entry(block.mined_for.clone())
-            .or_insert(0);
-        *miner_balance = miner_balance.saturating_add(block.reward);
+        if let Err(e) = chain.credit_reward(&block.mined_for, block.reward) {
+            return RpcResponse::err(&format!("failed to credit reward: {}", e));
+        }
 
         chain.chain.push(block.clone());
         chain.adjust_difficulty();
@@ -541,7 +534,6 @@ impl RpcHandler {
 
         drop(chain);
 
-        // Broadcast the new block to the P2P network.
         let tx = self.state.network_cmd_tx.clone();
         let hash = block.hash.clone();
         let _ = tx.blocking_send(NetworkCommand::BroadcastBlock(hash));
@@ -559,30 +551,35 @@ impl RpcHandler {
     }
 
     fn m_getbalance(&self, req: &RpcRequest) -> RpcResponse {
-        let addr = match req.params.first().and_then(|v| v.as_str()) {
-            Some(a) => a.to_string(),
-            None => match Wallet::load_default() {
-                Ok(w) => match w.default_address() {
-                    Some(e) => e.address.clone(),
-                    None => return RpcResponse::err("wallet has no addresses"),
-                },
-                Err(_) => return RpcResponse::err("wallet not found"),
-            },
-        };
-
-        if !validation::is_valid_address(&addr) {
-            return RpcResponse::err("invalid address format");
+        if let Some(addr) = req.params.first().and_then(|v| v.as_str()) {
+            if !validation::is_valid_address(addr) {
+                return RpcResponse::err("invalid address format");
+            }
+            let chain = self.state.chain.blocking_read();
+            let balance = chain.balance_of(addr);
+            let nonce = chain.nonce_of(addr);
+            return RpcResponse::ok(json!({
+                "address": addr,
+                "balance": to_coin(balance),
+                "balance_satoshi": balance,
+                "nonce": nonce,
+            }));
         }
 
+        let w = match Wallet::load_default() {
+            Ok(w) => w,
+            Err(_) => return RpcResponse::err("wallet not found"),
+        };
         let chain = self.state.chain.blocking_read();
-        let balance = chain.balance_of(&addr);
-        let nonce = chain.nonce_of(&addr);
-
+        let mut total: u64 = 0;
+        for entry in &w.entries {
+            total = total.saturating_add(chain.balance_of(&entry.address));
+        }
         RpcResponse::ok(json!({
-            "address": addr,
-            "balance": to_coin(balance),
-            "balance_satoshi": balance,
-            "nonce": nonce,
+            "wallet_total_balance": to_coin(total),
+            "wallet_total_balance_satoshi": total,
+            "addresses": w.entries.len(),
+            "blockchain_height": chain.height(),
         }))
     }
 
@@ -606,6 +603,7 @@ impl RpcHandler {
         RpcResponse::ok(json!({
             "address": addr,
             "nonce": chain.nonce_of(&addr),
+            "next_nonce": chain.next_nonce_for(&addr),
         }))
     }
 
@@ -687,8 +685,6 @@ impl RpcHandler {
 
     fn m_getblockcount(&self) -> RpcResponse {
         let chain = self.state.chain.blocking_read();
-        // Return the height, not the number of blocks. This matches the
-        // behavior of Bitcoin, where the genesis block has height 0.
         RpcResponse::ok(json!(chain.height()))
     }
 
@@ -1029,13 +1025,20 @@ impl RpcHandler {
 
             {
                 let mut chain = self.state.chain.blocking_write();
-                // Apply all transactions to the chain state.
+                let mut applied = 0usize;
                 for tx in &mempool_txs {
-                    chain.apply_transaction(tx);
+                    if let Err(e) = chain.apply_transaction(tx) {
+                        eprintln!("[rpc] failed to apply tx {}: {}", tx.txid, e);
+                        for tx in mempool_txs.iter().skip(applied) {
+                            chain.mempool.push(tx.clone());
+                        }
+                        return RpcResponse::err(&format!("failed to apply tx: {}", e));
+                    }
+                    applied += 1;
                 }
-                // Credit the miner with the block reward.
-                let miner_balance = chain.balances.entry(addr.clone()).or_insert(0);
-                *miner_balance = miner_balance.saturating_add(block.reward);
+                if let Err(e) = chain.credit_reward(&addr, block.reward) {
+                    return RpcResponse::err(&format!("failed to credit reward: {}", e));
+                }
 
                 chain.chain.push(block.clone());
                 chain.adjust_difficulty();
@@ -1045,7 +1048,6 @@ impl RpcHandler {
                 }
             }
 
-            // Broadcast the new block to the P2P network.
             let tx = self.state.network_cmd_tx.clone();
             let hash = block.hash.clone();
             let _ = tx.blocking_send(NetworkCommand::BroadcastBlock(hash));
@@ -1061,9 +1063,6 @@ impl RpcHandler {
             return RpcResponse::err("sendtoaddress requires an amount and an address");
         }
 
-        // Parse the amount. The RPC accepts either a string (for exact
-        // precision) or a JSON number (for convenience). The string form
-        // is recommended for amounts that require full precision.
         let amount_sat = match req.params[0].as_str() {
             Some(s) => match parse_zenac_to_satoshi(s) {
                 Ok(v) => v,
@@ -1074,9 +1073,6 @@ impl RpcHandler {
                     if v <= 0.0 {
                         return RpcResponse::err("amount must be greater than zero");
                     }
-                    // Convert to string with 8 decimal places and parse
-                    // with the exact parser. This avoids floating-point
-                    // rounding for values that fit in 53 bits.
                     let s = format!("{:.8}", v);
                     match parse_zenac_to_satoshi(&s) {
                         Ok(v) => v,
@@ -1091,7 +1087,6 @@ impl RpcHandler {
             return RpcResponse::err("amount must be greater than zero");
         }
 
-        // Reject amounts that exceed the maximum supply.
         if amount_sat > consensus::max_supply() {
             return RpcResponse::err(&format!(
                 "amount exceeds the maximum supply of {} satoshi",
@@ -1103,6 +1098,10 @@ impl RpcHandler {
             Some(a) => a.to_string(),
             None => return RpcResponse::err("invalid destination address"),
         };
+
+        if !validation::is_valid_address(&to) {
+            return RpcResponse::err("invalid destination address format");
+        }
 
         let mut wallet = match Wallet::load_default() {
             Ok(w) => w,
@@ -1122,11 +1121,6 @@ impl RpcHandler {
             }
         }
 
-        // Select the sender address.
-        //
-        // If the caller provided a third parameter, use it. Otherwise,
-        // pick the wallet address with the highest balance that can
-        // cover the amount and the fee.
         let from_address = if req.params.len() >= 3 {
             req.params[2].as_str().unwrap_or("").to_string()
         } else {
@@ -1158,15 +1152,18 @@ impl RpcHandler {
             }
         };
 
+        if from_address == to {
+            return RpcResponse::err("sender and recipient addresses are identical");
+        }
+
         let entry = match wallet.get_entry(&from_address) {
             Some(e) => e.clone(),
             None => return RpcResponse::err("from address not found in wallet"),
         };
 
-        // Read the current nonce for the sender from the chain state.
         let nonce = {
             let chain = self.state.chain.blocking_read();
-            chain.nonce_of(&entry.address)
+            chain.next_nonce_for(&entry.address)
         };
 
         let mut tx = Transaction::new(
@@ -1207,7 +1204,6 @@ impl RpcHandler {
 
         drop(chain);
 
-        // Broadcast the new transaction to the P2P network.
         let tx = self.state.network_cmd_tx.clone();
         let tid = txid.clone();
         let _ = tx.blocking_send(NetworkCommand::BroadcastTransaction(tid));
@@ -1285,7 +1281,7 @@ impl RpcHandler {
                     "message": "wallet decrypted successfully",
                     "addresses": w.entries.len(),
                 }))
-            },
+            }
             Err(e) => RpcResponse::err(&format!("failed to decrypt wallet: {}", e)),
         }
     }
