@@ -27,14 +27,14 @@ pub const GENESIS_OUTPUT_SCRIPT: &str =
 pub const GENESIS_TIMESTAMP: u128 = 1792303198445;
 
 pub const EXPECTED_GENESIS_HASH: &str =
-    "00000efb658a36715e611a97ce22343e5e1ccd3243157680eb998316648a439f";
+    "00000ef00967fa31ef991af02ec367bb0fc506ec14b9e117888e0515529847a1";
 
 pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =
-    "a0d24005775f3cd42a6f7d4a03f6d9d650ef814a2d3bc73833a57d1749c3cd6c";
+    "66b3fa4e2de637bb17964e16ecefe77e45872b8913f2aedc77b3fe354a2daf2b";
 
 pub const EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198445;
 
-pub const EXPECTED_GENESIS_NONCE: u64 = 420282;
+pub const EXPECTED_GENESIS_NONCE: u64 = 378161;
 
 // ----------------------------------------------------------------------
 // Testnet genesis
