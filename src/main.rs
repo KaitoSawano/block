@@ -12,18 +12,22 @@ use zenachain::rpc;
 fn main() {
     let raw_args: Vec<String> = std::env::args().collect();
 
-    // Parse -testnet / --testnet before dispatching RPC.
+    // Parse -testnet / --testnet / -regtest / --regtest before dispatching RPC.
     let mut filtered: Vec<String> = vec![raw_args[0].clone()];
-    let mut use_testnet = false;
+    let mut selected_network = Network::Main;
+
     for arg in &raw_args[1..] {
         if arg == "-testnet" || arg == "--testnet" {
-            use_testnet = true;
+            selected_network = Network::Test;
+        } else if arg == "-regtest" || arg == "--regtest" {
+            selected_network = Network::Regtest;
         } else {
             filtered.push(arg.clone());
         }
     }
-    if use_testnet {
-        spec::set_current_network(Network::Test);
+
+    if selected_network != Network::Main {
+        spec::set_current_network(selected_network);
     }
     let args = filtered;
 
@@ -212,10 +216,11 @@ fn main() {
 fn print_help() {
     println!("ZenaChain CLI");
     println!("usage:");
-    println!("  zenachain [-testnet|--testnet] <command> [args]");
+    println!("  zenachain [-testnet|-regtest] <command> [args]");
     println!();
     println!("global:");
     println!("  -testnet, --testnet                    use the testnet parameters");
+    println!("  -regtest, --regtest                    use the regtest parameters");
     println!();
     println!("commands:");
     println!("  help                                display this help message");
@@ -258,6 +263,6 @@ fn print_help() {
     println!("  getbalance [address]                compute the wallet balance");
     println!();
     println!("daemon:");
-    println!("  zenachaind [-testnet|--testnet]      run the node (without mining)");
+    println!("  zenachaind [-testnet|-regtest]       run the node (without mining)");
     println!("  zenachain-miner                     run the standalone miner");
 }
