@@ -7,7 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
-pub const DATADIR_NAME: &str = ".zenachain";
+use crate::consensus::spec;
+
 pub const BLOCKS_DIR: &str = "blocks";
 pub const CHAINSTATE_DIR: &str = "chainstate";
 pub const WALLET_FILE: &str = "wallet.dat";
@@ -18,14 +19,14 @@ pub const DEBUG_LOG: &str = "debug.log";
 pub const BLOCK_FILE_PREFIX: &str = "blk";
 pub const PEER_ID_FILE: &str = "peer_id";
 
-/// Return the default data directory. The `ZENAC_DATADIR` environment
-/// variable overrides the default.
+/// Return the data directory for the active network. The
+/// `ZENAC_DATADIR` environment variable overrides the default.
 pub fn datadir() -> PathBuf {
     if let Ok(custom) = std::env::var("ZENAC_DATADIR") {
         return PathBuf::from(custom);
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(DATADIR_NAME)
+    PathBuf::from(home).join(spec::current_network().datadir_name())
 }
 
 pub fn blocks_dir() -> PathBuf {
@@ -61,7 +62,6 @@ pub fn chainstate_file() -> PathBuf {
     chainstate_dir().join("state.json")
 }
 
-/// Create the data directories if they do not exist.
 pub fn ensure_dirs() -> std::io::Result<()> {
     std::fs::create_dir_all(datadir())?;
     std::fs::create_dir_all(blocks_dir())?;
@@ -69,17 +69,14 @@ pub fn ensure_dirs() -> std::io::Result<()> {
     Ok(())
 }
 
-/// Return whether the data directory exists.
 pub fn exists() -> bool {
     datadir().exists()
 }
 
-/// Convert a path to a string.
 pub fn as_str(p: &Path) -> String {
     p.to_string_lossy().to_string()
 }
 
-/// Append a line to the debug log.
 pub fn append_debug_log(line: &str) {
     let _ = ensure_dirs();
     let path = debug_log_path();
