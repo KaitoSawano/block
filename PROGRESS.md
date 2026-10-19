@@ -14,6 +14,7 @@ Sekarang mendukung dua jaringan: mainnet dan testnet, dengan parameter, genesis,
 | Reward Awal | 50 ZENAC | 50 ZENAC |
 | Coinbase Maturity | TIDAK ADA | TIDAK ADA |
 | Waktu Blok | 15 detik | 15 detik |
+| Difficulty Adjust | 69.120 blok | 69.120 blok |
 | Magic Bytes | `ZENA` (5a454e41) | `ZTES` (5a544553) |
 | P2P Port | 8333 | 9422 |
 | RPC Port | 8332 | 12255 |
@@ -33,45 +34,47 @@ Sistem transfer account-based mainnet STABIL dan TERUJI. **JANGAN UBAH** kode be
 - `src/rpc.rs` (khusus `m_sendtoaddress`, `m_getbalance`, `m_getnonce`).
 
 ### 🟢 FASE 1a & 1b: TESTNET MODE (SELESAI & TERVERIFIKASI)
-Testnet sudah berjalan terpisah dari mainnet. 
-- ✅ `Network` enum & parameter testnet.
-- ✅ Genesis testnet (`TESTNET_EXPECTED_GENESIS_*` sudah diisi).
-- ✅ `Config.network` & `datadir` per network.
-- ✅ `framing.rs` pakai magic `ZTES`.
-- ✅ CLI `-testnet` / `--testnet` di `zenachaind` dan `zenachain`.
-- ✅ Testnet Node berjalan di port 9422 (P2P) dan 12255 (RPC).
+Testnet sudah berjalan terpisah dari mainnet dan berhasil diuji sampai ribuan blok.
+- ✅ `Network` enum & parameter testnet terpisah.
+- ✅ Genesis testnet (`TESTNET_EXPECTED_GENESIS_*` sudah diisi, nonce 1).
+- ✅ Config, Datadir, Address Prefix terpisah.
+- ✅ Magic bytes `ZTES` di `framing.rs`.
+- ✅ CLI `-testnet` / `--testnet` berfungsi di `zenachaind` dan `zenachain`.
+- ✅ Testnet Node berjalan (P2P 9422, RPC 12255).
 - ✅ Testnet Wallet berhasil dibuat (prefix `ZTES`).
-- ✅ Testnet Mining berhasil (`generatetoaddress`).
-
-**Genesis Testnet:**
-- HASH: `65077d85315087ce53c9321fc8735e81e3656108c71dc1b60da2cb1f15aff110`
-- MERKLE: `66b3fa4e2de637bb17964e16ecefe77e45872b8913f2aedc77b3fe354a2daf2b`
-- TIMESTAMP: `1792303198446`
-- NONCE: `1`
+- ✅ Testnet Mining berhasil (9.294 blok).
+- ✅ **Sync Stall Fixed:** Batas batch dinaikkan jadi 5.000 header dan langsung memicu `GetHeaders` setelah blok diterima. Node 2 berhasil menyusul Node 1 tanpa ngestuck di kelipatan 2000.
 
 ---
 
-## 3. Tugas Berikutnya (FASE 1c: Penyempurnaan Testnet)
-- [ ] Uji coba **Transfer (sendtoaddress) di Testnet** (pastikan fee & saldo berjalan).
-- [ ] Uji coba **Sync 2 Node Testnet** (Node 2 di port 12256/9423).
-- [ ] Uji coba **Mainnet Regression** (pastikan `./zenachaind` tanpa flag tetap jalan normal).
-- [ ] Tambah dukungan flag `-testnet` di `src/bin/zenachain-miner.rs`.
-- [ ] (Opsional) Rapikan warning `unused import` jika ada.
+## 3. Tugas Berikutnya (FASE 1c: Penyempurnaan)
+
+- [ ] **Uji Transfer Testnet:** Kirim koin antar wallet `ZTES` (pastikan saldo dan fee terpotong).
+- [ ] **Uji Sync 2 Node (Post-Fix):** Pastikan Node 2 bisa menyusul Node 1 sampai blok terakhir tanpa spam error.
+- [ ] **Uji Mainnet Regression:** Pastikan `./zenachaind` (tanpa flag) masih berjalan normal setelah perubahan testnet.
+- [ ] **Tambah flag `-testnet`:** Di binary `zenachain-miner`.
+- [ ] **Moving Download Window (Todo Mainnet):** Batasi request blok maksimal 16 per peer agar RAM tidak jebol saat sync ribuan blok.
 
 ---
 
-## 4. Bug Diketahui (Sebelum Mainnet Publik)
-- Wallet nonce reuse AES-GCM (satu nonce untuk semua entry).
-- PBKDF2 100.000 iterasi (OWASP: 600.000).
-- P2P belum V2 transport (BIP324), compact blocks (BIP152), stalling detection.
-- `ZENAMINERDEFAULT` bukan alamat valid (hanya placeholder).
-- `MAX_HALVINGS = 64` (reward 0 setelah 33 halving).
-- Gitian descriptors (masih pakai MSVC vs GNU, path LICENSE salah).
+## 4. Bug / Catatan Penting
+
+### 🟠 Penting (Sebelum Mainnet)
+- **Memory Exhaustion:** Saat ini `GetData` meminta semua header yang diterima sekaligus. Jika ada ribuan blok besar, RAM bisa OOM. Harus dipecah (Moving Download Window).
+- **Wallet nonce reuse AES-GCM:** Satu nonce untuk semua entry.
+- **PBKDF2 100.000 iterasi** (OWASP: 600.000).
+- **P2P:** Belum ada V2 transport (BIP324) dan compact blocks (BIP152).
+- **Difficulty Adjustment Testnet:** Sistem berjalan sempurna. Di blok 69.120, kesulitan naik drastis (mining melambat dari milidetik jadi puluhan detik). Ini fitur, bukan bug.
+
+### 🟡 Minor
+- Gitian descriptors (path LICENSE salah, MSVC vs GNU).
+- `zenachain-miner` belum support flag `-testnet`.
+- `ZENAMINERDEFAULT` di config hanya placeholder.
 
 ---
 
 ## 5. Cara Melanjutkan di Chat Baru
-Copy file `PROGRESS.md` ini dan tempel ke chat baru, lalu ketik:
+Copy file ini dan tempel ke chat baru, lalu ketik:
 > "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 1a & 1b (Testnet Mode) selesai. Mainnet stabil. Jangan ubah kode transfer. Lanjut FASE 1c: Uji Transfer & Sync 2 Node Testnet."
 
 ---
@@ -83,7 +86,9 @@ Copy file `PROGRESS.md` ini dan tempel ke chat baru, lalu ketik:
 - Reset: `./zenachain stop && rm -rf ~/.zenachain`
 
 ### Testnet
-- Start: `./zenachaind -testnet`
+- Start Node 1: `./zenachaind -testnet`
+- Start Node 2: `ZENAC_DATADIR=/root/.zenachain-testnet2 ./zenachaind -testnet`
 - RPC: `./zenachain -testnet getinfo`
 - Wallet Baru: `./zenachain -testnet getnewwallet`
-- Reset: `./zenachain -testnet stop && rm -rf ~/.zenachain-testnet`
+- Mining: `./zenachain -testnet generatetoaddress 10 "ZTES..."`
+- Reset: `./zenachain -testnet stop && rm -rf ~/.zenachain-testnet ~/.zenachain-testnet2`
