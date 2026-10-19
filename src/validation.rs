@@ -162,11 +162,34 @@ pub fn rule_txid_consistent(tx: &Transaction) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Validate the transaction nonce.
+///
+/// The expected nonce starts at the value stored in the chain state and
+/// is incremented for every transaction from the same sender that is
+/// already present in the mempool. This allows multiple transactions
+/// from the same sender to be queued in the mempool before the first
+/// one is mined.
 pub fn rule_nonce(chain: &Blockchain, tx: &Transaction) -> Result<(), ValidationError> {
     if is_special_tx(tx) {
         return Ok(());
     }
-    let expected = chain.nonce_of(&tx.from);
+    
+    let mut expected = chain.nonce_of(&tx.from);
+    
+    loop {
+        // Check if there is a transaction in the mempool from the same
+        // sender with the current expected nonce.
+        let has_mempool_tx = chain
+            .mempool
+            .iter()
+            .any(|t| t.from == tx.from && t.nonce == expected);
+            
+        if !has_mempool_tx {
+            break;
+        }
+        expected += 1;
+    }
+
     if tx.nonce != expected {
         return Err(ValidationError::new(
             "E022",
@@ -425,8 +448,6 @@ pub fn rule_total_supply(chain: &Blockchain) -> Result<(), ValidationError> {
     Ok(())
 }
 
-/// Ensure that the genesis coinbase transaction identifier matches the
-/// consensus fingerprint for the given network.
 pub fn rule_genesis_fingerprint_for(
     block: &Block,
     network: Network,
