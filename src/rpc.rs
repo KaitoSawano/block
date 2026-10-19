@@ -13,7 +13,7 @@ use crate::p2p::network::{NetworkCommand, PeerRegistry};
 use crate::pow;
 use crate::storage;
 use crate::transaction::Transaction;
-use crate::utils::{format_datetime, now_millis, zenac_to_satoshi};
+use crate::utils::{format_datetime, now_millis};
 use crate::validation;
 use crate::wallet::Wallet;
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,9 @@ use tokio::sync::{mpsc, RwLock};
 
 pub const DEFAULT_RPC_ADDR: &str = "127.0.0.1:8332";
 pub const DEFAULT_FEE_SATOSHI: u64 = 100_000;
+
+/// Number of satoshis in one ZENAC.
+const SATOSHI_PER_ZENAC: u64 = 100_000_000;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RpcRequest {
@@ -104,9 +107,75 @@ pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Resul
 }
 
 fn to_coin(satoshi: u64) -> String {
-    let whole = satoshi / 100_000_000;
-    let frac = satoshi % 100_000_000;
+    let whole = satoshi / SATOSHI_PER_ZENAC;
+    let frac = satoshi % SATOSHI_PER_ZENAC;
     format!("{}.{:08}", whole, frac)
+}
+
+/// Parse a ZENAC amount string into satoshis with full precision.
+///
+/// The parser accepts an optional decimal point and up to eight
+/// fractional digits. It does not use floating-point arithmetic, so
+/// large amounts such as "28000000000.00000001" are represented
+/// exactly. The function returns an error on overflow, on more than
+/// eight fractional digits, or on an empty input.
+fn parse_zenac_to_satoshi(s: &str) -> Result<u64, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("empty amount".into());
+    }
+
+    // Reject negative amounts.
+    if s.starts_with('-') {
+        return Err("amount must not be negative".into());
+    }
+
+    let (whole_str, frac_str) = match s.split_once('.') {
+        Some((w, f)) => (w, f),
+        None => (s, ""),
+    };
+
+    if whole_str.is_empty() && frac_str.is_empty() {
+        return Err("empty amount".into());
+    }
+
+    let whole: u64 = if whole_str.is_empty() {
+        0
+    } else {
+        whole_str
+            .parse()
+            .map_err(|_| format!("invalid whole part: {}", whole_str))?
+    };
+
+    // Reject more than eight fractional digits to avoid silent
+    // truncation.
+    if frac_str.len() > 8 {
+        return Err(format!(
+            "too many fractional digits: {} (maximum is 8)",
+            frac_str.len()
+        ));
+    }
+
+    let mut frac_padded = frac_str.to_string();
+    while frac_padded.len() < 8 {
+        frac_padded.push('0');
+    }
+    let frac: u64 = if frac_padded.is_empty() {
+        0
+    } else {
+        frac_padded
+            .parse()
+            .map_err(|_| format!("invalid fractional part: {}", frac_str))?
+    };
+
+    let whole_sat = whole
+        .checked_mul(SATOSHI_PER_ZENAC)
+        .ok_or_else(|| "amount overflows u64".to_string())?;
+    let total = whole_sat
+        .checked_add(frac)
+        .ok_or_else(|| "amount overflows u64".to_string())?;
+
+    Ok(total)
 }
 
 struct RpcState {
@@ -992,16 +1061,42 @@ impl RpcHandler {
             return RpcResponse::err("sendtoaddress requires an amount and an address");
         }
 
-        let amount_zenac: f64 = match req.params[0].as_f64() {
-            Some(v) => v,
-            None => match req.params[0].as_str().and_then(|s| s.parse().ok()) {
-                Some(v) => v,
+        // Parse the amount. The RPC accepts either a string (for exact
+        // precision) or a JSON number (for convenience). The string form
+        // is recommended for amounts that require full precision.
+        let amount_sat = match req.params[0].as_str() {
+            Some(s) => match parse_zenac_to_satoshi(s) {
+                Ok(v) => v,
+                Err(e) => return RpcResponse::err(&format!("invalid amount: {}", e)),
+            },
+            None => match req.params[0].as_f64() {
+                Some(v) => {
+                    if v <= 0.0 {
+                        return RpcResponse::err("amount must be greater than zero");
+                    }
+                    // Convert to string with 8 decimal places and parse
+                    // with the exact parser. This avoids floating-point
+                    // rounding for values that fit in 53 bits.
+                    let s = format!("{:.8}", v);
+                    match parse_zenac_to_satoshi(&s) {
+                        Ok(v) => v,
+                        Err(e) => return RpcResponse::err(&format!("invalid amount: {}", e)),
+                    }
+                }
                 None => return RpcResponse::err("invalid amount"),
             },
         };
 
-        if amount_zenac <= 0.0 {
+        if amount_sat == 0 {
             return RpcResponse::err("amount must be greater than zero");
+        }
+
+        // Reject amounts that exceed the maximum supply.
+        if amount_sat > consensus::max_supply() {
+            return RpcResponse::err(&format!(
+                "amount exceeds the maximum supply of {} satoshi",
+                consensus::max_supply()
+            ));
         }
 
         let to = match req.params[1].as_str() {
@@ -1027,23 +1122,21 @@ impl RpcHandler {
             }
         }
 
-        let amount_sat = zenac_to_satoshi(amount_zenac);
-        if amount_sat == 0 {
-            return RpcResponse::err("amount too small");
-        }
-
         // Select the sender address.
         //
         // If the caller provided a third parameter, use it. Otherwise,
         // pick the wallet address with the highest balance that can
-        // cover the amount and the fee. This mirrors the coin selection
-        // behavior of Bitcoin Core, where the wallet automatically
-        // chooses the inputs needed to fund the transaction.
+        // cover the amount and the fee.
         let from_address = if req.params.len() >= 3 {
             req.params[2].as_str().unwrap_or("").to_string()
         } else {
             let chain = self.state.chain.blocking_read();
-            let need = amount_sat.saturating_add(DEFAULT_FEE_SATOSHI);
+            let need = match amount_sat.checked_add(DEFAULT_FEE_SATOSHI) {
+                Some(v) => v,
+                None => {
+                    return RpcResponse::err("amount + fee overflows u64");
+                }
+            };
             let mut best: Option<(String, u64)> = None;
             for entry in &wallet.entries {
                 let bal = chain.balance_of(&entry.address);
@@ -1059,7 +1152,7 @@ impl RpcHandler {
                 Some((addr, _)) => addr,
                 None => {
                     return RpcResponse::err(
-                        "no wallet address has sufficient balance",
+                        "no wallet address has sufficient balance to cover amount + fee",
                     );
                 }
             }
@@ -1076,7 +1169,13 @@ impl RpcHandler {
             chain.nonce_of(&entry.address)
         };
 
-        let mut tx = Transaction::new(&entry.address, &to, amount_sat, DEFAULT_FEE_SATOSHI, nonce);
+        let mut tx = Transaction::new(
+            &entry.address,
+            &to,
+            amount_sat,
+            DEFAULT_FEE_SATOSHI,
+            nonce,
+        );
 
         if let Err(e) = tx.sign(&entry.secret) {
             return RpcResponse::err(&format!("failed to sign: {}", e));
