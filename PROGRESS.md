@@ -30,52 +30,48 @@ Sekarang mendukung dua jaringan: mainnet dan testnet, dengan parameter, genesis,
 
 ### 🟢 CHECKPOINT: `stabil` (Mainnet)
 Sistem transfer account-based mainnet STABIL dan TERUJI. **JANGAN UBAH** kode berikut kecuali ada bug nyata:
-- `src/transaction.rs`, `src/blockchain.rs`, `src/validation.rs`, `src/storage.rs`, `src/p2p/sync.rs`.
+- `src/transaction.rs`, `src/blockchain.rs`, `src/storage.rs`, `src/p2p/sync.rs`.
+- `src/validation.rs` (kecuali aturan baru untuk *Policy*).
 - `src/rpc.rs` (khusus `m_sendtoaddress`, `m_getbalance`, `m_getnonce`).
 
-### 🟢 FASE 1a & 1b: TESTNET MODE (SELESAI & TERVERIFIKASI)
-Testnet sudah berjalan terpisah dari mainnet dan berhasil diuji sampai ribuan blok.
+### 🟢 FASE 1a, 1b, 1c: TESTNET MODE (SELESAI & STRES TEST)
+Testnet sudah berjalan terpisah dari mainnet, sinkronisasi P2P sudah stabil, dan sistem tahan banting terhadap spam transaksi.
 - ✅ `Network` enum & parameter testnet terpisah.
-- ✅ Genesis testnet (`TESTNET_EXPECTED_GENESIS_*` sudah diisi, nonce 1).
-- ✅ Config, Datadir, Address Prefix terpisah.
-- ✅ Magic bytes `ZTES` di `framing.rs`.
-- ✅ CLI `-testnet` / `--testnet` berfungsi di `zenachaind` dan `zenachain`.
-- ✅ Testnet Node berjalan (P2P 9422, RPC 12255).
-- ✅ Testnet Wallet berhasil dibuat (prefix `ZTES`).
-- ✅ Testnet Mining berhasil (9.294 blok).
-- ✅ **Sync Stall Fixed:** Batas batch dinaikkan jadi 5.000 header dan langsung memicu `GetHeaders` setelah blok diterima. Node 2 berhasil menyusul Node 1 tanpa ngestuck di kelipatan 2000.
+- ✅ Genesis testnet (nonce 1).
+- ✅ Config, Datadir, Address Prefix, Magic bytes terpisah.
+- ✅ CLI `-testnet` berfungsi.
+- ✅ Testnet Node (P2P 9422, RPC 12255).
+- ✅ **Sync Stall Fixed:** Batas batch dinaikkan jadi 5.000 header. Node 2 bisa menyusul Node 1 tanpa ngestuck.
+- ✅ **Graceful Shutdown:** RPC `stop` berhasil menyelamatkan data meski mining berjalan.
+- ✅ **Nonce Mempool Fix:** `rule_nonce` di `validation.rs` sekarang memindai mempool, memungkinkan pengiriman ribuan transaksi beruntun tanpa error `E022`.
+- ✅ **Stress Test Mempool:** Berhasil menampung ribuan transaksi (2.000+ tx) di mempool tanpa crash, membuktikan manajemen memori Rust dan RPC berjalan efisien.
 
 ---
 
-## 3. Tugas Berikutnya (FASE 1c: Penyempurnaan)
+## 3. Tugas Berikutnya (FASE 2: Hardening Mainnet)
 
-- [ ] **Uji Transfer Testnet:** Kirim koin antar wallet `ZTES` (pastikan saldo dan fee terpotong).
-- [ ] **Uji Sync 2 Node (Post-Fix):** Pastikan Node 2 bisa menyusul Node 1 sampai blok terakhir tanpa spam error.
-- [ ] **Uji Mainnet Regression:** Pastikan `./zenachaind` (tanpa flag) masih berjalan normal setelah perubahan testnet.
-- [ ] **Tambah flag `-testnet`:** Di binary `zenachain-miner`.
-- [ ] **Moving Download Window (Todo Mainnet):** Batasi request blok maksimal 16 per peer agar RAM tidak jebol saat sync ribuan blok.
+Sebelum mainnet diluncurkan, sistem **wajib** dilindungi dari serangan spam (DoS). Kita harus menambahkan "tameng" berikut:
+
+- [ ] **Dynamic Fee:** Fee harus dihitung berdasarkan ukuran transaksi dan tingkat kemacetan mempool (bukan flat 0.001 ZENAC).
+- [ ] **Mempool Eviction:** Membatasi ukuran maksimal mempool (misal 300 MB). Jika penuh, buang transaksi dengan fee terendah.
+- [ ] **P2P Rate Limiting:** Batasi jumlah transaksi yang boleh dikirim peer per detik. Putus koneksi jika melanggar.
+- [ ] **RPC Security:** Pastikan RPC (port 8332) hanya bisa diakses dari `localhost` dan wajib pakai password kuat.
+- [ ] **Moving Download Window:** Batasi request blok maksimal 16 per peer agar RAM tidak jebol saat sinkronisasi (khusus untuk mainnet).
+- [ ] **Wallet Nonce Reuse AES-GCM:** Perbaiki `wallet.rs` agar setiap entry punya nonce enkripsi sendiri.
+- [ ] **PBKDF2 600.000 iterasi:** Standar OWASP untuk keamanan dompet.
 
 ---
 
-## 4. Bug / Catatan Penting
-
-### 🟠 Penting (Sebelum Mainnet)
-- **Memory Exhaustion:** Saat ini `GetData` meminta semua header yang diterima sekaligus. Jika ada ribuan blok besar, RAM bisa OOM. Harus dipecah (Moving Download Window).
-- **Wallet nonce reuse AES-GCM:** Satu nonce untuk semua entry.
-- **PBKDF2 100.000 iterasi** (OWASP: 600.000).
-- **P2P:** Belum ada V2 transport (BIP324) dan compact blocks (BIP152).
-- **Difficulty Adjustment Testnet:** Sistem berjalan sempurna. Di blok 69.120, kesulitan naik drastis (mining melambat dari milidetik jadi puluhan detik). Ini fitur, bukan bug.
-
-### 🟡 Minor
-- Gitian descriptors (path LICENSE salah, MSVC vs GNU).
-- `zenachain-miner` belum support flag `-testnet`.
-- `ZENAMINERDEFAULT` di config hanya placeholder.
+## 4. Catatan Penting
+- **Difficulty Adjustment:** Fitur berjalan sempurna. Di testnet, saat mencapai blok 69.120, kesulitan naik drastis (mining melambat dari milidetik jadi puluhan detik). Ini fitur, bukan bug.
+- **Jeda 5.000 Blok:** Batas batch sync P2P sudah dinaikkan jadi 5.000 header (dari sebelumnya 2.000) agar sinkronisasi lebih cepat.
+- **Sync Recovery:** Jika koneksi P2P terputus sesaat dan node melewatkan sinyal `Inv`, node baru akan menyusul saat di-restart (karena belum ada Heartbeat Polling).
 
 ---
 
 ## 5. Cara Melanjutkan di Chat Baru
 Copy file ini dan tempel ke chat baru, lalu ketik:
-> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 1a & 1b (Testnet Mode) selesai. Mainnet stabil. Jangan ubah kode transfer. Lanjut FASE 1c: Uji Transfer & Sync 2 Node Testnet."
+> "Lanjut ZenaChain. Baca PROGRESS.md ini. Testnet dan stress-test selesai. Lanjut FASE 2: Hardening Mainnet (Dynamic Fee, Mempool Eviction, Rate Limiting)."
 
 ---
 
