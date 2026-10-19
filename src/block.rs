@@ -7,7 +7,7 @@
 
 use crate::blockchain::{self, Blockchain};
 use crate::consensus::spec::{self, Network};
-use crate::consensus::{genesis, pow as cpow, rules};
+use crate::consensus::{genesis, rules};
 use crate::datadir;
 use crate::pow;
 use crate::transaction::Transaction;
