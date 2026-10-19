@@ -23,12 +23,14 @@ use zenachain::storage;
 async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    let mut use_testnet = false;
+    let mut selected_network = Network::Main;
+
     for arg in &args[1..] {
         match arg.as_str() {
-            "-testnet" | "--testnet" => use_testnet = true,
+            "-testnet" | "--testnet" => selected_network = Network::Test,
+            "-regtest" | "--regtest" => selected_network = Network::Regtest,
             "--help" | "-h" => {
-                println!("Usage: zenachaind [-testnet|--testnet]");
+                println!("Usage: zenachaind [-testnet|--testnet] [-regtest|--regtest]");
                 return;
             }
             "--version" => {
@@ -47,14 +49,9 @@ async fn main() {
         }
     }
 
-    let network = if use_testnet {
-        Network::Test
-    } else {
-        Network::Main
-    };
-    spec::set_current_network(network);
+    spec::set_current_network(selected_network);
 
-    println!("ZenaChain server starting (network: {})", network.name());
+    println!("ZenaChain server starting (network: {})", selected_network.name());
     println!("Use `./zenachain stop` to stop the node.");
     println!("Ctrl+C, kill, and SIGHUP do not stop the node (same as Bitcoin).");
 
@@ -94,11 +91,14 @@ async fn main() {
     };
 
     let mut bootstrap = Vec::new();
-    for b in &config.bootstrap {
-        if let Ok(sa) = b.parse() {
-            bootstrap.push(sa);
-        } else {
-            eprintln!("[p2p] invalid bootstrap address: {}", b);
+    // Regtest does not require bootstrap peers.
+    if selected_network != Network::Regtest {
+        for b in &config.bootstrap {
+            if let Ok(sa) = b.parse() {
+                bootstrap.push(sa);
+            } else {
+                eprintln!("[p2p] invalid bootstrap address: {}", b);
+            }
         }
     }
 
@@ -117,7 +117,7 @@ async fn main() {
             &cfg_for_rpc,
             rpc_registry,
             cmd_tx,
-            network,
+            selected_network,
         );
         let flag = server.shutdown_flag();
         let handle = tokio::task::spawn_blocking(move || server.listen());
