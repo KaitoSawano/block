@@ -278,9 +278,9 @@ impl RpcHandler {
             "getrawtransaction" => self.m_getrawtransaction(req),
             "decoderawtransaction" => self.m_decoderawtransaction(req),
             "testmempoolaccept" => self.m_testmempoolaccept(req),
-            "listunspent" => self.m_listunspent(req),
             "getmempoolinfo" => self.m_getmempoolinfo(),
             "validatemempool" => self.m_validatemempool(),
+            "getnonce" => self.m_getnonce(req),
             _ => RpcResponse::err("unknown method"),
         }
     }
@@ -426,9 +426,6 @@ impl RpcHandler {
             "reward": to_coin(reward),
             "subsidy": to_coin(subsidy),
             "total_fees": to_coin(total_fees),
-            // The following fields are consumed by the standalone miner.
-            // They must be present so that the miner can construct a block
-            // whose subsidy and fees match the consensus rules.
             "reward_satoshi": reward,
             "subsidy_satoshi": subsidy,
             "total_fees_satoshi": total_fees,
@@ -451,6 +448,17 @@ impl RpcHandler {
         if let Err(e) = validation::validate_block(&chain, &prev, &block) {
             return RpcResponse::err(&format!("block rejected: {}", e));
         }
+
+        // Apply all transactions to the chain state and credit the
+        // miner with the block reward.
+        for tx in &block.transactions {
+            chain.apply_transaction(tx);
+        }
+        let miner_balance = chain
+            .balances
+            .entry(block.mined_for.clone())
+            .or_insert(0);
+        *miner_balance = miner_balance.saturating_add(block.reward);
 
         chain.chain.push(block.clone());
         chain.adjust_difficulty();
@@ -498,14 +506,37 @@ impl RpcHandler {
         }
 
         let chain = self.state.chain.blocking_read();
-        let mature = validation::mature_balance(&chain, &addr);
-        let immature = validation::immature_balance(&chain, &addr);
+        let balance = chain.balance_of(&addr);
+        let nonce = chain.nonce_of(&addr);
 
         RpcResponse::ok(json!({
             "address": addr,
-            "balance": to_coin(mature),
-            "mature": to_coin(mature),
-            "immature": to_coin(immature),
+            "balance": to_coin(balance),
+            "balance_satoshi": balance,
+            "nonce": nonce,
+        }))
+    }
+
+    fn m_getnonce(&self, req: &RpcRequest) -> RpcResponse {
+        let addr = match req.params.first().and_then(|v| v.as_str()) {
+            Some(a) => a.to_string(),
+            None => match Wallet::load_default() {
+                Ok(w) => match w.default_address() {
+                    Some(e) => e.address.clone(),
+                    None => return RpcResponse::err("wallet has no addresses"),
+                },
+                Err(_) => return RpcResponse::err("wallet not found"),
+            },
+        };
+
+        if !validation::is_valid_address(&addr) {
+            return RpcResponse::err("invalid address format");
+        }
+
+        let chain = self.state.chain.blocking_read();
+        RpcResponse::ok(json!({
+            "address": addr,
+            "nonce": chain.nonce_of(&addr),
         }))
     }
 
@@ -606,7 +637,7 @@ impl RpcHandler {
     fn m_getchaintips(&self) -> RpcResponse {
         let chain = self.state.chain.blocking_read();
         let tip = chain.chain.last().unwrap();
-        
+
         RpcResponse::ok(json!([{
             "height": chain.height(),
             "hash": tip.hash,
@@ -690,8 +721,8 @@ impl RpcHandler {
                         "amount_zenac": to_coin(tx.amount),
                         "fee_satoshi": tx.fee,
                         "fee_zenac": to_coin(tx.fee),
+                        "nonce": tx.nonce,
                         "note": tx.note,
-                        "inputs": tx.inputs,
                         "public_key": tx.public_key,
                         "signature": tx.signature,
                         "output_script": tx.output_script,
@@ -733,8 +764,8 @@ impl RpcHandler {
                     "amount_zenac": to_coin(tx.amount),
                     "fee_satoshi": tx.fee,
                     "fee_zenac": to_coin(tx.fee),
+                    "nonce": tx.nonce,
                     "note": tx.note,
-                    "inputs": tx.inputs,
                     "public_key": tx.public_key,
                     "signature": tx.signature,
                     "output_script": tx.output_script,
@@ -762,8 +793,8 @@ impl RpcHandler {
                         "to": tx.to,
                         "amount": to_coin(tx.amount),
                         "fee": to_coin(tx.fee),
+                        "nonce": tx.nonce,
                         "note": tx.note,
-                        "inputs": tx.inputs,
                         "public_key": tx.public_key,
                         "signature": tx.signature,
                         "block_hash": block.hash,
@@ -781,8 +812,8 @@ impl RpcHandler {
                     "to": tx.to,
                     "amount": to_coin(tx.amount),
                     "fee": to_coin(tx.fee),
+                    "nonce": tx.nonce,
                     "note": tx.note,
-                    "inputs": tx.inputs,
                     "public_key": tx.public_key,
                     "signature": tx.signature,
                     "in_mempool": true,
@@ -800,9 +831,9 @@ impl RpcHandler {
         };
 
         let chain = self.state.chain.blocking_read();
-        
+
         let tx = chain.mempool.iter().find(|t| t.txid == txid).cloned();
-        
+
         if tx.is_none() {
             return RpcResponse::ok(json!([{
                 "txid": txid,
@@ -812,7 +843,7 @@ impl RpcHandler {
         }
 
         let tx = tx.unwrap();
-        
+
         match validation::validate_transaction(&chain, &tx) {
             Ok(_) => RpcResponse::ok(json!([{
                 "txid": txid,
@@ -828,77 +859,6 @@ impl RpcHandler {
                 "reject-reason": e.message
             }])),
         }
-    }
-
-    fn m_listunspent(&self, req: &RpcRequest) -> RpcResponse {
-        let addr = match req.params.first().and_then(|v| v.as_str()) {
-            Some(a) => a.to_string(),
-            None => match Wallet::load_default() {
-                Ok(w) => match w.default_address() {
-                    Some(e) => e.address.clone(),
-                    None => return RpcResponse::err("wallet has no addresses"),
-                },
-                Err(_) => return RpcResponse::err("wallet not found"),
-            },
-        };
-
-        if !validation::is_valid_address(&addr) {
-            return RpcResponse::err("invalid address format");
-        }
-
-        let chain = self.state.chain.blocking_read();
-        let spent = validation::spent_inputs(&chain);
-        let current_height = chain.height();
-        let mut entries: Vec<Value> = Vec::new();
-
-        for block in &chain.chain {
-            for tx in &block.transactions {
-                if tx.to == addr {
-                    let outpoint = format!("{}:0", tx.txid);
-                    if !spent.contains(&outpoint) {
-                        entries.push(json!({
-                            "txid": tx.txid,
-                            "vout": 0,
-                            "address": addr,
-                            "amount_satoshi": tx.amount,
-                            "amount_zenac": to_coin(tx.amount),
-                            "from": tx.from,
-                            "block_height": block.index,
-                            "block_hash": block.hash,
-                            "mined_at": block.mined_at,
-                            "mature": true,
-                            "source": "tx",
-                        }));
-                    }
-                }
-            }
-            if block.mined_for == addr && block.reward > 0 {
-                let mature_at = block.index.saturating_add(validation::COINBASE_MATURITY);
-                let is_mature = mature_at <= current_height;
-                entries.push(json!({
-                    "txid": block.coinbase_txid,
-                    "vout": 0,
-                    "address": addr,
-                    "amount_satoshi": block.reward,
-                    "amount_zenac": to_coin(block.reward),
-                    "from": "COINBASE",
-                    "block_height": block.index,
-                    "block_hash": block.hash,
-                    "mined_at": block.mined_at,
-                    "mature": is_mature,
-                    "mature_at": mature_at,
-                    "source": "coinbase",
-                }));
-            }
-        }
-
-        RpcResponse::ok(json!({
-            "address": addr,
-            "height": current_height,
-            "coinbase_maturity": validation::COINBASE_MATURITY,
-            "count": entries.len(),
-            "utxos": entries,
-        }))
     }
 
     fn m_getmempoolinfo(&self) -> RpcResponse {
@@ -989,7 +949,7 @@ impl RpcHandler {
                 subsidy,
                 total_fees,
                 nbits,
-                mempool_txs,
+                mempool_txs.clone(),
                 addr.clone(),
             );
 
@@ -1000,6 +960,14 @@ impl RpcHandler {
 
             {
                 let mut chain = self.state.chain.blocking_write();
+                // Apply all transactions to the chain state.
+                for tx in &mempool_txs {
+                    chain.apply_transaction(tx);
+                }
+                // Credit the miner with the block reward.
+                let miner_balance = chain.balances.entry(addr.clone()).or_insert(0);
+                *miner_balance = miner_balance.saturating_add(block.reward);
+
                 chain.chain.push(block.clone());
                 chain.adjust_difficulty();
                 block.log_add_to_wallet();
@@ -1078,7 +1046,13 @@ impl RpcHandler {
             return RpcResponse::err("amount too small");
         }
 
-        let mut tx = Transaction::new(&entry.address, &to, amount_sat, DEFAULT_FEE_SATOSHI);
+        // Read the current nonce for the sender from the chain state.
+        let nonce = {
+            let chain = self.state.chain.blocking_read();
+            chain.nonce_of(&entry.address)
+        };
+
+        let mut tx = Transaction::new(&entry.address, &to, amount_sat, DEFAULT_FEE_SATOSHI, nonce);
 
         if let Err(e) = tx.sign(&entry.secret) {
             return RpcResponse::err(&format!("failed to sign: {}", e));
@@ -1094,13 +1068,14 @@ impl RpcHandler {
 
         let now = now_millis();
         println!(
-            "[mempool] {} Accepted transaction {} from {} to {} amount={} fee={}",
+            "[mempool] {} Accepted transaction {} from {} to {} amount={} fee={} nonce={}",
             format_datetime(now),
             txid,
             entry.address,
             to,
             to_coin(amount_sat),
-            to_coin(DEFAULT_FEE_SATOSHI)
+            to_coin(DEFAULT_FEE_SATOSHI),
+            nonce
         );
 
         if let Err(e) = storage::save_chain(&chain) {
@@ -1122,6 +1097,7 @@ impl RpcHandler {
             "amount_zenac": to_coin(amount_sat),
             "fee_satoshi": DEFAULT_FEE_SATOSHI,
             "fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
+            "nonce": nonce,
             "mempool_len": self.state.chain.blocking_read().mempool.len(),
         }))
     }
@@ -1130,7 +1106,7 @@ impl RpcHandler {
         if let Err(e) = datadir::ensure_dirs() {
             return RpcResponse::err(&format!("failed to prepare .zenachain: {}", e));
         }
-        
+
         let mut w = Wallet::load_default().unwrap_or_else(|_| Wallet {
             entries: Vec::new(),
             created_at: now_millis(),
@@ -1151,7 +1127,7 @@ impl RpcHandler {
                 None => return RpcResponse::err("wallet is locked. Run walletpassphrase first."),
             }
         }
-        
+
         let addr = w.add_new_address("default".to_string());
         let entry = w.get_entry(&addr).unwrap().clone();
 
@@ -1181,7 +1157,7 @@ impl RpcHandler {
             Ok(_) => {
                 let mut lock = self.state.wallet_password.blocking_write();
                 *lock = Some(pass);
-                
+
                 RpcResponse::ok(json!({
                     "message": "wallet decrypted successfully",
                     "addresses": w.entries.len(),
@@ -1210,32 +1186,28 @@ fn m_getlistwallet(chain_arc: Arc<RwLock<Blockchain>>) -> RpcResponse {
     let current_height = chain.height();
 
     let mut addresses = Vec::new();
-    let mut total_mature: u64 = 0;
-    let mut total_immature: u64 = 0;
+    let mut total_balance: u64 = 0;
 
     for entry in &w.entries {
-        let mature = validation::mature_balance(&chain, &entry.address);
-        let immature = validation::immature_balance(&chain, &entry.address);
-        
-        total_mature = total_mature.saturating_add(mature);
-        total_immature = total_immature.saturating_add(immature);
+        let balance = chain.balance_of(&entry.address);
+        total_balance = total_balance.saturating_add(balance);
 
         addresses.push(json!({
             "address": entry.address,
             "public_key": entry.public_key,
             "label": entry.label,
             "created_at": entry.created_at,
-            "balance_mature": to_coin(mature),
-            "balance_immature": to_coin(immature),
+            "balance": to_coin(balance),
+            "balance_satoshi": balance,
+            "nonce": chain.nonce_of(&entry.address),
         }));
     }
 
     RpcResponse::ok(json!({
         "addresses": addresses,
         "count": w.entries.len(),
-        "total_mature": to_coin(total_mature),
-        "total_immature": to_coin(total_immature),
-        "wallet_total_balance": to_coin(total_mature.saturating_add(total_immature)),
+        "wallet_total_balance": to_coin(total_balance),
+        "wallet_total_balance_satoshi": total_balance,
         "blockchain_height": current_height,
     }))
 }
@@ -1288,7 +1260,7 @@ fn m_importprivkey(req: &RpcRequest) -> RpcResponse {
     if w.encrypted {
         return RpcResponse::err("wallet is encrypted. Use walletpassphrase to unlock it first.");
     }
-    
+
     if w.get_entry(&entry.address).is_none() {
         w.entries.push(entry.clone());
     }
@@ -1396,7 +1368,7 @@ fn m_backupwallet(req: &RpcRequest) -> RpcResponse {
     };
 
     let src = datadir::as_str(&datadir::wallet_path());
-    
+
     if !std::path::Path::new(&src).exists() {
         return RpcResponse::err("wallet file not found");
     }
