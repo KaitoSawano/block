@@ -15,7 +15,8 @@ use std::sync::OnceLock;
 
 /// Active network. This value is not part of the consensus fingerprint;
 /// it selects which parameter set is used.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Network {
     Main,
     Test,
