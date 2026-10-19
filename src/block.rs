@@ -6,6 +6,7 @@
 //! Block structure and related operations.
 
 use crate::blockchain::{self, Blockchain};
+use crate::consensus::spec::{self, Network};
 use crate::consensus::{genesis, pow as cpow, rules};
 use crate::datadir;
 use crate::pow;
@@ -103,8 +104,6 @@ impl Block {
         )
     }
 
-    /// Create a new block. The `reward` field is calculated as
-    /// `subsidy + total_fees`.
     pub fn new_for(
         index: u64,
         previous_hash: String,
@@ -151,14 +150,18 @@ impl Block {
     }
 
     pub fn genesis_unchecked() -> Self {
-        Self::genesis_mined()
+        Self::genesis_unchecked_for(spec::current_network())
     }
 
-    fn genesis_mined() -> Self {
-        let ts = genesis::GENESIS_TIMESTAMP;
-        let coinbase_txid = blockchain::genesis_coinbase_txid();
+    pub fn genesis_unchecked_for(network: Network) -> Self {
+        Self::genesis_mined_for(network)
+    }
+
+    fn genesis_mined_for(network: Network) -> Self {
+        let ts = network.genesis_timestamp();
+        let coinbase_txid = blockchain::genesis_coinbase_txid_for(network);
         let genesis_output_script = genesis::GENESIS_OUTPUT_SCRIPT.to_string();
-        let nbits = cpow::GENESIS_NBITS;
+        let nbits = network.genesis_nbits();
 
         let transactions = vec![
             Transaction::coinbase(genesis::GENESIS_MESSAGE.into()),
@@ -205,17 +208,23 @@ impl Block {
     }
 
     pub fn genesis() -> Self {
-        let b = Self::genesis_mined();
+        Self::genesis_for(spec::current_network())
+    }
 
-        let hash_ok = b.hash == genesis::EXPECTED_GENESIS_HASH;
-        let merkle_ok = b.merkle_root == genesis::EXPECTED_GENESIS_MERKLE_ROOT;
-        let ts_ok = b.timestamp == genesis::EXPECTED_GENESIS_TIMESTAMP;
-        let nonce_ok = b.nonce == genesis::EXPECTED_GENESIS_NONCE;
+    pub fn genesis_for(network: Network) -> Self {
+        let b = Self::genesis_mined_for(network);
+
+        let hash_ok = b.hash == genesis::expected_genesis_hash_for(network);
+        let merkle_ok = b.merkle_root == genesis::expected_genesis_merkle_root_for(network);
+        let ts_ok = b.timestamp == genesis::expected_genesis_timestamp_for(network);
+        let nonce_ok = b.nonce == genesis::expected_genesis_nonce_for(network);
 
         if hash_ok && merkle_ok && ts_ok && nonce_ok {
             return b;
         }
 
+        eprintln!();
+        eprintln!("genesis mismatch for network '{}'", network.name());
         eprintln!();
         eprintln!("pub const EXPECTED_GENESIS_HASH: &str =");
         eprintln!("    \"{}\";", b.hash);
