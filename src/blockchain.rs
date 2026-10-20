@@ -14,12 +14,14 @@ use crate::transaction::Transaction;
 use crate::validation;
 use serde::{Deserialize, Serialize};
 
-// Mempool size limits in bytes (300 MB maximum, 150 MB target for fee adjustment)
+// Maximum mempool size in bytes (300 MB, matching Bitcoin Core's default).
 pub const MAX_MEMPOOL_SIZE_BYTES: usize = 300 * 1024 * 1024;
-pub const MEMPOOL_TARGET_SIZE_BYTES: usize = 150 * 1024 * 1024;
 
-// The minimum fee per byte for a transaction to be accepted into the mempool.
-pub const MEMPOOL_MIN_FEE_PER_BYTE: u64 = 1;
+// Minimum relay fee rate in satoshis per byte (1 sat/vB).
+pub const MIN_RELAY_FEE_PER_BYTE: u64 = 1;
+
+// Transactions older than this many seconds are evicted from the mempool.
+pub const MEMPOOL_EXPIRY_SECS: u64 = 336 * 3600; // 14 days (Bitcoin's default is 336 hours)
 
 pub mod checkpoint {
     pub struct Checkpoint {
@@ -119,8 +121,9 @@ pub struct Blockchain {
     pub mempool: Vec<Transaction>,
     pub balances: HashMap<String, u64>,
     pub nonces: HashMap<String, u64>,
-    /// The current base fee (in satoshis per byte) used to calculate the minimum transaction fee.
-    pub current_base_fee: u64,
+    /// Timestamps for each transaction in the mempool (keyed by txid).
+    /// Used for expiry-based eviction.
+    pub mempool_timestamps: HashMap<String, u64>,
 }
 
 impl Blockchain {
@@ -138,7 +141,7 @@ impl Blockchain {
             mempool: Vec::new(),
             balances,
             nonces,
-            current_base_fee: MEMPOOL_MIN_FEE_PER_BYTE,
+            mempool_timestamps: HashMap::new(),
         }
     }
 
@@ -229,7 +232,7 @@ impl Blockchain {
     }
 
     /// Estimate the size of a transaction in bytes. This is a rough approximation
-    /// used for mempool size limiting and fee calculation.
+    /// used for mempool size limiting and fee rate calculation.
     pub fn tx_size_bytes(tx: &Transaction) -> usize {
         // Base overhead + length of string fields (approximating hex string length)
         let base = 32 + tx.from.len() + tx.to.len() + 8 + 8 + 8 + tx.public_key.len() + tx.signature.len();
@@ -241,28 +244,19 @@ impl Blockchain {
         self.mempool.iter().map(|tx| Self::tx_size_bytes(tx)).sum()
     }
 
-    /// Update the base fee dynamically based on the current mempool size.
-    /// If the mempool is above the target size, the base fee increases.
-    /// If it is below the target size, the base fee decreases.
-    pub fn update_base_fee(&mut self) {
-        let size = self.mempool_size_bytes();
-        if size > MEMPOOL_TARGET_SIZE_BYTES {
-            // Increase base fee by 12.5% if mempool is congested
-            let increase = (self.current_base_fee / 8).max(1);
-            self.current_base_fee = self.current_base_fee.saturating_add(increase);
-        } else if size < MEMPOOL_TARGET_SIZE_BYTES / 2 {
-            // Decrease base fee by 12.5% if mempool is mostly empty
-            let decrease = (self.current_base_fee / 8).max(1);
-            self.current_base_fee = self.current_base_fee.saturating_sub(decrease).max(MEMPOOL_MIN_FEE_PER_BYTE);
-        }
+    /// Calculate the fee rate of a transaction in satoshis per byte.
+    pub fn fee_rate(tx: &Transaction) -> u64 {
+        let size = Self::tx_size_bytes(tx).max(1) as u64;
+        tx.fee / size
     }
 
-    /// Evict the lowest-fee transactions from the mempool to free up the required space.
+    /// Evict the lowest-fee-rate transactions from the mempool to free up the required space.
+    /// This mimics Bitcoin Core's eviction policy.
     fn evict_lowest_fee_transactions(&mut self, needed_space: usize) {
         // Sort the mempool by fee-per-byte in ascending order (lowest fee first)
         self.mempool.sort_by(|a, b| {
-            let fee_a = a.fee / Self::tx_size_bytes(a).max(1) as u64;
-            let fee_b = b.fee / Self::tx_size_bytes(b).max(1) as u64;
+            let fee_a = Self::fee_rate(a);
+            let fee_b = Self::fee_rate(b);
             fee_a.cmp(&fee_b)
         });
 
@@ -280,7 +274,28 @@ impl Blockchain {
         // Remove from the end to avoid shifting indices
         for i in to_remove.into_iter().rev() {
             let removed = self.mempool.remove(i);
-            println!("[mempool] Evicted tx {} (fee {}) to make room", removed.txid, removed.fee);
+            self.mempool_timestamps.remove(&removed.txid);
+            println!("[mempool] Evicted tx {} (fee rate {}) to make room", removed.txid, Self::fee_rate(&removed));
+        }
+    }
+
+    /// Remove transactions that have been in the mempool for too long.
+    pub fn evict_expired_transactions(&mut self) {
+        let now = (crate::utils::now_millis() / 1000) as u64;
+        let mut to_remove = Vec::new();
+
+        for tx in &self.mempool {
+            if let Some(&ts) = self.mempool_timestamps.get(&tx.txid) {
+                if now.saturating_sub(ts) > MEMPOOL_EXPIRY_SECS {
+                    to_remove.push(tx.txid.clone());
+                }
+            }
+        }
+
+        for txid in to_remove {
+            self.mempool.retain(|tx| tx.txid != txid);
+            self.mempool_timestamps.remove(&txid);
+            println!("[mempool] Evicted expired tx {}", txid);
         }
     }
 
@@ -300,11 +315,11 @@ impl Blockchain {
         }
 
         let tx_size = Self::tx_size_bytes(&tx);
+        let fee_rate = Self::fee_rate(&tx);
 
-        // Enforce the dynamic base fee
-        let min_fee = self.current_base_fee.saturating_mul(tx_size as u64);
-        if tx.fee < min_fee {
-            println!("[mempool] Rejected tx {}: fee {} < min_fee {}", tx.txid, tx.fee, min_fee);
+        // Enforce the minimum relay fee rate (mimics Bitcoin's minRelayTxFee).
+        if fee_rate < MIN_RELAY_FEE_PER_BYTE {
+            println!("[mempool] Rejected tx {}: fee rate {} < minRelayTxFee {}", tx.txid, fee_rate, MIN_RELAY_FEE_PER_BYTE);
             return false;
         }
 
@@ -322,8 +337,9 @@ impl Blockchain {
             return false;
         }
 
+        let now = (crate::utils::now_millis() / 1000) as u64;
+        self.mempool_timestamps.insert(tx.txid.clone(), now);
         self.mempool.push(tx);
-        self.update_base_fee();
         true
     }
 
@@ -339,6 +355,8 @@ impl Blockchain {
         }
 
         let txs = std::mem::take(&mut self.mempool);
+        self.mempool_timestamps.clear();
+
         let mut new_block = Block::new_for(
             next_index,
             prev.hash.clone(),
@@ -361,7 +379,6 @@ impl Blockchain {
         let nonce = new_block.nonce;
         self.chain.push(new_block);
         self.adjust_difficulty();
-        self.update_base_fee();
         Ok(nonce)
     }
 
