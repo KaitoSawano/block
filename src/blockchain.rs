@@ -135,6 +135,8 @@ impl Blockchain {
                     &Account {
                         nonce: 0,
                         balance: genesis.reward,
+                        immature_balance: 0,
+                        last_reward_height: 0,
                     },
                 )
                 .expect("failed to init genesis account");
@@ -189,6 +191,10 @@ impl Blockchain {
         self.state.balance_of(addr)
     }
 
+    pub fn spendable_balance_of(&self, addr: &str) -> u64 {
+        self.state.spendable_balance_of(addr)
+    }
+
     pub fn nonce_of(&self, addr: &str) -> u64 {
         self.state.nonce_of(addr)
     }
@@ -209,18 +215,6 @@ impl Blockchain {
     }
 
     pub fn apply_transaction(&mut self, tx: &Transaction) -> Result<(), String> {
-        // Coinbase maturity check: if the sender is a miner, ensure their reward is mature.
-        // In our account-based model, we don't track UTXOs. Instead, we track the
-        // miner's reward in the account balance. We need to know when the reward
-        // was credited. For simplicity, we assume that any balance from mining
-        // is subject to maturity. This is a simplification; a full implementation
-        // would track UTXOs or use a separate "immature balance" field.
-        if tx.from != "COINBASE" && tx.from != "GENESIS" {
-            // Check if the sender has sufficient *mature* balance.
-            // For now, we skip this check because we don't track immature balance.
-            // TODO: Implement proper immature balance tracking.
-        }
-
         if !self.addresses.contains(&tx.from) {
             self.addresses.push(tx.from.clone());
         }
@@ -231,11 +225,11 @@ impl Blockchain {
             .apply_transaction(&tx.from, &tx.to, tx.amount, tx.fee, tx.nonce)
     }
 
-    pub fn credit_reward(&mut self, miner: &str, reward: u64) -> Result<(), String> {
+    pub fn credit_reward(&mut self, miner: &str, reward: u64, block_height: u64) -> Result<(), String> {
         if !self.addresses.contains(&miner.to_string()) {
             self.addresses.push(miner.to_string());
         }
-        self.state.credit_reward(miner, reward)
+        self.state.credit_reward(miner, reward, block_height)
     }
 
     pub fn tx_size_bytes(tx: &Transaction) -> usize {
@@ -371,13 +365,11 @@ impl Blockchain {
         let txs = std::mem::take(&mut self.mempool);
         self.mempool_timestamps.clear();
 
-        // Apply transactions first to compute the new state root.
         for tx in &txs {
             self.apply_transaction(tx)?;
         }
-        self.credit_reward(&prev.mined_for, reward)?; // Note: mined_for should be the new block's miner
+        self.credit_reward(&prev.mined_for, reward, next_index)?;
 
-        // Compute the new state root.
         let state_root = hex::encode(self.state.root_hash().map_err(|e| e.to_string())?);
 
         let mut new_block = Block::new_for(
@@ -387,7 +379,7 @@ impl Blockchain {
             total_fees,
             self.nbits,
             txs.clone(),
-            String::new(), // mined_for akan diisi oleh caller
+            String::new(),
             state_root,
         );
         if !pow::mine(&mut new_block, self.nbits) {
