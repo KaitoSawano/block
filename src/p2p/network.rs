@@ -34,6 +34,11 @@ use crate::validation;
 const ASMAP_JSON: &str = include_str!("asmap.json");
 const MAX_WRITE_BUFFER: usize = 10 * 1024 * 1024;
 
+// Rate limiting constants for incoming P2P messages.
+const MAX_TX_PER_SECOND: u32 = 50;
+const MAX_INV_PER_SECOND: u32 = 100;
+const RATE_LIMIT_WINDOW_SECS: u64 = 1;
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PeerInfo {
     pub id: u64,
@@ -91,6 +96,10 @@ struct Connection {
     addr: SocketAddr,
     read_buf: Vec<u8>,
     write_buf: Vec<u8>,
+    // Rate limiting state per connection.
+    tx_count: u32,
+    inv_count: u32,
+    last_reset: Instant,
 }
 
 pub struct Network {
@@ -454,6 +463,9 @@ impl Network {
                         addr,
                         read_buf: Vec::new(),
                         write_buf: Vec::new(),
+                        tx_count: 0,
+                        inv_count: 0,
+                        last_reset: Instant::now(),
                     },
                 );
 
@@ -505,6 +517,9 @@ impl Network {
                 addr,
                 read_buf: Vec::new(),
                 write_buf: Vec::new(),
+                tx_count: 0,
+                inv_count: 0,
+                last_reset: Instant::now(),
             },
         );
         println!("[p2p] inbound connection from {} (AS{})", addr, asn);
@@ -753,6 +768,25 @@ impl Network {
                 }
             }
             Message::Inv(items) => {
+                // Rate limit inv messages per connection.
+                {
+                    let conn = match self.connections.get_mut(&id) {
+                        Some(c) => c,
+                        None => return,
+                    };
+                    if conn.last_reset.elapsed().as_secs() >= RATE_LIMIT_WINDOW_SECS {
+                        conn.inv_count = 0;
+                        conn.tx_count = 0;
+                        conn.last_reset = Instant::now();
+                    }
+                    conn.inv_count += 1;
+                    if conn.inv_count > MAX_INV_PER_SECOND {
+                        drop(conn);
+                        self.punish(id, 20, "inv rate limit exceeded").await;
+                        return;
+                    }
+                }
+
                 let new_items = self.inv.filter_new(&items);
                 if new_items.is_empty() {
                     return;
@@ -828,6 +862,25 @@ impl Network {
                 self.handle_block(id, b).await;
             }
             Message::Tx(tx) => {
+                // Rate limit transaction messages per connection.
+                {
+                    let conn = match self.connections.get_mut(&id) {
+                        Some(c) => c,
+                        None => return,
+                    };
+                    if conn.last_reset.elapsed().as_secs() >= RATE_LIMIT_WINDOW_SECS {
+                        conn.tx_count = 0;
+                        conn.inv_count = 0;
+                        conn.last_reset = Instant::now();
+                    }
+                    conn.tx_count += 1;
+                    if conn.tx_count > MAX_TX_PER_SECOND {
+                        drop(conn);
+                        self.punish(id, 20, "tx rate limit exceeded").await;
+                        return;
+                    }
+                }
+
                 let is_block_relay = self
                     .peer_manager
                     .get(id)
