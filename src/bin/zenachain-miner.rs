@@ -45,6 +45,7 @@ fn main() {
         let subsidy_satoshi = template["subsidy_satoshi"].as_u64().unwrap_or(0);
         let total_fees_satoshi = template["total_fees_satoshi"].as_u64().unwrap_or(0);
         let reward_satoshi = template["reward_satoshi"].as_u64().unwrap_or(0);
+        let state_root = template["state_root"].as_str().unwrap_or("").to_string();
 
         let mempool: Vec<Transaction> =
             serde_json::from_value(template["mempool"].clone()).unwrap_or_default();
@@ -69,6 +70,7 @@ fn main() {
             nbits,
             mempool,
             target_address.clone(),
+            state_root, // <--- TAMBAHKAN state_root
         );
 
         if block.reward != reward_satoshi {
