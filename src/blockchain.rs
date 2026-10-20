@@ -116,6 +116,7 @@ pub struct Blockchain {
     pub balances: HashMap<String, u64>,
     pub nonces: HashMap<String, u64>,
     pub mempool_timestamps: HashMap<String, u64>,
+    pub addresses: Vec<String>,
     #[serde(skip)]
     pub state: StateDB,
 }
@@ -124,15 +125,10 @@ impl Blockchain {
     pub fn new() -> Self {
         let genesis = Block::genesis();
         let db_path = crate::datadir::state_db_path();
-        
-        // Check if the LevelDB directory already has data.
-        // If it does, we must NOT re-initialize GENESIS.
-        let db_exists = db_path.join("CURRENT").exists();
-        
         let mut state = StateDB::open(&db_path).expect("failed to open state db");
 
-        if !db_exists {
-            // Fresh database: initialize GENESIS.
+        let genesis_acc = state.get_account("GENESIS").unwrap_or(None);
+        if genesis_acc.is_none() {
             state
                 .update_account(
                     "GENESIS",
@@ -151,6 +147,7 @@ impl Blockchain {
             balances: HashMap::new(),
             nonces: HashMap::new(),
             mempool_timestamps: HashMap::new(),
+            addresses: vec!["GENESIS".to_string()],
             state,
         }
     }
@@ -206,11 +203,20 @@ impl Blockchain {
     }
 
     pub fn apply_transaction(&mut self, tx: &Transaction) -> Result<(), String> {
+        if !self.addresses.contains(&tx.from) {
+            self.addresses.push(tx.from.clone());
+        }
+        if !self.addresses.contains(&tx.to) {
+            self.addresses.push(tx.to.clone());
+        }
         self.state
             .apply_transaction(&tx.from, &tx.to, tx.amount, tx.fee, tx.nonce)
     }
 
     pub fn credit_reward(&mut self, miner: &str, reward: u64) -> Result<(), String> {
+        if !self.addresses.contains(&miner.to_string()) {
+            self.addresses.push(miner.to_string());
+        }
         self.state.credit_reward(miner, reward)
     }
 
