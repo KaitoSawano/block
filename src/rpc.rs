@@ -28,6 +28,7 @@ use tokio::sync::{mpsc, RwLock};
 
 pub const DEFAULT_RPC_ADDR: &str = "127.0.0.1:8332";
 pub const DEFAULT_FEE_SATOSHI: u64 = 100_000;
+pub const DEFAULT_RPC_PASSWORD: &str = "rahasia";
 
 const SATOSHI_PER_ZENAC: u64 = 100_000_000;
 
@@ -198,6 +199,15 @@ impl RpcServer {
         network_cmd_tx: mpsc::Sender<NetworkCommand>,
         network: Network,
     ) -> Self {
+        // Security check: refuse to bind to a non-local address with the default password.
+        let is_local = cfg.rpc_addr.starts_with("127.0.0.1") || cfg.rpc_addr.starts_with("localhost");
+        if !is_local && cfg.rpc_password == DEFAULT_RPC_PASSWORD {
+            panic!(
+                "SECURITY ERROR: RPC is bound to {} but the password is the default. Change rpcpassword in {} before exposing the RPC server.",
+                cfg.rpc_addr, Config::default_path()
+            );
+        }
+
         let state = Arc::new(RpcState {
             chain,
             network,
