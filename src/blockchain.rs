@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::block::Block;
 use crate::consensus::{self, genesis, pow as cpow, rules, spec};
 use crate::pow;
-use crate::storage::{Account, StateDB}; // GANTI IMPORT
+use crate::storage::{Account, StateDB};
 use crate::transaction::Transaction;
 use crate::validation;
 use serde::{Deserialize, Serialize};
