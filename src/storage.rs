@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
@@ -53,6 +54,7 @@ pub fn load_chain() -> std::io::Result<Blockchain> {
         mempool,
         balances: state.balances,
         nonces: state.nonces,
+        current_base_fee: state.current_base_fee,
     })
 }
 
@@ -67,9 +69,16 @@ pub struct ChainState {
     /// Account nonces. Key: address, value: next expected nonce.
     #[serde(default)]
     pub nonces: HashMap<String, u64>,
+    /// The current dynamic base fee for the mempool.
+    #[serde(default = "default_base_fee")]
+    pub current_base_fee: u64,
 }
 
-/// Save the chain state (block count, nbits, balances, nonces) to disk.
+fn default_base_fee() -> u64 {
+    crate::blockchain::MEMPOOL_MIN_FEE_PER_BYTE
+}
+
+/// Save the chain state (block count, nbits, balances, nonces, base fee) to disk.
 pub fn save_chainstate(chain: &Blockchain) -> std::io::Result<()> {
     let state = ChainState {
         total_blocks: chain.chain.len() as u64,
@@ -77,6 +86,7 @@ pub fn save_chainstate(chain: &Blockchain) -> std::io::Result<()> {
         updated_at: crate::utils::now_millis(),
         balances: chain.balances.clone(),
         nonces: chain.nonces.clone(),
+        current_base_fee: chain.current_base_fee,
     };
     let json = serde_json::to_string_pretty(&state).map_err(Error::other)?;
     std::fs::write(datadir::chainstate_file(), json)
