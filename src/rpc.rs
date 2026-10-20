@@ -1296,7 +1296,11 @@ impl RpcHandler {
             }
         }
 
-        let nonce = {
+        // Allow the caller to specify a custom nonce (for RBF testing).
+        // The nonce is the 5th parameter (index 4).
+        let nonce = if let Some(custom_nonce) = req.params.get(4).and_then(|v| v.as_u64()) {
+            custom_nonce
+        } else {
             let chain = self.state.chain.blocking_read();
             chain.next_nonce_for(&entry.address)
         };
@@ -1314,14 +1318,13 @@ impl RpcHandler {
         }
 
         let mut chain = self.state.chain.blocking_write();
-        if let Err(e) = validation::validate_transaction(&chain, &tx) {
-            return RpcResponse::err(&format!("invalid transaction: {}", e));
+        
+        // Use add_transaction to enforce RBF, eviction, and fee rate rules.
+        if !chain.add_transaction(tx.clone()) {
+            return RpcResponse::err("transaction rejected by mempool (RBF, eviction, or min relay fee)");
         }
 
         let txid = tx.txid.clone();
-        chain.mempool.push(tx);
-        let now = (now_millis() / 1000) as u64;
-        chain.mempool_timestamps.insert(txid.clone(), now);
 
         let now = now_millis();
         println!(
