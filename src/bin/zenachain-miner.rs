@@ -59,9 +59,6 @@ fn main() {
             continue;
         }
 
-        // Construct the block from the template. The subsidy and the fees
-        // are taken directly from the template so that they match the
-        // consensus rules enforced by the node.
         let mut block = Block::new_for(
             height,
             previous_hash,
