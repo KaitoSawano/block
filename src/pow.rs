@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Aldianokto
+// Copyright (c) 2026-present Zenachain Core developers
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
@@ -7,7 +8,7 @@
 use crate::block::Block;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-pub use crate::consensus::pow::{GENESIS_NBITS, POW_LIMIT};
+pub use crate::consensus::pow::GENESIS_NBITS;
 
 /// Convert a compact nBits value into a 256-bit big-endian target.
 pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
