@@ -111,7 +111,7 @@ pub fn max_tx_per_block() -> usize {
     rules::MAX_TX_PER_BLOCK
 }
 pub fn pow_limit() -> &'static str {
-    cpow::POW_LIMIT
+    cpow::pow_limit()
 }
 pub fn genesis_nbits() -> u32 {
     spec::current_network().genesis_nbits()
