@@ -33,7 +33,7 @@ fn mining_produces_valid_hash() {
         "0".repeat(64),
         blockchain::initial_reward(),
         nbits,
-        vec![Transaction::new("ZENA_alice", "ZENA_bob", 1, 0)],
+        vec![Transaction::new("ZENA_alice", "ZENA_bob", 1, 0, 0)],
     );
     let ok = mine(&mut b, nbits);
     assert!(ok);
@@ -51,7 +51,7 @@ fn mining_increments_nonce() {
         "0".repeat(64),
         blockchain::initial_reward(),
         nbits,
-        vec![Transaction::new("ZENA_alice", "ZENA_bob", 1, 0)],
+        vec![Transaction::new("ZENA_alice", "ZENA_bob", 1, 0, 0)],
     );
     let n0 = b.nonce;
     let ok = mine(&mut b, nbits);
