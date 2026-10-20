@@ -27,14 +27,14 @@ pub const GENESIS_OUTPUT_SCRIPT: &str =
 pub const GENESIS_TIMESTAMP: u128 = 1792303198445;
 
 pub const EXPECTED_GENESIS_HASH: &str =
-    "00000ef00967fa31ef991af02ec367bb0fc506ec14b9e117888e0515529847a1";
+    "00000bc9af0080028ef022284c73a6a9da2132ab6e883cd3657887629d1b6ded";
 
 pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =
     "66b3fa4e2de637bb17964e16ecefe77e45872b8913f2aedc77b3fe354a2daf2b";
 
 pub const EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198445;
 
-pub const EXPECTED_GENESIS_NONCE: u64 = 378161;
+pub const EXPECTED_GENESIS_NONCE: u64 = 2822173;
 
 // ----------------------------------------------------------------------
 // Testnet genesis
@@ -46,13 +46,13 @@ pub const EXPECTED_GENESIS_NONCE: u64 = 378161;
 
 pub const TESTNET_GENESIS_TIMESTAMP: u128 = 1792303198446;
 
-pub const TESTNET_EXPECTED_GENESIS_HASH: &str = "000001fe9e362c149c9e39a60c8e365f52a81d2e55ba7edf3f5d9fb7e9691c1c";
+pub const TESTNET_EXPECTED_GENESIS_HASH: &str = "000007c961513c47e7b467103f838900169cd3b08db4cbb6fe0ba7b7b5fd0537";
 
 pub const TESTNET_EXPECTED_GENESIS_MERKLE_ROOT: &str = "66b3fa4e2de637bb17964e16ecefe77e45872b8913f2aedc77b3fe354a2daf2b";
 
 pub const TESTNET_EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198446;
 
-pub const TESTNET_EXPECTED_GENESIS_NONCE: u64 = 106933;
+pub const TESTNET_EXPECTED_GENESIS_NONCE: u64 = 491730;
 
 // ----------------------------------------------------------------------
 // Regtest genesis
@@ -64,13 +64,13 @@ pub const TESTNET_EXPECTED_GENESIS_NONCE: u64 = 106933;
 
 pub const REGTEST_GENESIS_TIMESTAMP: u128 = 1792303198447;
 
-pub const REGTEST_EXPECTED_GENESIS_HASH: &str = "0af445f7e349cd2e62a5dcff9d972108ec5f7a09ce4e8771178c5d47f8a3368a";
+pub const REGTEST_EXPECTED_GENESIS_HASH: &str = "1fe571bb1af8efb2e4a4769445f41d99655769396208e43666d1a30e95ef1438";
 
 pub const REGTEST_EXPECTED_GENESIS_MERKLE_ROOT: &str = "66b3fa4e2de637bb17964e16ecefe77e45872b8913f2aedc77b3fe354a2daf2b";
 
 pub const REGTEST_EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198447;
 
-pub const REGTEST_EXPECTED_GENESIS_NONCE: u64 = 1;
+pub const REGTEST_EXPECTED_GENESIS_NONCE: u64 = 0;
 
 // ----------------------------------------------------------------------
 // Network-aware accessors
