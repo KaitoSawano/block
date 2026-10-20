@@ -12,5 +12,4 @@ pub mod state;
 pub use account::Account;
 pub use state::StateDB;
 
-// Re-export the legacy storage functions (blocks, mempool) from the parent module.
 pub use crate::storage_legacy::*;
