@@ -438,6 +438,8 @@ impl RpcHandler {
             "miner_confirmation_window": consensus::miner_confirmation_window(),
             "difficulty_adjust_interval": consensus::difficulty_adjust_interval(),
             "mempool_len": c.mempool.len(),
+            "mempool_size_bytes": c.mempool_size_bytes(),
+            "current_base_fee": c.current_base_fee,
             "valid": c.is_valid(),
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
             "checkpoints_highest": blockchain::checkpoint::highest(),
@@ -464,6 +466,8 @@ impl RpcHandler {
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
             "checkpoints_highest": blockchain::checkpoint::highest(),
             "mempool_len": c.mempool.len(),
+            "mempool_size_bytes": c.mempool_size_bytes(),
+            "current_base_fee": c.current_base_fee,
             "circulating": to_coin(c.circulating_supply()),
             "max_supply": to_coin(consensus::max_supply()),
             "era": c.current_era(),
@@ -493,6 +497,7 @@ impl RpcHandler {
             "subsidy_satoshi": subsidy,
             "total_fees_satoshi": total_fees,
             "mempool": c.mempool,
+            "current_base_fee": c.current_base_fee,
         }))
     }
 
@@ -524,6 +529,7 @@ impl RpcHandler {
         chain.chain.push(block.clone());
         chain.adjust_difficulty();
         chain.mempool.clear();
+        chain.update_base_fee();
 
         block.log_add_to_wallet();
 
@@ -943,6 +949,10 @@ impl RpcHandler {
         };
         RpcResponse::ok(json!({
             "size": count,
+            "size_bytes": chain.mempool_size_bytes(),
+            "max_size_bytes": blockchain::MAX_MEMPOOL_SIZE_BYTES,
+            "target_size_bytes": blockchain::MEMPOOL_TARGET_SIZE_BYTES,
+            "current_base_fee": chain.current_base_fee,
             "total_amount_satoshi": total_amount,
             "total_amount_zenac": to_coin(total_amount),
             "total_fee_satoshi": total_fee,
@@ -1042,6 +1052,7 @@ impl RpcHandler {
 
                 chain.chain.push(block.clone());
                 chain.adjust_difficulty();
+                chain.update_base_fee();
                 block.log_add_to_wallet();
                 if let Err(e) = storage::save_chain(&chain) {
                     return RpcResponse::err(&format!("failed to save chain: {}", e));
@@ -1133,17 +1144,25 @@ impl RpcHandler {
             None => return RpcResponse::err("from address not found in wallet"),
         };
 
+        // Calculate the dynamic fee based on the current base fee and estimated tx size.
+        let estimated_tx_size = 250; // Approximate size in bytes for a standard transaction.
+        let dynamic_fee = {
+            let chain = self.state.chain.blocking_read();
+            chain.current_base_fee.saturating_mul(estimated_tx_size)
+        };
+        let fee = dynamic_fee.max(DEFAULT_FEE_SATOSHI);
+
         let amount_sat = if is_sendall {
             let chain = self.state.chain.blocking_read();
             let bal = chain.balance_of(&entry.address);
             drop(chain);
-            if bal <= DEFAULT_FEE_SATOSHI {
+            if bal <= fee {
                 return RpcResponse::err(&format!(
                     "balance {} sat is too small to cover the fee of {} sat",
-                    bal, DEFAULT_FEE_SATOSHI
+                    bal, fee
                 ));
             }
-            bal - DEFAULT_FEE_SATOSHI
+            bal - fee
         } else {
             match req.params[0].as_str() {
                 Some(s) => match parse_zenac_to_satoshi(s) {
@@ -1179,7 +1198,7 @@ impl RpcHandler {
             ));
         }
 
-        let need = match amount_sat.checked_add(DEFAULT_FEE_SATOSHI) {
+        let need = match amount_sat.checked_add(fee) {
             Some(v) => v,
             None => return RpcResponse::err("amount + fee overflows u64"),
         };
@@ -1198,7 +1217,7 @@ impl RpcHandler {
                 if total < need {
                     return RpcResponse::err(&format!(
                         "insufficient wallet balance: required {} sat (amount {} + fee {}), available {} sat",
-                        need, amount_sat, DEFAULT_FEE_SATOSHI, total
+                        need, amount_sat, fee, total
                     ));
                 }
                 return RpcResponse::err(&format!(
@@ -1217,7 +1236,7 @@ impl RpcHandler {
             &entry.address,
             &to,
             amount_sat,
-            DEFAULT_FEE_SATOSHI,
+            fee,
             nonce,
         );
 
@@ -1241,7 +1260,7 @@ impl RpcHandler {
             entry.address,
             to,
             to_coin(amount_sat),
-            to_coin(DEFAULT_FEE_SATOSHI),
+            to_coin(fee),
             nonce
         );
 
@@ -1261,8 +1280,8 @@ impl RpcHandler {
             "to": to,
             "amount_satoshi": amount_sat,
             "amount_zenac": to_coin(amount_sat),
-            "fee_satoshi": DEFAULT_FEE_SATOSHI,
-            "fee_zenac": to_coin(DEFAULT_FEE_SATOSHI),
+            "fee_satoshi": fee,
+            "fee_zenac": to_coin(fee),
             "nonce": nonce,
             "sendall": is_sendall,
             "mempool_len": self.state.chain.blocking_read().mempool.len(),
