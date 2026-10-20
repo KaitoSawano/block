@@ -46,13 +46,13 @@ pub const EXPECTED_GENESIS_NONCE: u64 = 378161;
 
 pub const TESTNET_GENESIS_TIMESTAMP: u128 = 1792303198446;
 
-pub const TESTNET_EXPECTED_GENESIS_HASH: &str = "";
+pub const TESTNET_EXPECTED_GENESIS_HASH: &str = "000001fe9e362c149c9e39a60c8e365f52a81d2e55ba7edf3f5d9fb7e9691c1c";
 
-pub const TESTNET_EXPECTED_GENESIS_MERKLE_ROOT: &str = "";
+pub const TESTNET_EXPECTED_GENESIS_MERKLE_ROOT: &str = "66b3fa4e2de637bb17964e16ecefe77e45872b8913f2aedc77b3fe354a2daf2b";
 
 pub const TESTNET_EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198446;
 
-pub const TESTNET_EXPECTED_GENESIS_NONCE: u64 = 0;
+pub const TESTNET_EXPECTED_GENESIS_NONCE: u64 = 106933;
 
 // ----------------------------------------------------------------------
 // Regtest genesis
