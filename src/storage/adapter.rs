@@ -4,6 +4,7 @@
 // file LICENSE or https://opensource.org/license/mit.
 
 //! LevelDB adapter for the Merkle Patricia Trie using rusty-leveldb (pure Rust).
+//! Every write is flushed to disk immediately to ensure persistence.
 
 use eth_trie::DB;
 use rusty_leveldb::{DB as LevelDB, Options};
@@ -34,13 +35,20 @@ impl DB for LevelDbAdapter {
     fn insert(&self, key: &[u8], value: Vec<u8>) -> Result<(), Self::Error> {
         let mut db = self.db.lock().unwrap();
         db.put(key, &value)
-            .map_err(|e| std::io::Error::other(format!("{:?}", e)))
+            .map_err(|e| std::io::Error::other(format!("{:?}", e)))?;
+        // Force flush to disk to ensure persistence.
+        db.flush()
+            .map_err(|e| std::io::Error::other(format!("{:?}", e)))?;
+        Ok(())
     }
 
     fn remove(&self, key: &[u8]) -> Result<(), Self::Error> {
         let mut db = self.db.lock().unwrap();
         db.delete(key)
-            .map_err(|e| std::io::Error::other(format!("{:?}", e)))
+            .map_err(|e| std::io::Error::other(format!("{:?}", e)))?;
+        db.flush()
+            .map_err(|e| std::io::Error::other(format!("{:?}", e)))?;
+        Ok(())
     }
 
     fn flush(&self) -> Result<(), Self::Error> {
