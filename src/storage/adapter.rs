@@ -46,6 +46,7 @@ impl DB for LevelDbAdapter {
         let mut db = self.db.lock().unwrap();
         db.delete(key)
             .map_err(|e| std::io::Error::other(format!("{:?}", e)))?;
+        // Force flush to disk to ensure persistence.
         db.flush()
             .map_err(|e| std::io::Error::other(format!("{:?}", e)))?;
         Ok(())
