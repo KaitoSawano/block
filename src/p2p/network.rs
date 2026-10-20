@@ -27,7 +27,7 @@ use crate::p2p::message::{BlockLocator, Inventory, InvType, Message};
 use crate::p2p::peer::{ConnectionType, PeerState};
 use crate::p2p::peer_manager::{PeerEvent, PeerManager};
 use crate::p2p::peers;
-use crate::p2p::sync::{SyncState, MAX_BLOCKS_IN_FLIGHT};
+use crate::p2p::sync::SyncState;
 use crate::storage;
 use crate::utils::{format_datetime, now_millis};
 use crate::validation;
@@ -785,7 +785,7 @@ impl Network {
                     }
                     conn.inv_count += 1;
                     if conn.inv_count > MAX_INV_PER_SECOND {
-                        drop(conn);
+                        // The borrow of `conn` ends here, allowing `self.punish` to be called.
                         self.punish(id, 20, "inv rate limit exceeded").await;
                         return;
                     }
@@ -882,7 +882,7 @@ impl Network {
                     }
                     conn.tx_count += 1;
                     if conn.tx_count > MAX_TX_PER_SECOND {
-                        drop(conn);
+                        // The borrow of `conn` ends here, allowing `self.punish` to be called.
                         self.punish(id, 20, "tx rate limit exceeded").await;
                         return;
                     }
