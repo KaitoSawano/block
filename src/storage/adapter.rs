@@ -8,9 +8,10 @@
 use eth_trie::DB;
 use rusty_leveldb::{DB as LevelDB, Options};
 use std::path::Path;
+use std::sync::Mutex;
 
 pub struct LevelDbAdapter {
-    db: LevelDB,
+    db: Mutex<LevelDB>,
 }
 
 impl LevelDbAdapter {
@@ -18,43 +19,35 @@ impl LevelDbAdapter {
         let mut opt = Options::default();
         opt.create_if_missing = true;
         let db = LevelDB::open(path, opt).map_err(|e| format!("{:?}", e))?;
-        Ok(LevelDbAdapter { db })
+        Ok(LevelDbAdapter { db: Mutex::new(db) })
     }
 }
 
-// Implement the `DB` trait required by `eth_trie`.
 impl DB for LevelDbAdapter {
     type Error = String;
 
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
-        // rusty-leveldb's `get` takes &mut self, but the trait requires &self.
-        // This is a known limitation; we use a hack: clone the db reference? No.
-        // Actually, `rusty-leveldb`'s get is &mut self. We need interior mutability.
-        // Let's use a Mutex to satisfy the trait.
-        // Wait, the trait `DB` from eth_trie might have `get(&self, ...)`.
-        // Let's check the docs: it says `fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Self::Error>;`
-        // So we need to wrap the DB in a Mutex.
-        // This is a bit inefficient but necessary for compatibility.
-        // Alternatively, we can use `RefCell` if single-threaded, but `DB` requires Send+Sync.
-        // So `Mutex` is the way.
-        // However, I need to change the struct to hold `Mutex<LevelDB>`.
-        // Let me rewrite the struct.
-        unimplemented!("Will be fixed below")
+        let mut db = self.db.lock().map_err(|e| e.to_string())?;
+        Ok(db.get(key))
     }
 
     fn contains(&self, key: &[u8]) -> Result<bool, Self::Error> {
-        unimplemented!()
+        let mut db = self.db.lock().map_err(|e| e.to_string())?;
+        Ok(db.get(key).is_some())
     }
 
     fn insert(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), Self::Error> {
-        unimplemented!()
+        let mut db = self.db.lock().map_err(|e| e.to_string())?;
+        db.put(&key, &value).map_err(|e| format!("{:?}", e))
     }
 
     fn remove(&self, key: &[u8]) -> Result<(), Self::Error> {
-        unimplemented!()
+        let mut db = self.db.lock().map_err(|e| e.to_string())?;
+        db.delete(key).map_err(|e| format!("{:?}", e))
     }
 
     fn flush(&self) -> Result<(), Self::Error> {
-        unimplemented!()
+        let mut db = self.db.lock().map_err(|e| e.to_string())?;
+        db.flush().map_err(|e| format!("{:?}", e))
     }
 }
