@@ -24,30 +24,25 @@ impl LevelDbAdapter {
 }
 
 impl DB for LevelDbAdapter {
-    type Error = String;
+    type Error = std::io::Error;
 
     fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
-        let mut db = self.db.lock().map_err(|e| e.to_string())?;
+        let mut db = self.db.lock().unwrap();
         Ok(db.get(key))
     }
 
-    fn contains(&self, key: &[u8]) -> Result<bool, Self::Error> {
-        let mut db = self.db.lock().map_err(|e| e.to_string())?;
-        Ok(db.get(key).is_some())
-    }
-
-    fn insert(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), Self::Error> {
-        let mut db = self.db.lock().map_err(|e| e.to_string())?;
-        db.put(&key, &value).map_err(|e| format!("{:?}", e))
+    fn insert(&self, key: &[u8], value: Vec<u8>) -> Result<(), Self::Error> {
+        let mut db = self.db.lock().unwrap();
+        db.put(key, &value).map_err(|e| std::io::Error::other(format!("{:?}", e)))
     }
 
     fn remove(&self, key: &[u8]) -> Result<(), Self::Error> {
-        let mut db = self.db.lock().map_err(|e| e.to_string())?;
-        db.delete(key).map_err(|e| format!("{:?}", e))
+        let mut db = self.db.lock().unwrap();
+        db.delete(key).map_err(|e| std::io::Error::other(format!("{:?}", e)))
     }
 
     fn flush(&self) -> Result<(), Self::Error> {
-        let mut db = self.db.lock().map_err(|e| e.to_string())?;
-        db.flush().map_err(|e| format!("{:?}", e))
+        let mut db = self.db.lock().unwrap();
+        db.flush().map_err(|e| std::io::Error::other(format!("{:?}", e)))
     }
 }
