@@ -10,6 +10,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     let mut selected_network = Network::Main;
+
     for arg in &args[1..] {
         match arg.as_str() {
             "-testnet" | "--testnet" => selected_network = Network::Test,
@@ -25,6 +26,10 @@ fn main() {
         }
     }
 
+    // The network MUST be set before calling any consensus-dependent
+    // function. This ensures that the signing hash (which includes the
+    // network magic bytes as a chain ID) and all other network-specific
+    // parameters are correct for the genesis block.
     spec::set_current_network(selected_network);
 
     let b = Block::genesis_unchecked();
@@ -35,6 +40,7 @@ fn main() {
     println!("  (copy into src/consensus/genesis.rs)");
     println!("============================================================");
     println!();
+    
     match selected_network {
         Network::Main => {
             println!("  pub const EXPECTED_GENESIS_HASH: &str =");
