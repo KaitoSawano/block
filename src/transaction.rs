@@ -14,6 +14,8 @@
 use serde::{Deserialize, Serialize};
 use zenachain_crypto::sha3_256_hex;
 
+use crate::consensus::spec;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     pub txid: String,
@@ -115,9 +117,15 @@ impl Transaction {
     /// the transaction to a specific position in the sender's sequence.
     /// The signature field is excluded because a signature cannot commit
     /// to itself.
+    ///
+    /// IMPORTANT: The signing hash now includes the network's magic bytes
+    /// (acting as a Chain ID) to prevent cross-network replay attacks.
+    /// A transaction signed for Mainnet will be invalid on Testnet/Regtest.
     pub fn signing_hash(&self) -> String {
+        let chain_id = spec::current_network().magic_hex();
         let payload = format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            chain_id, // Inject Chain ID here
             self.from,
             self.to,
             self.amount,
