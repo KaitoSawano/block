@@ -21,6 +21,7 @@ pub fn save_chain(chain: &Blockchain) -> std::io::Result<()> {
     save_blocks(chain)?;
     save_chainstate(chain)?;
     save_mempool(&chain.mempool)?;
+    save_mempool_timestamps(&chain.mempool_timestamps)?;
     Ok(())
 }
 
@@ -48,13 +49,14 @@ pub fn load_chain() -> std::io::Result<Blockchain> {
     }
 
     let mempool = load_mempool().unwrap_or_default();
+    let mempool_timestamps = load_mempool_timestamps().unwrap_or_default();
     Ok(Blockchain {
         chain: blocks,
         nbits: state.nbits,
         mempool,
         balances: state.balances,
         nonces: state.nonces,
-        current_base_fee: state.current_base_fee,
+        mempool_timestamps,
     })
 }
 
@@ -69,16 +71,9 @@ pub struct ChainState {
     /// Account nonces. Key: address, value: next expected nonce.
     #[serde(default)]
     pub nonces: HashMap<String, u64>,
-    /// The current dynamic base fee for the mempool.
-    #[serde(default = "default_base_fee")]
-    pub current_base_fee: u64,
 }
 
-fn default_base_fee() -> u64 {
-    crate::blockchain::MEMPOOL_MIN_FEE_PER_BYTE
-}
-
-/// Save the chain state (block count, nbits, balances, nonces, base fee) to disk.
+/// Save the chain state (block count, nbits, balances, nonces) to disk.
 pub fn save_chainstate(chain: &Blockchain) -> std::io::Result<()> {
     let state = ChainState {
         total_blocks: chain.chain.len() as u64,
@@ -86,7 +81,6 @@ pub fn save_chainstate(chain: &Blockchain) -> std::io::Result<()> {
         updated_at: crate::utils::now_millis(),
         balances: chain.balances.clone(),
         nonces: chain.nonces.clone(),
-        current_base_fee: chain.current_base_fee,
     };
     let json = serde_json::to_string_pretty(&state).map_err(Error::other)?;
     std::fs::write(datadir::chainstate_file(), json)
@@ -146,6 +140,20 @@ pub fn load_mempool() -> std::io::Result<Vec<crate::transaction::Transaction>> {
     let v: Vec<crate::transaction::Transaction> =
         serde_json::from_str(&data).map_err(Error::other)?;
     Ok(v)
+}
+
+/// Write the mempool timestamps to disk.
+pub fn save_mempool_timestamps(ts: &HashMap<String, u64>) -> std::io::Result<()> {
+    let json = serde_json::to_string_pretty(ts).map_err(Error::other)?;
+    std::fs::write(datadir::mempool_path().with_extension("timestamps.json"), json)
+}
+
+/// Read the mempool timestamps from disk.
+pub fn load_mempool_timestamps() -> std::io::Result<HashMap<String, u64>> {
+    let path = datadir::mempool_path().with_extension("timestamps.json");
+    let data = std::fs::read_to_string(&path)?;
+    let ts: HashMap<String, u64> = serde_json::from_str(&data).map_err(Error::other)?;
+    Ok(ts)
 }
 
 /// Write the mempool struct to disk.
