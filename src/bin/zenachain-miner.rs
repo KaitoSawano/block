@@ -70,7 +70,7 @@ fn main() {
             nbits,
             mempool,
             target_address.clone(),
-            state_root, // <--- TAMBAHKAN state_root
+            state_root,
         );
 
         if block.reward != reward_satoshi {
