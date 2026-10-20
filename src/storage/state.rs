@@ -126,7 +126,6 @@ impl StateDB {
     }
 }
 
-// Manual implementations for Debug, Clone, and Default because EthTrie does not support derive.
 impl std::fmt::Debug for StateDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StateDB").finish()
