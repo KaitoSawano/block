@@ -65,9 +65,10 @@ tokio = { version = "1", features = [
 futures = "0.3"
 zenachain-crypto = { path = "crypto" }
 
+# --- STORAGE DEPENDENCIES (Pure Rust) ---
 eth_trie = "0.6"
 rlp = "0.5"
-leveldb = "0.8"
+rusty-leveldb = "1.0"
 keccak-hash = "0.10"
 
 [dev-dependencies]
