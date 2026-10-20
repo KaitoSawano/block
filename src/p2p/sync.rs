@@ -71,6 +71,69 @@ impl SyncState {
         self.in_flight.len()
     }
 
+    /// Handle a potential chain reorganization.
+    /// This is a simplified version that finds the common ancestor by walking
+    /// back from the new block's previous_hash.
+    pub fn handle_reorg(chain: &mut Blockchain, new_block: Block) -> Result<(), String> {
+        println!("[reorg] potential reorg detected at height {}", new_block.index);
+        
+        // 1. Find the common ancestor.
+        // Walk back from the new block's parent until we find a block that
+        // exists in our current chain.
+        let mut ancestor_hash = new_block.previous_hash.clone();
+        let mut ancestor_index = new_block.index - 1;
+        
+        let mut rollback_blocks = Vec::new();
+        
+        // Find the fork point.
+        loop {
+            if let Some(our_block) = chain.chain.iter().find(|b| b.hash == ancestor_hash) {
+                ancestor_index = our_block.index;
+                println!("[reorg] common ancestor found at height {} ({})", ancestor_index, ancestor_hash);
+                break;
+            }
+            // If we don't have the ancestor, we need to request it.
+            // This requires a more complex sync state, but for now, we'll
+            // assume the ancestor is in our chain. If not, we reject the reorg.
+            return Err(format!("common ancestor {} not found in chain", ancestor_hash));
+        }
+        
+        // 2. Collect blocks to rollback (from current tip down to ancestor).
+        if ancestor_index < chain.height() {
+            rollback_blocks = chain.chain
+                .split_off((ancestor_index + 1) as usize)
+                .into_iter()
+                .rev()
+                .collect();
+        }
+        
+        // 3. Rollback state to the ancestor's state_root.
+        let ancestor_block = &chain.chain[ancestor_index as usize];
+        if ancestor_block.state_root.is_empty() {
+            return Err("ancestor block has no state root".into());
+        }
+        
+        let root_bytes = hex::decode(&ancestor_block.state_root)
+            .map_err(|e| format!("invalid state root hex: {}", e))?;
+        let mut root_arr = [0u8; 32];
+        root_arr.copy_from_slice(&root_bytes);
+        
+        if let Err(e) = chain.state.rollback_to(&root_arr) {
+            return Err(format!("state rollback failed: {}", e));
+        }
+        
+        println!("[reorg] rolled back {} blocks to height {}", rollback_blocks.len(), ancestor_index);
+        
+        // 4. Apply the new block.
+        // Note: This assumes the new block is the only one we need to apply.
+        // In a real implementation, we would need to apply a full new chain.
+        if let Err(e) = Self::accept_block(chain, new_block) {
+            return Err(format!("failed to apply new block after reorg: {}", e));
+        }
+        
+        Ok(())
+    }
+
     /// Validate a block received from a peer and append it to the chain.
     ///
     /// This function performs full validation, applies every transaction
@@ -95,15 +158,16 @@ impl SyncState {
             None => return Err("chain is empty".into()),
         };
 
-        if block.index != prev.index + 1 {
-            return Err(format!(
-                "block index {} does not follow tip {}",
-                block.index, prev.index
-            ));
-        }
-
+        // Check if the block extends the current tip.
         if block.previous_hash != prev.hash {
-            return Err(format!("block {} previous_hash mismatch", block.index));
+            // The block does not connect to our tip. It might be a reorg.
+            // Check if the block is a direct child of any block in our chain.
+            if chain.chain.iter().any(|b| b.hash == block.previous_hash) {
+                // This is a potential reorg.
+                return Self::handle_reorg(chain, block);
+            } else {
+                return Err(format!("block {} previous_hash mismatch (orphan)", block.index));
+            }
         }
 
         if let Err(e) = validation::validate_block(chain, &prev, &block) {
@@ -124,7 +188,7 @@ impl SyncState {
         }
 
         // Credit the miner with the block reward (subsidy + fees).
-        if let Err(e) = chain.credit_reward(&block.mined_for, block.reward) {
+        if let Err(e) = chain.credit_reward(&block.mined_for, block.reward, block.index) {
             return Err(format!(
                 "failed to credit reward for block {}: {}",
                 block.index, e
