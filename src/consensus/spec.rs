@@ -206,7 +206,7 @@ pub const DEFAULT_PORT_TEST: u16 = 9422;
 pub const DEFAULT_RPC_PORT_TEST: u16 = 12255;
 pub const DATADIR_NAME_TEST: &str = ".zenachain-testnet";
 pub const GENESIS_TIMESTAMP_TEST: u128 = 1792303198446;
-pub const GENESIS_NBITS_TEST: u32 = 0x207fffff;
+pub const GENESIS_NBITS_TEST: u32 = 0x1e0ffff0; // Same as Mainnet
 pub const EXPECTED_GENESIS_NONCE_TEST: u64 = 0;
 
 // ----------------------------------------------------------------------
@@ -219,7 +219,7 @@ pub const DEFAULT_PORT_REGTEST: u16 = 18444;
 pub const DEFAULT_RPC_PORT_REGTEST: u16 = 18443;
 pub const DATADIR_NAME_REGTEST: &str = ".zenachain-regtest";
 pub const GENESIS_TIMESTAMP_REGTEST: u128 = 1792303198447;
-pub const GENESIS_NBITS_REGTEST: u32 = 0x207fffff;
+pub const GENESIS_NBITS_REGTEST: u32 = 0x207fffff; // Very easy
 pub const EXPECTED_GENESIS_NONCE_REGTEST: u64 = 0;
 
 // ----------------------------------------------------------------------
