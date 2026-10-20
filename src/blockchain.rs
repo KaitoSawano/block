@@ -20,7 +20,6 @@ pub const MIN_RELAY_FEE_PER_BYTE: u64 = 1;
 pub const MEMPOOL_EXPIRY_SECS: u64 = 336 * 3600;
 pub const RBF_MIN_FEE_BUMP_PERCENT: u64 = 10;
 
-// ... (mod checkpoint, mod network, pub use ...) ...
 pub mod checkpoint {
     pub struct Checkpoint {
         pub height: u64,
@@ -114,11 +113,9 @@ pub struct Blockchain {
     pub chain: Vec<Block>,
     pub nbits: u32,
     pub mempool: Vec<Transaction>,
-    // Legacy fields (kept for serialization compatibility but unused for state).
     pub balances: HashMap<String, u64>,
     pub nonces: HashMap<String, u64>,
     pub mempool_timestamps: HashMap<String, u64>,
-    // New Ethereum-style state.
     #[serde(skip)]
     pub state: StateDB,
 }
@@ -129,15 +126,19 @@ impl Blockchain {
         let db_path = crate::datadir::state_db_path();
         let mut state = StateDB::open(&db_path).expect("failed to open state db");
 
-        state
-            .update_account(
-                "GENESIS",
-                &Account {
-                    nonce: 0,
-                    balance: genesis.reward,
-                },
-            )
-            .expect("failed to init genesis account");
+        // Only initialize GENESIS if the state is empty.
+        let genesis_acc = state.get_account("GENESIS").unwrap_or(None);
+        if genesis_acc.is_none() {
+            state
+                .update_account(
+                    "GENESIS",
+                    &Account {
+                        nonce: 0,
+                        balance: genesis.reward,
+                    },
+                )
+                .expect("failed to init genesis account");
+        }
 
         Blockchain {
             chain: vec![genesis],
