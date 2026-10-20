@@ -50,7 +50,7 @@ pub fn consensus_fingerprint_for(network: Network) -> String {
         network.genesis_timestamp(),
         genesis::GENESIS_OUTPUT_SCRIPT,
         network.genesis_nbits(),
-        pow::POW_LIMIT,
+        pow::pow_limit(), // <-- Changed from POW_LIMIT
         rules::COINBASE_MATURITY,
         network.address_prefix(),
         rules::ADDRESS_HEX_LEN,
@@ -98,7 +98,7 @@ pub fn parameter_fingerprint_for(network: Network) -> String {
         network.genesis_timestamp(),
         genesis::GENESIS_OUTPUT_SCRIPT,
         network.genesis_nbits(),
-        pow::POW_LIMIT,
+        pow::pow_limit(), // <-- Changed from POW_LIMIT
         rules::COINBASE_MATURITY,
         network.address_prefix(),
         rules::ADDRESS_HEX_LEN,
