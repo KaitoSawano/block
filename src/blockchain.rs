@@ -10,22 +10,17 @@ use std::collections::HashMap;
 use crate::block::Block;
 use crate::consensus::{self, genesis, pow as cpow, rules, spec};
 use crate::pow;
+use crate::storage::{Account, StateDB}; // GANTI IMPORT
 use crate::transaction::Transaction;
 use crate::validation;
 use serde::{Deserialize, Serialize};
 
-// Maximum mempool size in bytes (300 MB, matching Bitcoin Core's default).
 pub const MAX_MEMPOOL_SIZE_BYTES: usize = 300 * 1024 * 1024;
-
-// Minimum relay fee rate in satoshis per byte (1 sat/vB).
 pub const MIN_RELAY_FEE_PER_BYTE: u64 = 1;
-
-// Transactions older than this many seconds are evicted from the mempool.
-pub const MEMPOOL_EXPIRY_SECS: u64 = 336 * 3600; // 14 days (Bitcoin's default is 336 hours)
-
-// Minimum fee rate increase required for a replacement transaction (10%).
+pub const MEMPOOL_EXPIRY_SECS: u64 = 336 * 3600;
 pub const RBF_MIN_FEE_BUMP_PERCENT: u64 = 10;
 
+// ... (mod checkpoint, mod network, pub use ...) ...
 pub mod checkpoint {
     pub struct Checkpoint {
         pub height: u64,
@@ -64,17 +59,14 @@ pub mod network {
     pub const ASSUMED_BLOCKCHAIN_SIZE: u64 = 496;
     pub const ASSUMED_CHAIN_STATE_SIZE: u64 = 6;
 
-    /// Return the network name for the active network.
     pub fn network_name() -> &'static str {
         spec::current_network().name()
     }
 
-    /// Return the default P2P port for the active network.
     pub fn default_port() -> u16 {
         spec::current_network().default_port()
     }
 
-    /// Return the magic bytes for the active network as a hex string.
     pub fn network_magic_hex() -> String {
         spec::current_network().magic_hex()
     }
@@ -122,29 +114,39 @@ pub struct Blockchain {
     pub chain: Vec<Block>,
     pub nbits: u32,
     pub mempool: Vec<Transaction>,
+    // Legacy fields (kept for serialization compatibility but unused for state).
     pub balances: HashMap<String, u64>,
     pub nonces: HashMap<String, u64>,
-    /// Timestamps for each transaction in the mempool (keyed by txid).
-    /// Used for expiry-based eviction.
     pub mempool_timestamps: HashMap<String, u64>,
+    // New Ethereum-style state.
+    #[serde(skip)]
+    pub state: StateDB,
 }
 
 impl Blockchain {
     pub fn new() -> Self {
         let genesis = Block::genesis();
-        let mut balances = HashMap::new();
-        let mut nonces = HashMap::new();
+        let db_path = crate::datadir::state_db_path();
+        let mut state = StateDB::open(&db_path).expect("failed to open state db");
 
-        balances.insert("GENESIS".to_string(), genesis.reward);
-        nonces.insert("GENESIS".to_string(), 0);
+        state
+            .update_account(
+                "GENESIS",
+                &Account {
+                    nonce: 0,
+                    balance: genesis.reward,
+                },
+            )
+            .expect("failed to init genesis account");
 
         Blockchain {
             chain: vec![genesis],
             nbits: spec::current_network().genesis_nbits(),
             mempool: Vec::new(),
-            balances,
-            nonces,
+            balances: HashMap::new(),
+            nonces: HashMap::new(),
             mempool_timestamps: HashMap::new(),
+            state,
         }
     }
 
@@ -176,15 +178,15 @@ impl Blockchain {
     }
 
     pub fn balance_of(&self, addr: &str) -> u64 {
-        self.balances.get(addr).copied().unwrap_or(0)
+        self.state.balance_of(addr)
     }
 
     pub fn nonce_of(&self, addr: &str) -> u64 {
-        self.nonces.get(addr).copied().unwrap_or(0)
+        self.state.nonce_of(addr)
     }
 
     pub fn next_nonce_for(&self, addr: &str) -> u64 {
-        let base = self.nonce_of(addr);
+        let base = self.state.nonce_of(addr);
         let mut next = base;
         loop {
             let has = self
@@ -199,64 +201,29 @@ impl Blockchain {
     }
 
     pub fn apply_transaction(&mut self, tx: &Transaction) -> Result<(), String> {
-        let total = tx
-            .amount
-            .checked_add(tx.fee)
-            .ok_or_else(|| "amount + fee overflows u64".to_string())?;
-
-        let from_balance = self.balances.get(&tx.from).copied().unwrap_or(0);
-        let new_from = from_balance
-            .checked_sub(total)
-            .ok_or_else(|| format!("sender {} underflow", tx.from))?;
-        self.balances.insert(tx.from.clone(), new_from);
-
-        let to_balance = self.balances.get(&tx.to).copied().unwrap_or(0);
-        let new_to = to_balance
-            .checked_add(tx.amount)
-            .ok_or_else(|| format!("recipient {} overflow", tx.to))?;
-        self.balances.insert(tx.to.clone(), new_to);
-
-        let nonce = self.nonces.get(&tx.from).copied().unwrap_or(0);
-        let new_nonce = nonce
-            .checked_add(1)
-            .ok_or_else(|| format!("nonce overflow for {}", tx.from))?;
-        self.nonces.insert(tx.from.clone(), new_nonce);
-
-        Ok(())
+        self.state
+            .apply_transaction(&tx.from, &tx.to, tx.amount, tx.fee, tx.nonce)
     }
 
     pub fn credit_reward(&mut self, miner: &str, reward: u64) -> Result<(), String> {
-        let balance = self.balances.get(miner).copied().unwrap_or(0);
-        let new_balance = balance
-            .checked_add(reward)
-            .ok_or_else(|| format!("miner {} overflow", miner))?;
-        self.balances.insert(miner.to_string(), new_balance);
-        Ok(())
+        self.state.credit_reward(miner, reward)
     }
 
-    /// Estimate the size of a transaction in bytes. This is a rough approximation
-    /// used for mempool size limiting and fee rate calculation.
     pub fn tx_size_bytes(tx: &Transaction) -> usize {
-        // Base overhead + length of string fields (approximating hex string length)
         let base = 32 + tx.from.len() + tx.to.len() + 8 + 8 + 8 + tx.public_key.len() + tx.signature.len();
         base + tx.note.len()
     }
 
-    /// Calculate the total size of all transactions currently in the mempool.
     pub fn mempool_size_bytes(&self) -> usize {
         self.mempool.iter().map(|tx| Self::tx_size_bytes(tx)).sum()
     }
 
-    /// Calculate the fee rate of a transaction in satoshis per byte.
     pub fn fee_rate(tx: &Transaction) -> u64 {
         let size = Self::tx_size_bytes(tx).max(1) as u64;
         tx.fee / size
     }
 
-    /// Evict the lowest-fee-rate transactions from the mempool to free up the required space.
-    /// This mimics Bitcoin Core's eviction policy.
     fn evict_lowest_fee_transactions(&mut self, needed_space: usize) {
-        // Sort the mempool by fee-per-byte in ascending order (lowest fee first)
         self.mempool.sort_by(|a, b| {
             let fee_a = Self::fee_rate(a);
             let fee_b = Self::fee_rate(b);
@@ -274,7 +241,6 @@ impl Blockchain {
             to_remove.push(i);
         }
 
-        // Remove from the end to avoid shifting indices
         for i in to_remove.into_iter().rev() {
             let removed = self.mempool.remove(i);
             self.mempool_timestamps.remove(&removed.txid);
@@ -282,7 +248,6 @@ impl Blockchain {
         }
     }
 
-    /// Remove transactions that have been in the mempool for too long.
     pub fn evict_expired_transactions(&mut self) {
         let now = (crate::utils::now_millis() / 1000) as u64;
         let mut to_remove = Vec::new();
@@ -307,17 +272,13 @@ impl Blockchain {
             return false;
         }
 
-        // Check for an existing transaction with the same sender and nonce (RBF candidate).
-        // We must handle this BEFORE full validation, because validate_transaction
-        // will reject the new nonce (it expects nonce + 1, not the same nonce).
         let rbf_pos = self.mempool.iter().position(|t| t.from == tx.from && t.nonce == tx.nonce);
-        
+
         if let Some(pos) = rbf_pos {
             let old_tx = &self.mempool[pos];
             let old_fee_rate = Self::fee_rate(old_tx);
             let new_fee_rate = Self::fee_rate(&tx);
-            
-            // Require at least a 10% increase in fee rate to replace.
+
             let min_new_fee_rate = old_fee_rate + (old_fee_rate * RBF_MIN_FEE_BUMP_PERCENT / 100).max(1);
 
             if new_fee_rate >= min_new_fee_rate {
@@ -336,11 +297,7 @@ impl Blockchain {
             }
         }
 
-        // Now validate the transaction. Note: if we just removed an RBF transaction,
-        // the nonce is now available again, so validation should pass.
         if validation::validate_transaction(self, &tx).is_err() {
-            // If it fails, we should ideally restore the old transaction, but for
-            // simplicity, we just log the error. The mempool is ephemeral anyway.
             println!("[mempool] Rejected tx {}: validation failed", tx.txid);
             return false;
         }
@@ -348,18 +305,15 @@ impl Blockchain {
         let tx_size = Self::tx_size_bytes(&tx);
         let fee_rate = Self::fee_rate(&tx);
 
-        // Enforce the minimum relay fee rate (mimics Bitcoin's minRelayTxFee).
         if fee_rate < MIN_RELAY_FEE_PER_BYTE {
             println!("[mempool] Rejected tx {}: fee rate {} < minRelayTxFee {}", tx.txid, fee_rate, MIN_RELAY_FEE_PER_BYTE);
             return false;
         }
 
-        // Check if mempool is full and evict if necessary
         if self.mempool_size_bytes() + tx_size > MAX_MEMPOOL_SIZE_BYTES {
             self.evict_lowest_fee_transactions(tx_size);
         }
 
-        // If still full after eviction, reject the transaction
         if self.mempool_size_bytes() + tx_size > MAX_MEMPOOL_SIZE_BYTES {
             return false;
         }
@@ -414,7 +368,6 @@ impl Blockchain {
     }
 
     pub fn adjust_difficulty(&mut self) {
-        // Regtest: never change the difficulty to allow instant mining.
         if spec::current_network() == spec::Network::Regtest {
             return;
         }
