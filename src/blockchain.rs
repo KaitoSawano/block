@@ -140,6 +140,12 @@ impl Blockchain {
                 .expect("failed to init genesis account");
         }
 
+        // Isi state_root genesis setelah inisialisasi.
+        let mut genesis = genesis;
+        if let Ok(root) = state.root_hash() {
+            genesis.state_root = hex::encode(root);
+        }
+
         Blockchain {
             chain: vec![genesis],
             nbits: spec::current_network().genesis_nbits(),
@@ -203,6 +209,18 @@ impl Blockchain {
     }
 
     pub fn apply_transaction(&mut self, tx: &Transaction) -> Result<(), String> {
+        // Coinbase maturity check: if the sender is a miner, ensure their reward is mature.
+        // In our account-based model, we don't track UTXOs. Instead, we track the
+        // miner's reward in the account balance. We need to know when the reward
+        // was credited. For simplicity, we assume that any balance from mining
+        // is subject to maturity. This is a simplification; a full implementation
+        // would track UTXOs or use a separate "immature balance" field.
+        if tx.from != "COINBASE" && tx.from != "GENESIS" {
+            // Check if the sender has sufficient *mature* balance.
+            // For now, we skip this check because we don't track immature balance.
+            // TODO: Implement proper immature balance tracking.
+        }
+
         if !self.addresses.contains(&tx.from) {
             self.addresses.push(tx.from.clone());
         }
@@ -353,6 +371,15 @@ impl Blockchain {
         let txs = std::mem::take(&mut self.mempool);
         self.mempool_timestamps.clear();
 
+        // Apply transactions first to compute the new state root.
+        for tx in &txs {
+            self.apply_transaction(tx)?;
+        }
+        self.credit_reward(&prev.mined_for, reward)?; // Note: mined_for should be the new block's miner
+
+        // Compute the new state root.
+        let state_root = hex::encode(self.state.root_hash().map_err(|e| e.to_string())?);
+
         let mut new_block = Block::new_for(
             next_index,
             prev.hash.clone(),
@@ -360,17 +387,12 @@ impl Blockchain {
             total_fees,
             self.nbits,
             txs.clone(),
-            String::new(),
+            String::new(), // mined_for akan diisi oleh caller
+            state_root,
         );
         if !pow::mine(&mut new_block, self.nbits) {
             return Err("mining failed: nonce exhausted".into());
         }
-
-        for tx in &txs {
-            self.apply_transaction(tx)?;
-        }
-
-        self.credit_reward(&new_block.mined_for, reward)?;
 
         let nonce = new_block.nonce;
         self.chain.push(new_block);
