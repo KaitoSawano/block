@@ -17,6 +17,7 @@ pub mod pow;
 pub mod rpc;
 pub mod secp256k1;
 pub mod storage;
+pub mod storage_legacy;
 pub mod transaction;
 pub mod utils;
 pub mod validation;
