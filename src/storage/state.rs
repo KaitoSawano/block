@@ -124,6 +124,11 @@ impl StateDB {
         self.update_account(miner, &acc)?;
         Ok(())
     }
+
+    pub fn flush(&mut self) -> Result<(), String> {
+        // The adapter flushes on every write, so this is a no-op.
+        Ok(())
+    }
 }
 
 impl std::fmt::Debug for StateDB {
