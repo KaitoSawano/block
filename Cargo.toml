@@ -65,7 +65,7 @@ tokio = { version = "1", features = [
 futures = "0.3"
 zenachain-crypto = { path = "crypto" }
 
-eth-trie = "0.6"
+eth_trie = "0.6"
 rlp = "0.5"
 leveldb = "0.8"
 keccak-hash = "0.10"
