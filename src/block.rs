@@ -26,6 +26,7 @@ pub struct Block {
     pub mined_for: String,
     pub previous_hash: String,
     pub merkle_root: String,
+    pub state_root: String, // <--- TAMBAHKAN INI
     pub hash: String,
     pub nonce: u64,
     pub nbits: u32,
@@ -101,6 +102,7 @@ impl Block {
             nbits,
             transactions,
             String::new(),
+            String::new(), // state_root kosong
         )
     }
 
@@ -112,6 +114,7 @@ impl Block {
         nbits: u32,
         transactions: Vec<Transaction>,
         mined_for: String,
+        state_root: String, // <--- TAMBAHKAN PARAMETER INI
     ) -> Self {
         let ts = now_millis();
         let coinbase_txid = sha3_256_hex(format!("{}|{}|{}", index, mined_for, ts).as_bytes());
@@ -132,6 +135,7 @@ impl Block {
             mined_for,
             previous_hash,
             merkle_root,
+            state_root,
             hash: String::new(),
             nonce: 0,
             nbits,
@@ -186,6 +190,7 @@ impl Block {
             mined_for: "GENESIS".to_string(),
             previous_hash: "0".repeat(64),
             merkle_root,
+            state_root: String::new(),
             hash: String::new(),
             nonce: 0,
             nbits,
@@ -245,7 +250,7 @@ impl Block {
 
     pub fn calculate_hash(&self) -> String {
         let mut payload = format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.nversion,
             self.index,
             self.timestamp,
@@ -253,6 +258,7 @@ impl Block {
             self.mined_for,
             self.previous_hash,
             self.merkle_root,
+            self.state_root,
             self.nonce,
             self.nbits,
             self.reward,
