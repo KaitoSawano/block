@@ -124,10 +124,15 @@ impl Blockchain {
     pub fn new() -> Self {
         let genesis = Block::genesis();
         let db_path = crate::datadir::state_db_path();
+        
+        // Check if the LevelDB directory already has data.
+        // If it does, we must NOT re-initialize GENESIS.
+        let db_exists = db_path.join("CURRENT").exists();
+        
         let mut state = StateDB::open(&db_path).expect("failed to open state db");
 
-        let genesis_acc = state.get_account("GENESIS").unwrap_or(None);
-        if genesis_acc.is_none() {
+        if !db_exists {
+            // Fresh database: initialize GENESIS.
             state
                 .update_account(
                     "GENESIS",
