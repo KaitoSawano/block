@@ -26,7 +26,7 @@ pub struct Block {
     pub mined_for: String,
     pub previous_hash: String,
     pub merkle_root: String,
-    pub state_root: String, // <--- TAMBAHKAN INI
+    pub state_root: String,
     pub hash: String,
     pub nonce: u64,
     pub nbits: u32,
@@ -102,7 +102,7 @@ impl Block {
             nbits,
             transactions,
             String::new(),
-            String::new(), // state_root kosong
+            String::new(),
         )
     }
 
