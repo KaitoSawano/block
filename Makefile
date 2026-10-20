@@ -29,10 +29,9 @@ check-cargo:
 	}
 
 build: check-cargo
-	$(CARGO) build --release --locked --bins $(CARGO_TARGET)
+	$(CARGO) build --release --bins $(CARGO_TARGET)
 	@for bin in $(BINARIES); do \
 		cp "$(BIN_DIR)/$$bin" "./$$bin"; \
-		chmod +x "./$$bin"; \
 	done
 	@echo "Binaries ready: $(BINARIES)"
 
