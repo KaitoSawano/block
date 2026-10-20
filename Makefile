@@ -29,15 +29,15 @@ check-cargo:
 	}
 
 build: check-cargo
-	$(CARGO) build --release --bins $(CARGO_TARGET)
+	$(CARGO) build --release --locked --bins $(CARGO_TARGET)
 	@for bin in $(BINARIES); do \
 		cp "$(BIN_DIR)/$$bin" "./$$bin"; \
 	done
 	@echo "Binaries ready: $(BINARIES)"
 
 test: check-cargo
-	$(CARGO) test --workspace --all-targets
-	$(CARGO) test --workspace --doc
+	$(CARGO) test --workspace --all-targets --locked
+	$(CARGO) test --workspace --doc --locked
 
 fmt: check-cargo
 	$(CARGO) fmt --all
@@ -46,10 +46,10 @@ fmt-check: check-cargo
 	$(CARGO) fmt --all -- --check
 
 clippy: check-cargo
-	$(CARGO) clippy --workspace --all-targets -- -D warnings
+	$(CARGO) clippy --workspace --all-targets --locked -- -D warnings
 
 check: check-cargo
-	$(CARGO) check --workspace --all-targets
+	$(CARGO) check --workspace --all-targets --locked
 
 audit: check-cargo
 	$(CARGO) audit
