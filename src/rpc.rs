@@ -1211,11 +1211,15 @@ impl RpcHandler {
             None => return RpcResponse::err("from address not found in wallet"),
         };
 
-        // Estimate transaction size and calculate fee based on minimum relay fee.
-        // In a Bitcoin-style fee market, the user should specify the fee. For
-        // simplicity, we use the minimum relay fee rate with a small buffer.
+        // Estimate transaction size and calculate fee.
+        // If the caller provided a custom fee (param index 3), use it.
+        // Otherwise, fall back to the minimum relay fee or the default fee.
         let estimated_tx_size = 250;
-        let fee = (blockchain::MIN_RELAY_FEE_PER_BYTE * estimated_tx_size).max(DEFAULT_FEE_SATOSHI);
+        let fee = if let Some(custom_fee) = req.params.get(3).and_then(|v| v.as_u64()) {
+            custom_fee
+        } else {
+            (blockchain::MIN_RELAY_FEE_PER_BYTE * estimated_tx_size).max(DEFAULT_FEE_SATOSHI)
+        };
 
         let amount_sat = if is_sendall {
             let chain = self.state.chain.blocking_read();
