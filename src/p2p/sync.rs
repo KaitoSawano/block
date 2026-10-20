@@ -5,14 +5,27 @@
 
 //! Chain synchronization logic for the ZenaChain peer-to-peer network.
 
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
 use crate::block::Block;
 use crate::blockchain::Blockchain;
 use crate::validation;
+
+/// Maximum number of blocks that can be requested from a peer at once.
+/// This limits memory usage during synchronization (moving download window).
+pub const MAX_BLOCKS_IN_FLIGHT: usize = 16;
+
+/// How long to wait for a requested block before considering it timed out.
+pub const BLOCK_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct SyncState {
     pub best_known_height: u64,
     pub last_request_at_height: Option<u64>,
     pub sync_peer: Option<u64>,
+    /// Tracks requested blocks that have not yet been received.
+    /// Key: block hash, Value: time when the request was made.
+    pub in_flight: HashMap<String, Instant>,
 }
 
 impl SyncState {
@@ -21,11 +34,41 @@ impl SyncState {
             best_known_height: 0,
             last_request_at_height: None,
             sync_peer: None,
+            in_flight: HashMap::new(),
         }
     }
 
     pub fn is_synced(&self, chain: &Blockchain) -> bool {
         self.best_known_height <= chain.height()
+    }
+
+    /// Register a block request. Returns false if the window is full.
+    pub fn request_block(&mut self, hash: &str) -> bool {
+        // Remove expired requests first.
+        self.expire_requests();
+
+        if self.in_flight.len() >= MAX_BLOCKS_IN_FLIGHT {
+            return false;
+        }
+        self.in_flight.insert(hash.to_string(), Instant::now());
+        true
+    }
+
+    /// Mark a block as received and remove it from the in-flight window.
+    pub fn received_block(&mut self, hash: &str) {
+        self.in_flight.remove(hash);
+    }
+
+    /// Remove requests that have exceeded the timeout.
+    pub fn expire_requests(&mut self) {
+        let now = Instant::now();
+        self.in_flight
+            .retain(|_, &mut requested_at| now.duration_since(requested_at) < BLOCK_REQUEST_TIMEOUT);
+    }
+
+    /// Return the number of blocks currently in flight.
+    pub fn in_flight_count(&self) -> usize {
+        self.in_flight.len()
     }
 
     /// Validate a block received from a peer and append it to the chain.
