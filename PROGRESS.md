@@ -56,7 +56,7 @@ Penyimpanan *state* telah dimigrasikan dari `HashMap` + JSON ke **LevelDB + Merk
 
 - ✅ **LevelDB (Pure Rust):** Menggunakan `rusty-leveldb` untuk menghindari drama CMake/C++.
 - ✅ **Merkle Patricia Trie (MPT):** Menggunakan `eth_trie` + `rlp` untuk struktur *state* yang efisien dan bisa diverifikasi.
-- ✅ **Account Object:** Setiap akun menyimpan `nonce` dan `balance` dalam format RLP.
+- ✅ **Account Object:** Setiap akun menyimpan `nonce`, `balance`, dan `last_reward_height` dalam format RLP.
 - ✅ **State Snapshot (JSON):** Saat `stop`, state disimpan ke `state_snapshot.json` untuk persistensi antar-*session*. Saat *start*, *snapshot* dimuat kembali ke LevelDB jika kosong.
 - ✅ **Flush on Write:** Setiap penulisan ke LevelDB langsung di-*flush* ke disk untuk menjamin persistensi.
 - ✅ **`state_root` di Block:** Setiap blok sekarang memiliki `state_root` yang menyimpan *root hash* MPT setelah blok diterapkan. Ini adalah fondasi untuk Reorg Logic.
