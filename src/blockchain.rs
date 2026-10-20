@@ -126,7 +126,6 @@ impl Blockchain {
         let db_path = crate::datadir::state_db_path();
         let mut state = StateDB::open(&db_path).expect("failed to open state db");
 
-        // Only initialize GENESIS if the state is empty.
         let genesis_acc = state.get_account("GENESIS").unwrap_or(None);
         if genesis_acc.is_none() {
             state
