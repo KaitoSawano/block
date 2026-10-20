@@ -62,8 +62,6 @@ impl RpcResponse {
     }
 }
 
-/// Read the cookie file and return the `user:password` string.
-/// If the file does not exist, it generates a new random cookie.
 fn get_or_create_cookie() -> std::io::Result<String> {
     let path = datadir::cookie_path();
     if let Ok(data) = std::fs::read_to_string(&path) {
@@ -73,14 +71,12 @@ fn get_or_create_cookie() -> std::io::Result<String> {
         }
     }
 
-    // Generate a new random cookie: `__cookie__:<random_hex>`
     let random = crate::utils::random_hex(32);
     let cookie = format!("__cookie__:{}", random);
 
     datadir::ensure_dirs()?;
     std::fs::write(&path, &cookie)?;
     
-    // Set file permissions to 0o600 (read/write only by owner) on Unix.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -92,7 +88,6 @@ fn get_or_create_cookie() -> std::io::Result<String> {
     Ok(cookie)
 }
 
-/// Read the cookie from disk for client authentication.
 fn read_cookie_for_client() -> std::io::Result<String> {
     let path = datadir::cookie_path();
     let data = std::fs::read_to_string(&path)?;
@@ -107,7 +102,6 @@ pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
 pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     let mut stream = TcpStream::connect(&cfg.rpc_addr)?;
 
-    // Read the cookie for authentication.
     let auth = match read_cookie_for_client() {
         Ok(c) => c,
         Err(_) => {
@@ -244,7 +238,6 @@ impl RpcServer {
         network_cmd_tx: mpsc::Sender<NetworkCommand>,
         network: Network,
     ) -> Self {
-        // Security check: refuse to bind to a non-local address without explicit authentication.
         let is_local = cfg.rpc_addr.starts_with("127.0.0.1") || cfg.rpc_addr.starts_with("localhost");
         if !is_local {
             panic!(
@@ -582,7 +575,7 @@ impl RpcHandler {
                 return RpcResponse::err(&format!("failed to apply tx: {}", e));
             }
         }
-        if let Err(e) = chain.credit_reward(&block.mined_for, block.reward) {
+        if let Err(e) = chain.credit_reward(&block.mined_for, block.reward, block.index) {
             return RpcResponse::err(&format!("failed to credit reward: {}", e));
         }
 
@@ -622,11 +615,14 @@ impl RpcHandler {
             }
             let chain = self.state.chain.blocking_read();
             let balance = chain.balance_of(addr);
+            let spendable = chain.spendable_balance_of(addr);
             let nonce = chain.nonce_of(addr);
             return RpcResponse::ok(json!({
                 "address": addr,
                 "balance": to_coin(balance),
                 "balance_satoshi": balance,
+                "spendable_balance": to_coin(spendable),
+                "spendable_balance_satoshi": spendable,
                 "nonce": nonce,
             }));
         }
@@ -1089,9 +1085,6 @@ impl RpcHandler {
 
             let total_fees = mempool_txs.iter().map(|tx| tx.fee).sum::<u64>();
 
-            // We need to apply transactions first to compute the new state root.
-            // But we can't do that here because `chain` is not held. We'll do it
-            // after creating the block. For now, we pass an empty state_root.
             let mut block = crate::block::Block::new_for(
                 next_index,
                 prev_hash,
@@ -1100,7 +1093,7 @@ impl RpcHandler {
                 nbits,
                 mempool_txs.clone(),
                 addr.clone(),
-                String::new(), // State root will be computed and set after applying txs
+                String::new(),
             );
 
             if !pow::mine_interruptible(&mut block, nbits, Some(&self.state.interrupt)) {
@@ -1121,14 +1114,12 @@ impl RpcHandler {
                     }
                     applied += 1;
                 }
-                if let Err(e) = chain.credit_reward(&addr, block.reward) {
+                if let Err(e) = chain.credit_reward(&addr, block.reward, block.index) {
                     return RpcResponse::err(&format!("failed to credit reward: {}", e));
                 }
 
-                // Now compute the state root after applying all transactions.
                 if let Ok(root) = chain.state.root_hash() {
                     block.state_root = hex::encode(root);
-                    // Recalculate hash with the new state_root.
                     block.hash = block.calculate_hash();
                 }
 
@@ -1199,7 +1190,7 @@ impl RpcHandler {
                 if entry.address == to {
                     continue;
                 }
-                let bal = chain.balance_of(&entry.address);
+                let bal = chain.spendable_balance_of(&entry.address);
                 match &best {
                     Some((_, b)) if *b >= bal => {}
                     _ => best = Some((entry.address.clone(), bal)),
@@ -1225,9 +1216,6 @@ impl RpcHandler {
             None => return RpcResponse::err("from address not found in wallet"),
         };
 
-        // Estimate transaction size and calculate fee.
-        // If the caller provided a custom fee (param index 3), use it.
-        // Otherwise, fall back to the minimum relay fee or the default fee.
         let estimated_tx_size = 250;
         let fee = if let Some(custom_fee) = req.params.get(3).and_then(|v| v.as_u64()) {
             custom_fee
@@ -1237,11 +1225,11 @@ impl RpcHandler {
 
         let amount_sat = if is_sendall {
             let chain = self.state.chain.blocking_read();
-            let bal = chain.balance_of(&entry.address);
+            let bal = chain.spendable_balance_of(&entry.address);
             drop(chain);
             if bal <= fee {
                 return RpcResponse::err(&format!(
-                    "balance {} sat is too small to cover the fee of {} sat",
+                    "spendable balance {} sat is too small to cover the fee of {} sat",
                     bal, fee
                 ));
             }
@@ -1287,31 +1275,29 @@ impl RpcHandler {
         };
         {
             let chain = self.state.chain.blocking_read();
-            let bal = chain.balance_of(&entry.address);
+            let bal = chain.spendable_balance_of(&entry.address);
             drop(chain);
             if bal < need {
                 let chain = self.state.chain.blocking_read();
                 let total: u64 = wallet
                     .entries
                     .iter()
-                    .map(|e| chain.balance_of(&e.address))
+                    .map(|e| chain.spendable_balance_of(&e.address))
                     .sum();
                 drop(chain);
                 if total < need {
                     return RpcResponse::err(&format!(
-                        "insufficient wallet balance: required {} sat (amount {} + fee {}), available {} sat",
+                        "insufficient spendable wallet balance: required {} sat (amount {} + fee {}), available {} sat",
                         need, amount_sat, fee, total
                     ));
                 }
                 return RpcResponse::err(&format!(
-                    "selected address {} has insufficient balance: required {} sat, available {} sat; use a different source address",
+                    "selected address {} has insufficient spendable balance: required {} sat, available {} sat; use a different source address",
                     entry.address, need, bal
                 ));
             }
         }
 
-        // Allow the caller to specify a custom nonce (for RBF testing).
-        // The nonce is the 5th parameter (index 4).
         let nonce = if let Some(custom_nonce) = req.params.get(4).and_then(|v| v.as_u64()) {
             custom_nonce
         } else {
@@ -1333,7 +1319,6 @@ impl RpcHandler {
 
         let mut chain = self.state.chain.blocking_write();
         
-        // Use add_transaction to enforce RBF, eviction, and fee rate rules.
         if !chain.add_transaction(tx.clone()) {
             return RpcResponse::err("transaction rejected by mempool (RBF, eviction, or min relay fee)");
         }
@@ -1471,6 +1456,7 @@ fn m_getlistwallet(chain_arc: Arc<RwLock<Blockchain>>) -> RpcResponse {
 
     for entry in &w.entries {
         let balance = chain.balance_of(&entry.address);
+        let spendable = chain.spendable_balance_of(&entry.address);
         total_balance = total_balance.saturating_add(balance);
 
         addresses.push(json!({
@@ -1480,6 +1466,8 @@ fn m_getlistwallet(chain_arc: Arc<RwLock<Blockchain>>) -> RpcResponse {
             "created_at": entry.created_at,
             "balance": to_coin(balance),
             "balance_satoshi": balance,
+            "spendable_balance": to_coin(spendable),
+            "spendable_balance_satoshi": spendable,
             "nonce": chain.nonce_of(&entry.address),
         }));
     }
