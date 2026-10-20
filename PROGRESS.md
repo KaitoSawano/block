@@ -27,15 +27,15 @@ Sekarang mendukung tiga jaringan: **Mainnet**, **Testnet**, dan **Regtest**, den
 
 ---
 
-## 2. Status Terkini (Terakhir Diperbarui: 2026-10-20)
+## 2. Status Terkini (Terakhir Diperbarui: 2026-10-21)
 
-### 🟢 CHECKPOINT: `hardening-mainnet` (Fase 2 Selesai)
+### 🟢 CHECKPOINT: `hardening-mainnet` (Fase 2 & 3 Selesai)
 Sistem transfer *account-based* mainnet **STABIL** dan **TERUJI**. Fondasi penyimpanan telah dimigrasikan ke LevelDB + MPT.
 
 **JANGAN UBAH** kode berikut kecuali ada bug nyata:
 - `src/transaction.rs`, `src/blockchain.rs`, `src/storage/`, `src/storage_legacy.rs`.
 - `src/validation.rs` (kecuali aturan baru untuk *Policy*).
-- `src/rpc.rs` (khusus `m_sendtoaddress`, `m_getbalance`, `m_getnonce`, `m_stop`).
+- `src/rpc.rs` (khusus `m_sendtoaddress`, `m_getbalance`, `m_getnonce`, `m_stop`, `m_generatetoaddress`).
 
 ### 🟢 FASE 2: HARDENING MAINNET (SELESAI)
 Semua pilar keamanan dan ekonomi telah diimplementasikan:
@@ -59,15 +59,16 @@ Penyimpanan *state* telah dimigrasikan dari `HashMap` + JSON ke **LevelDB + Merk
 - ✅ **Account Object:** Setiap akun menyimpan `nonce` dan `balance` dalam format RLP.
 - ✅ **State Snapshot (JSON):** Saat `stop`, state disimpan ke `state_snapshot.json` untuk persistensi antar-*session*. Saat *start*, *snapshot* dimuat kembali ke LevelDB jika kosong.
 - ✅ **Flush on Write:** Setiap penulisan ke LevelDB langsung di-*flush* ke disk untuk menjamin persistensi.
+- ✅ **`state_root` di Block:** Setiap blok sekarang memiliki `state_root` yang menyimpan *root hash* MPT setelah blok diterapkan. Ini adalah fondasi untuk Reorg Logic.
 
 ---
 
-## 3. Tugas Berikutnya (FASE 4: Menuju Mainnet)
+## 3. Tugas Berikutnya (FASE 4: Coinbase Maturity & Reorg Logic)
 
-Sebelum Mainnet diluncurkan, masih ada beberapa hal krusial yang harus diselesaikan:
+Sebelum Mainnet diluncurkan, ada dua fitur krusial yang harus diselesaikan:
 
-- [ ] **Coinbase Maturity:** Hadiah *mining* harus menunggu 100 blok sebelum bisa dibelanjakan (mencegah *chain reorg* palsu).
-- [ ] **Reorg Logic:** Menangani percabangan blok (jika dua *miner* menemukan blok di ketinggian yang sama). Pilih rantai dengan total *work* terbesar.
+- [ ] **Coinbase Maturity (100 blok):** Hadiah *mining* harus menunggu 100 blok sebelum bisa dibelanjakan. Ini mencegah *chain reorg* palsu dan *double spend* dari *reward* yang belum matang.
+- [ ] **Reorg Logic:** Menangani percabangan blok (jika dua *miner* menemukan blok di ketinggian yang sama). Pilih rantai dengan total *work* terbesar, dan lakukan *rollback* state ke *common ancestor*.
 - [ ] **Dokumentasi:** Memperbarui `README.md` dengan panduan instalasi, penggunaan, dan arsitektur.
 - [ ] **Audit Keamanan:** Mengundang pihak ketiga untuk mengaudit kode (terutama `storage/` dan `validation.rs`).
 - [ ] **Testnet Publik:** Meluncurkan Testnet untuk diuji oleh komunitas.
@@ -80,6 +81,7 @@ Sebelum Mainnet diluncurkan, masih ada beberapa hal krusial yang harus diselesai
 - **Jeda 5.000 Blok:** Batas batch sync P2P sudah dinaikkan jadi 5.000 header agar sinkronisasi lebih cepat.
 - **LevelDB Lock:** `rusty-leveldb` mengunci database saat dibuka. CLI tidak boleh membuka LevelDB secara langsung saat `zenachaind` mati. Gunakan *snapshot* JSON sebagai *fallback*.
 - **Persistensi:** Data *state* disimpan di LevelDB (saat *running*) dan JSON *snapshot* (saat *stop*). Keduanya sinkron.
+- **`state_root`:** Setiap blok sekarang memiliki `state_root` yang dihitung setelah transaksi diterapkan. Ini adalah kunci untuk Reorg Logic di masa depan.
 
 ---
 
