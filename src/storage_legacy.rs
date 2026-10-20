@@ -24,15 +24,18 @@ pub fn save_chain(chain: &Blockchain) -> std::io::Result<()> {
 pub fn load_chain() -> std::io::Result<Blockchain> {
     let db_path = datadir::state_db_path();
 
+    // If the LevelDB directory doesn't exist, it's a fresh start.
     if !db_path.exists() {
         return Ok(Blockchain::new());
     }
 
+    // Try to load blocks from disk.
     let blocks = load_blocks(0)?;
     if blocks.is_empty() {
         return Ok(Blockchain::new());
     }
 
+    // Verify that the first block is the correct genesis block.
     let expected_genesis = Block::genesis();
     if blocks[0].hash != expected_genesis.hash {
         return Err(Error::other(
@@ -42,6 +45,7 @@ pub fn load_chain() -> std::io::Result<Blockchain> {
 
     let mempool = load_mempool().unwrap_or_default();
 
+    // Open the existing state DB.
     let state = crate::storage::StateDB::open(&db_path)
         .map_err(|e| Error::other(format!("failed to open state db: {}", e)))?;
 
