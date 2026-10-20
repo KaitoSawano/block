@@ -206,13 +206,14 @@ pub fn rule_sufficient_balance(
     if is_special_tx(tx) {
         return Ok(());
     }
-    let balance = chain.balance_of(&tx.from);
+    // Use the spendable balance to enforce the Coinbase Maturity rule.
+    let balance = chain.spendable_balance_of(&tx.from);
     let need = tx.amount.saturating_add(tx.fee);
     if balance < need {
         return Err(ValidationError::new(
             "E021",
             format!(
-                "insufficient balance: required {} sat, available {} sat",
+                "insufficient spendable balance: required {} sat, available {} sat",
                 need, balance
             ),
         ));
@@ -569,10 +570,11 @@ pub fn validate_block_transactions(
             ));
         }
 
+        // Use the spendable balance to enforce the Coinbase Maturity rule.
         let base_balance = overlay_balances
             .get(&tx.from)
             .copied()
-            .unwrap_or_else(|| chain.balance_of(&tx.from));
+            .unwrap_or_else(|| chain.spendable_balance_of(&tx.from));
         let need = match tx.amount.checked_add(tx.fee) {
             Some(v) => v,
             None => {
@@ -583,7 +585,7 @@ pub fn validate_block_transactions(
             return Err(ValidationError::new(
                 "E021",
                 format!(
-                    "insufficient balance for {}: required {} sat, available {} sat",
+                    "insufficient spendable balance for {}: required {} sat, available {} sat",
                     tx.from, need, base_balance
                 ),
             ));
@@ -652,7 +654,6 @@ pub fn validate_chain(chain: &Blockchain) -> Result<(), ValidationError> {
     rule_block_version(genesis)?;
     rule_total_supply(chain)?;
 
-    // Validate the genesis transactions if there are any.
     if !genesis.transactions.is_empty() {
         validate_block_transactions(chain, &genesis.transactions)?;
     }
@@ -676,11 +677,6 @@ pub fn validate_chain(chain: &Blockchain) -> Result<(), ValidationError> {
         rule_block_checkpoint(cur)?;
         rule_block_nbits(chain, cur)?;
         
-        // CRITICAL: Validate the transactions inside the block.
-        // This ensures that a node syncing from scratch will reject
-        // blocks containing invalid transactions (e.g., bad signatures,
-        // wrong nonces, or insufficient balances). Without this, an
-        // attacker could feed a node a chain with fake transactions.
         validate_block_transactions(chain, &cur.transactions)?;
     }
 
