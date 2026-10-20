@@ -54,6 +54,20 @@ impl StateDB {
         Ok(arr)
     }
 
+    /// Return the root hash at a specific block height (for reorg logic).
+    /// In a full implementation, we would store state roots per block and
+    /// be able to open the trie at that root.
+    pub fn root_hash_at(&self, _height: u64) -> Result<[u8; 32], String> {
+        // TODO: Implement proper historical root lookup.
+        Err("historical root lookup not yet implemented".into())
+    }
+
+    /// Rollback the state to a specific root hash (for reorg logic).
+    pub fn rollback_to(&mut self, _root_hash: &[u8; 32]) -> Result<(), String> {
+        // TODO: Implement rollback by creating a new EthTrie with the given root.
+        Err("state rollback not yet implemented".into())
+    }
+
     pub fn balance_of(&self, address: &str) -> u64 {
         match self.get_account(address) {
             Ok(Some(acc)) => acc.balance,
