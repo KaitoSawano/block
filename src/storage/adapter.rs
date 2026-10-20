@@ -33,16 +33,19 @@ impl DB for LevelDbAdapter {
 
     fn insert(&self, key: &[u8], value: Vec<u8>) -> Result<(), Self::Error> {
         let mut db = self.db.lock().unwrap();
-        db.put(key, &value).map_err(|e| std::io::Error::other(format!("{:?}", e)))
+        db.put(key, &value)
+            .map_err(|e| std::io::Error::other(format!("{:?}", e)))
     }
 
     fn remove(&self, key: &[u8]) -> Result<(), Self::Error> {
         let mut db = self.db.lock().unwrap();
-        db.delete(key).map_err(|e| std::io::Error::other(format!("{:?}", e)))
+        db.delete(key)
+            .map_err(|e| std::io::Error::other(format!("{:?}", e)))
     }
 
     fn flush(&self) -> Result<(), Self::Error> {
         let mut db = self.db.lock().unwrap();
-        db.flush().map_err(|e| std::io::Error::other(format!("{:?}", e)))
+        db.flush()
+            .map_err(|e| std::io::Error::other(format!("{:?}", e)))
     }
 }
