@@ -114,7 +114,7 @@ impl Block {
         nbits: u32,
         transactions: Vec<Transaction>,
         mined_for: String,
-        state_root: String, // <--- TAMBAHKAN PARAMETER INI
+        state_root: String,
     ) -> Self {
         let ts = now_millis();
         let coinbase_txid = sha3_256_hex(format!("{}|{}|{}", index, mined_for, ts).as_bytes());
