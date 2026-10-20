@@ -11,10 +11,11 @@ use pbkdf2::pbkdf2_hmac;
 use sha2::Sha256;
 
 /// Derive a 32-byte key from a password and salt using PBKDF2-HMAC-SHA256.
+/// The iteration count is set to 600,000 as recommended by OWASP for 2023.
 pub fn derive_key(password: &str, salt_hex: &str) -> [u8; 32] {
     let salt = hex::decode(salt_hex).unwrap_or_default();
     let mut key = [0u8; 32];
-    pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, 100_000, &mut key);
+    pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, 600_000, &mut key);
     key
 }
 
