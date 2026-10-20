@@ -27,6 +27,7 @@ use crate::p2p::message::{BlockLocator, Inventory, InvType, Message};
 use crate::p2p::peer::{ConnectionType, PeerState};
 use crate::p2p::peer_manager::{PeerEvent, PeerManager};
 use crate::p2p::peers;
+use crate::p2p::sync::{SyncState, MAX_BLOCKS_IN_FLIGHT};
 use crate::storage;
 use crate::utils::{format_datetime, now_millis};
 use crate::validation;
@@ -119,6 +120,7 @@ pub struct Network {
     banman: BanMan,
     anchors: Vec<Anchor>,
     block_relay_peers: Vec<SocketAddr>,
+    sync_state: SyncState,
 }
 
 impl Network {
@@ -172,6 +174,7 @@ impl Network {
             banman: BanMan::new(),
             anchors,
             block_relay_peers: Vec::new(),
+            sync_state: SyncState::new(),
         }
     }
 
@@ -327,6 +330,7 @@ impl Network {
     async fn on_tick(&mut self) {
         self.peer_manager.tick();
         self.addr_book.prune(Duration::from_secs(3600));
+        self.sync_state.expire_requests();
     }
 
     async fn try_connect(&mut self) {
@@ -799,7 +803,10 @@ impl Network {
                             self.inv.add_block(&inv.hash);
                             continue;
                         }
-                        to_request.push(inv.clone());
+                        // Only request blocks if the window is not full.
+                        if self.sync_state.request_block(&inv.hash) {
+                            to_request.push(inv.clone());
+                        }
                     } else if inv.inv_type == InvType::Transaction
                         && !self.inv.has_tx(&inv.hash)
                     {
@@ -972,10 +979,13 @@ impl Network {
                 return;
             }
             if h.index > tip_index && !self.inv.has_block(&h.hash) {
-                to_request.push(Inventory {
-                    inv_type: InvType::Block,
-                    hash: h.hash.clone(),
-                });
+                // Respect the moving download window.
+                if self.sync_state.request_block(&h.hash) {
+                    to_request.push(Inventory {
+                        inv_type: InvType::Block,
+                        hash: h.hash.clone(),
+                    });
+                }
             }
         }
         drop(chain);
@@ -985,6 +995,9 @@ impl Network {
     }
 
     async fn handle_block(&mut self, id: u64, block: Block) {
+        // Mark the block as received in the sync state.
+        self.sync_state.received_block(&block.hash);
+
         let mut chain = self.chain.write().await;
         match crate::p2p::sync::SyncState::accept_block(&mut chain, block.clone()) {
             Ok(_) => {
