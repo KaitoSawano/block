@@ -700,6 +700,7 @@ impl RpcHandler {
             "height": block.index,
             "previous_hash": block.previous_hash,
             "merkle_root": block.merkle_root,
+            "state_root": block.state_root,
             "timestamp": block.timestamp,
             "mined_at": block.mined_at,
             "mined_for": block.mined_for,
@@ -735,6 +736,7 @@ impl RpcHandler {
             "height": block.index,
             "version": block.nversion,
             "merkleroot": block.merkle_root,
+            "state_root": block.state_root,
             "time": block.timestamp,
             "mediantime": block.timestamp,
             "nonce": block.nonce,
@@ -795,6 +797,7 @@ impl RpcHandler {
                 "mined_at": g.mined_at,
                 "previous_hash": g.previous_hash,
                 "merkle_root": g.merkle_root,
+                "state_root": g.state_root,
                 "nonce": g.nonce,
                 "nbits": format!("{:#010x}", g.nbits),
                 "reward": to_coin(g.reward),
@@ -1086,6 +1089,9 @@ impl RpcHandler {
 
             let total_fees = mempool_txs.iter().map(|tx| tx.fee).sum::<u64>();
 
+            // We need to apply transactions first to compute the new state root.
+            // But we can't do that here because `chain` is not held. We'll do it
+            // after creating the block. For now, we pass an empty state_root.
             let mut block = crate::block::Block::new_for(
                 next_index,
                 prev_hash,
@@ -1094,6 +1100,7 @@ impl RpcHandler {
                 nbits,
                 mempool_txs.clone(),
                 addr.clone(),
+                String::new(), // State root will be computed and set after applying txs
             );
 
             if !pow::mine_interruptible(&mut block, nbits, Some(&self.state.interrupt)) {
@@ -1116,6 +1123,13 @@ impl RpcHandler {
                 }
                 if let Err(e) = chain.credit_reward(&addr, block.reward) {
                     return RpcResponse::err(&format!("failed to credit reward: {}", e));
+                }
+
+                // Now compute the state root after applying all transactions.
+                if let Ok(root) = chain.state.root_hash() {
+                    block.state_root = hex::encode(root);
+                    // Recalculate hash with the new state_root.
+                    block.hash = block.calculate_hash();
                 }
 
                 chain.chain.push(block.clone());
