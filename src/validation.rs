@@ -652,6 +652,11 @@ pub fn validate_chain(chain: &Blockchain) -> Result<(), ValidationError> {
     rule_block_version(genesis)?;
     rule_total_supply(chain)?;
 
+    // Validate the genesis transactions if there are any.
+    if !genesis.transactions.is_empty() {
+        validate_block_transactions(chain, &genesis.transactions)?;
+    }
+
     for i in 1..chain.chain.len() {
         let prev = &chain.chain[i - 1];
         let cur = &chain.chain[i];
@@ -670,6 +675,13 @@ pub fn validate_chain(chain: &Blockchain) -> Result<(), ValidationError> {
         rule_block_timestamp_monotonic(prev, cur)?;
         rule_block_checkpoint(cur)?;
         rule_block_nbits(chain, cur)?;
+        
+        // CRITICAL: Validate the transactions inside the block.
+        // This ensures that a node syncing from scratch will reject
+        // blocks containing invalid transactions (e.g., bad signatures,
+        // wrong nonces, or insufficient balances). Without this, an
+        // attacker could feed a node a chain with fake transactions.
+        validate_block_transactions(chain, &cur.transactions)?;
     }
 
     Ok(())
