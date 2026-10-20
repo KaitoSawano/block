@@ -18,6 +18,7 @@ pub const MEMPOOL_FILE: &str = "mempool.json";
 pub const DEBUG_LOG: &str = "debug.log";
 pub const BLOCK_FILE_PREFIX: &str = "blk";
 pub const PEER_ID_FILE: &str = "peer_id";
+pub const COOKIE_FILE: &str = ".cookie";
 
 /// Return the data directory for the active network. The
 /// `ZENAC_DATADIR` environment variable overrides the default.
@@ -52,6 +53,9 @@ pub fn debug_log_path() -> PathBuf {
 }
 pub fn peer_id_path() -> PathBuf {
     datadir().join(PEER_ID_FILE)
+}
+pub fn cookie_path() -> PathBuf {
+    datadir().join(COOKIE_FILE)
 }
 
 pub fn block_file(index: u32) -> PathBuf {
