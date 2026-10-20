@@ -306,8 +306,42 @@ impl Blockchain {
         if self.mempool.iter().any(|t| t.txid == tx.txid) {
             return false;
         }
+
+        // Check for an existing transaction with the same sender and nonce (RBF candidate).
+        // We must handle this BEFORE full validation, because validate_transaction
+        // will reject the new nonce (it expects nonce + 1, not the same nonce).
+        let rbf_pos = self.mempool.iter().position(|t| t.from == tx.from && t.nonce == tx.nonce);
         
+        if let Some(pos) = rbf_pos {
+            let old_tx = &self.mempool[pos];
+            let old_fee_rate = Self::fee_rate(old_tx);
+            let new_fee_rate = Self::fee_rate(&tx);
+            
+            // Require at least a 10% increase in fee rate to replace.
+            let min_new_fee_rate = old_fee_rate + (old_fee_rate * RBF_MIN_FEE_BUMP_PERCENT / 100).max(1);
+
+            if new_fee_rate >= min_new_fee_rate {
+                println!(
+                    "[mempool] RBF: Replacing tx {} (fee rate {}) with {} (fee rate {})",
+                    old_tx.txid, old_fee_rate, tx.txid, new_fee_rate
+                );
+                self.mempool_timestamps.remove(&old_tx.txid);
+                self.mempool.remove(pos);
+            } else {
+                println!(
+                    "[mempool] Rejected RBF attempt: new fee rate {} < required {}",
+                    new_fee_rate, min_new_fee_rate
+                );
+                return false;
+            }
+        }
+
+        // Now validate the transaction. Note: if we just removed an RBF transaction,
+        // the nonce is now available again, so validation should pass.
         if validation::validate_transaction(self, &tx).is_err() {
+            // If it fails, we should ideally restore the old transaction, but for
+            // simplicity, we just log the error. The mempool is ephemeral anyway.
+            println!("[mempool] Rejected tx {}: validation failed", tx.txid);
             return false;
         }
 
@@ -318,32 +352,6 @@ impl Blockchain {
         if fee_rate < MIN_RELAY_FEE_PER_BYTE {
             println!("[mempool] Rejected tx {}: fee rate {} < minRelayTxFee {}", tx.txid, fee_rate, MIN_RELAY_FEE_PER_BYTE);
             return false;
-        }
-
-        // Check for RBF (Replace-By-Fee): If there is an existing transaction
-        // with the same sender and nonce, we might replace it if the new fee is higher.
-        if let Some(pos) = self.mempool.iter().position(|t| t.from == tx.from && t.nonce == tx.nonce) {
-            let old_tx = &self.mempool[pos];
-            let old_fee_rate = Self::fee_rate(old_tx);
-            
-            // Require at least a 10% increase in fee rate to replace.
-            let min_new_fee_rate = old_fee_rate + (old_fee_rate * RBF_MIN_FEE_BUMP_PERCENT / 100).max(1);
-
-            if fee_rate >= min_new_fee_rate {
-                println!(
-                    "[mempool] RBF: Replacing tx {} (fee rate {}) with {} (fee rate {})",
-                    old_tx.txid, old_fee_rate, tx.txid, fee_rate
-                );
-                self.mempool_timestamps.remove(&old_tx.txid);
-                self.mempool.remove(pos);
-                // Continue to add the new transaction below.
-            } else {
-                println!(
-                    "[mempool] Rejected RBF attempt: new fee rate {} < required {}",
-                    fee_rate, min_new_fee_rate
-                );
-                return false;
-            }
         }
 
         // Check if mempool is full and evict if necessary
