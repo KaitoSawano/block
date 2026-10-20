@@ -28,7 +28,6 @@ use tokio::sync::{mpsc, RwLock};
 
 pub const DEFAULT_RPC_ADDR: &str = "127.0.0.1:8332";
 pub const DEFAULT_FEE_SATOSHI: u64 = 100_000;
-pub const DEFAULT_RPC_PASSWORD: &str = "rahasia";
 
 const SATOSHI_PER_ZENAC: u64 = 100_000_000;
 
@@ -63,6 +62,43 @@ impl RpcResponse {
     }
 }
 
+/// Read the cookie file and return the `user:password` string.
+/// If the file does not exist, it generates a new random cookie.
+fn get_or_create_cookie() -> std::io::Result<String> {
+    let path = datadir::cookie_path();
+    if let Ok(data) = std::fs::read_to_string(&path) {
+        let trimmed = data.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok(trimmed);
+        }
+    }
+
+    // Generate a new random cookie: `__cookie__:<random_hex>`
+    let random = crate::utils::random_hex(32);
+    let cookie = format!("__cookie__:{}", random);
+
+    datadir::ensure_dirs()?;
+    std::fs::write(&path, &cookie)?;
+    
+    // Set file permissions to 0o600 (read/write only by owner) on Unix.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&path)?.permissions();
+        perms.set_mode(0o600);
+        std::fs::set_permissions(&path, perms)?;
+    }
+
+    Ok(cookie)
+}
+
+/// Read the cookie from disk for client authentication.
+fn read_cookie_for_client() -> std::io::Result<String> {
+    let path = datadir::cookie_path();
+    let data = std::fs::read_to_string(&path)?;
+    Ok(data.trim().to_string())
+}
+
 pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     let cfg = Config::load_or_default();
     call_at(&cfg, method, params)
@@ -71,7 +107,17 @@ pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
 pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
     let mut stream = TcpStream::connect(&cfg.rpc_addr)?;
 
-    let auth = format!("{}:{}", cfg.rpc_user, cfg.rpc_password);
+    // Read the cookie for authentication.
+    let auth = match read_cookie_for_client() {
+        Ok(c) => c,
+        Err(_) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Cookie file not found. Is the node running?",
+            ))
+        }
+    };
+
     let req = RpcRequest {
         method: method.to_string(),
         params,
@@ -173,8 +219,7 @@ struct RpcState {
     network: Network,
     shutdown: Arc<AtomicBool>,
     interrupt: Arc<AtomicBool>,
-    rpc_user: String,
-    rpc_password: String,
+    cookie: String,
     wallet_password: Arc<RwLock<Option<String>>>,
     peer_registry: PeerRegistry,
     network_cmd_tx: mpsc::Sender<NetworkCommand>,
@@ -199,22 +244,26 @@ impl RpcServer {
         network_cmd_tx: mpsc::Sender<NetworkCommand>,
         network: Network,
     ) -> Self {
-        // Security check: refuse to bind to a non-local address with the default password.
+        // Security check: refuse to bind to a non-local address without explicit authentication.
         let is_local = cfg.rpc_addr.starts_with("127.0.0.1") || cfg.rpc_addr.starts_with("localhost");
-        if !is_local && cfg.rpc_password == DEFAULT_RPC_PASSWORD {
+        if !is_local {
             panic!(
-                "SECURITY ERROR: RPC is bound to {} but the password is the default. Change rpcpassword in {} before exposing the RPC server.",
-                cfg.rpc_addr, Config::default_path()
+                "SECURITY ERROR: RPC is bound to {} but cookie authentication is only safe for local connections. Use an SSH tunnel or a reverse proxy with TLS for remote access.",
+                cfg.rpc_addr
             );
         }
+
+        let cookie = match get_or_create_cookie() {
+            Ok(c) => c,
+            Err(e) => panic!("Failed to create RPC cookie: {}", e),
+        };
 
         let state = Arc::new(RpcState {
             chain,
             network,
             shutdown: Arc::new(AtomicBool::new(false)),
             interrupt: Arc::new(AtomicBool::new(false)),
-            rpc_user: cfg.rpc_user.clone(),
-            rpc_password: cfg.rpc_password.clone(),
+            cookie,
             wallet_password: Arc::new(RwLock::new(None)),
             peer_registry,
             network_cmd_tx,
@@ -233,6 +282,7 @@ impl RpcServer {
         let listener = TcpListener::bind(&self.rpc_addr)?;
         let _ = listener.set_nonblocking(true);
         println!("[rpc] listening on {}", self.rpc_addr);
+        println!("[rpc] authentication: cookie file at {}", datadir::as_str(&datadir::cookie_path()));
 
         loop {
             if self.state.shutdown.load(Ordering::SeqCst) {
@@ -289,8 +339,7 @@ impl RpcHandler {
             }
         }
 
-        let expected_auth = format!("{}:{}", self.state.rpc_user, self.state.rpc_password);
-        if auth_header != expected_auth {
+        if auth_header != self.state.cookie {
             let resp = RpcResponse::err("RPC authentication failed");
             write_http_response(stream, 401, &resp)?;
             return Ok(());
