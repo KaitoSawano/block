@@ -28,7 +28,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "zenachain"
-path = "src/main.rs"
+path = "src/zenachain.rs"
 
 [[bin]]
 name = "zenachaind"
