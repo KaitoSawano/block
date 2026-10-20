@@ -3,7 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
-//! Legacy storage functions (blocks, mempool).
+//! Legacy storage functions (blocks, mempool, state snapshot).
 
 use std::collections::HashMap;
 use std::io::Error;
@@ -11,6 +11,7 @@ use std::io::Error;
 use crate::block::Block;
 use crate::blockchain::Blockchain;
 use crate::datadir;
+use crate::storage::Account;
 
 pub const BLOCKS_PER_FILE: usize = 1000;
 
@@ -18,16 +19,12 @@ pub fn save_chain(chain: &Blockchain) -> std::io::Result<()> {
     datadir::ensure_dirs()?;
     save_blocks(chain)?;
     save_mempool(&chain.mempool)?;
+    save_state_snapshot(chain)?;
     Ok(())
 }
 
 pub fn load_chain() -> std::io::Result<Blockchain> {
     let db_path = datadir::state_db_path();
-
-    // If the LevelDB directory doesn't exist, it's a fresh start.
-    if !db_path.exists() {
-        return Ok(Blockchain::new());
-    }
 
     // Try to load blocks from disk.
     let blocks = load_blocks(0)?;
@@ -35,7 +32,7 @@ pub fn load_chain() -> std::io::Result<Blockchain> {
         return Ok(Blockchain::new());
     }
 
-    // Verify that the first block is the correct genesis block.
+    // Verify genesis.
     let expected_genesis = Block::genesis();
     if blocks[0].hash != expected_genesis.hash {
         return Err(Error::other(
@@ -45,19 +42,58 @@ pub fn load_chain() -> std::io::Result<Blockchain> {
 
     let mempool = load_mempool().unwrap_or_default();
 
-    // Open the existing state DB.
+    // Open the state DB.
     let state = crate::storage::StateDB::open(&db_path)
         .map_err(|e| Error::other(format!("failed to open state db: {}", e)))?;
 
-    Ok(Blockchain {
+    let mut chain = Blockchain {
         chain: blocks,
         nbits: crate::consensus::spec::current_network().genesis_nbits(),
         mempool,
         balances: HashMap::new(),
         nonces: HashMap::new(),
         mempool_timestamps: HashMap::new(),
+        addresses: Vec::new(),
         state,
-    })
+    };
+
+    // Load state snapshot from JSON if LevelDB is empty.
+    load_state_snapshot(&mut chain)?;
+
+    Ok(chain)
+}
+
+pub fn save_state_snapshot(chain: &Blockchain) -> std::io::Result<()> {
+    let mut accounts: HashMap<String, Account> = HashMap::new();
+    for addr in &chain.addresses {
+        if let Ok(Some(acc)) = chain.state.get_account(addr) {
+            accounts.insert(addr.clone(), acc);
+        }
+    }
+    let json = serde_json::to_string_pretty(&accounts).map_err(Error::other)?;
+    std::fs::write(datadir::chainstate_dir().join("state_snapshot.json"), json)
+}
+
+pub fn load_state_snapshot(chain: &mut Blockchain) -> std::io::Result<()> {
+    let path = datadir::chainstate_dir().join("state_snapshot.json");
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let data = std::fs::read_to_string(&path)?;
+    let accounts: HashMap<String, Account> = serde_json::from_str(&data).map_err(Error::other)?;
+
+    for (addr, acc) in accounts {
+        // Only insert if not already present in LevelDB.
+        if chain.state.get_account(&addr).unwrap_or(None).is_none() {
+            chain
+                .state
+                .update_account(&addr, &acc)
+                .map_err(Error::other)?;
+        }
+    }
+
+    Ok(())
 }
 
 pub fn save_blocks(chain: &Blockchain) -> std::io::Result<()> {
