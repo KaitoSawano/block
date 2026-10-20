@@ -23,6 +23,9 @@ pub const MIN_RELAY_FEE_PER_BYTE: u64 = 1;
 // Transactions older than this many seconds are evicted from the mempool.
 pub const MEMPOOL_EXPIRY_SECS: u64 = 336 * 3600; // 14 days (Bitcoin's default is 336 hours)
 
+// Minimum fee rate increase required for a replacement transaction (10%).
+pub const RBF_MIN_FEE_BUMP_PERCENT: u64 = 10;
+
 pub mod checkpoint {
     pub struct Checkpoint {
         pub height: u64,
@@ -303,13 +306,7 @@ impl Blockchain {
         if self.mempool.iter().any(|t| t.txid == tx.txid) {
             return false;
         }
-        if self
-            .mempool
-            .iter()
-            .any(|t| t.from == tx.from && t.nonce == tx.nonce)
-        {
-            return false;
-        }
+        
         if validation::validate_transaction(self, &tx).is_err() {
             return false;
         }
@@ -321,6 +318,32 @@ impl Blockchain {
         if fee_rate < MIN_RELAY_FEE_PER_BYTE {
             println!("[mempool] Rejected tx {}: fee rate {} < minRelayTxFee {}", tx.txid, fee_rate, MIN_RELAY_FEE_PER_BYTE);
             return false;
+        }
+
+        // Check for RBF (Replace-By-Fee): If there is an existing transaction
+        // with the same sender and nonce, we might replace it if the new fee is higher.
+        if let Some(pos) = self.mempool.iter().position(|t| t.from == tx.from && t.nonce == tx.nonce) {
+            let old_tx = &self.mempool[pos];
+            let old_fee_rate = Self::fee_rate(old_tx);
+            
+            // Require at least a 10% increase in fee rate to replace.
+            let min_new_fee_rate = old_fee_rate + (old_fee_rate * RBF_MIN_FEE_BUMP_PERCENT / 100).max(1);
+
+            if fee_rate >= min_new_fee_rate {
+                println!(
+                    "[mempool] RBF: Replacing tx {} (fee rate {}) with {} (fee rate {})",
+                    old_tx.txid, old_fee_rate, tx.txid, fee_rate
+                );
+                self.mempool_timestamps.remove(&old_tx.txid);
+                self.mempool.remove(pos);
+                // Continue to add the new transaction below.
+            } else {
+                println!(
+                    "[mempool] Rejected RBF attempt: new fee rate {} < required {}",
+                    fee_rate, min_new_fee_rate
+                );
+                return false;
+            }
         }
 
         // Check if mempool is full and evict if necessary
