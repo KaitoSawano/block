@@ -359,6 +359,7 @@ impl RpcHandler {
             "assumed_chain_state_size_mb": blockchain::network::ASSUMED_CHAIN_STATE_SIZE,
             "p2p_enabled": true,
             "connection_count": connected,
+            "min_relay_fee_per_byte": blockchain::MIN_RELAY_FEE_PER_BYTE,
         }))
     }
 
@@ -439,7 +440,7 @@ impl RpcHandler {
             "difficulty_adjust_interval": consensus::difficulty_adjust_interval(),
             "mempool_len": c.mempool.len(),
             "mempool_size_bytes": c.mempool_size_bytes(),
-            "current_base_fee": c.current_base_fee,
+            "min_relay_fee_per_byte": blockchain::MIN_RELAY_FEE_PER_BYTE,
             "valid": c.is_valid(),
             "checkpoints_count": blockchain::checkpoint::CHECKPOINTS.len(),
             "checkpoints_highest": blockchain::checkpoint::highest(),
@@ -467,7 +468,7 @@ impl RpcHandler {
             "checkpoints_highest": blockchain::checkpoint::highest(),
             "mempool_len": c.mempool.len(),
             "mempool_size_bytes": c.mempool_size_bytes(),
-            "current_base_fee": c.current_base_fee,
+            "min_relay_fee_per_byte": blockchain::MIN_RELAY_FEE_PER_BYTE,
             "circulating": to_coin(c.circulating_supply()),
             "max_supply": to_coin(consensus::max_supply()),
             "era": c.current_era(),
@@ -497,7 +498,7 @@ impl RpcHandler {
             "subsidy_satoshi": subsidy,
             "total_fees_satoshi": total_fees,
             "mempool": c.mempool,
-            "current_base_fee": c.current_base_fee,
+            "min_relay_fee_per_byte": blockchain::MIN_RELAY_FEE_PER_BYTE,
         }))
     }
 
@@ -529,7 +530,7 @@ impl RpcHandler {
         chain.chain.push(block.clone());
         chain.adjust_difficulty();
         chain.mempool.clear();
-        chain.update_base_fee();
+        chain.mempool_timestamps.clear();
 
         block.log_add_to_wallet();
 
@@ -792,6 +793,7 @@ impl RpcHandler {
                         "amount_zenac": to_coin(tx.amount),
                         "fee_satoshi": tx.fee,
                         "fee_zenac": to_coin(tx.fee),
+                        "fee_rate": blockchain::Blockchain::fee_rate(tx),
                         "nonce": tx.nonce,
                         "note": tx.note,
                         "public_key": tx.public_key,
@@ -835,6 +837,7 @@ impl RpcHandler {
                     "amount_zenac": to_coin(tx.amount),
                     "fee_satoshi": tx.fee,
                     "fee_zenac": to_coin(tx.fee),
+                    "fee_rate": blockchain::Blockchain::fee_rate(tx),
                     "nonce": tx.nonce,
                     "note": tx.note,
                     "public_key": tx.public_key,
@@ -864,6 +867,7 @@ impl RpcHandler {
                         "to": tx.to,
                         "amount": to_coin(tx.amount),
                         "fee": to_coin(tx.fee),
+                        "fee_rate": blockchain::Blockchain::fee_rate(tx),
                         "nonce": tx.nonce,
                         "note": tx.note,
                         "public_key": tx.public_key,
@@ -883,6 +887,7 @@ impl RpcHandler {
                     "to": tx.to,
                     "amount": to_coin(tx.amount),
                     "fee": to_coin(tx.fee),
+                    "fee_rate": blockchain::Blockchain::fee_rate(tx),
                     "nonce": tx.nonce,
                     "note": tx.note,
                     "public_key": tx.public_key,
@@ -916,14 +921,18 @@ impl RpcHandler {
         let tx = tx.unwrap();
 
         match validation::validate_transaction(&chain, &tx) {
-            Ok(_) => RpcResponse::ok(json!([{
-                "txid": txid,
-                "allowed": true,
-                "vsize": 250,
-                "fees": {
-                    "base": to_coin(tx.fee)
-                }
-            }])),
+            Ok(_) => {
+                let fee_rate = blockchain::Blockchain::fee_rate(&tx);
+                RpcResponse::ok(json!([{
+                    "txid": txid,
+                    "allowed": true,
+                    "vsize": blockchain::Blockchain::tx_size_bytes(&tx),
+                    "fees": {
+                        "base": to_coin(tx.fee)
+                    },
+                    "fee_rate": fee_rate,
+                }]))
+            }
             Err(e) => RpcResponse::ok(json!([{
                 "txid": txid,
                 "allowed": false,
@@ -951,8 +960,7 @@ impl RpcHandler {
             "size": count,
             "size_bytes": chain.mempool_size_bytes(),
             "max_size_bytes": blockchain::MAX_MEMPOOL_SIZE_BYTES,
-            "target_size_bytes": blockchain::MEMPOOL_TARGET_SIZE_BYTES,
-            "current_base_fee": chain.current_base_fee,
+            "min_relay_fee_per_byte": blockchain::MIN_RELAY_FEE_PER_BYTE,
             "total_amount_satoshi": total_amount,
             "total_amount_zenac": to_coin(total_amount),
             "total_fee_satoshi": total_fee,
@@ -1013,6 +1021,7 @@ impl RpcHandler {
                 }
 
                 let txs = std::mem::take(&mut chain.mempool);
+                chain.mempool_timestamps.clear();
                 (next_index, prev.hash, subsidy, chain.nbits, txs)
             };
 
@@ -1052,7 +1061,6 @@ impl RpcHandler {
 
                 chain.chain.push(block.clone());
                 chain.adjust_difficulty();
-                chain.update_base_fee();
                 block.log_add_to_wallet();
                 if let Err(e) = storage::save_chain(&chain) {
                     return RpcResponse::err(&format!("failed to save chain: {}", e));
@@ -1144,13 +1152,11 @@ impl RpcHandler {
             None => return RpcResponse::err("from address not found in wallet"),
         };
 
-        // Calculate the dynamic fee based on the current base fee and estimated tx size.
-        let estimated_tx_size = 250; // Approximate size in bytes for a standard transaction.
-        let dynamic_fee = {
-            let chain = self.state.chain.blocking_read();
-            chain.current_base_fee.saturating_mul(estimated_tx_size)
-        };
-        let fee = dynamic_fee.max(DEFAULT_FEE_SATOSHI);
+        // Estimate transaction size and calculate fee based on minimum relay fee.
+        // In a Bitcoin-style fee market, the user should specify the fee. For
+        // simplicity, we use the minimum relay fee rate with a small buffer.
+        let estimated_tx_size = 250;
+        let fee = (blockchain::MIN_RELAY_FEE_PER_BYTE * estimated_tx_size).max(DEFAULT_FEE_SATOSHI);
 
         let amount_sat = if is_sendall {
             let chain = self.state.chain.blocking_read();
@@ -1251,6 +1257,8 @@ impl RpcHandler {
 
         let txid = tx.txid.clone();
         chain.mempool.push(tx);
+        let now = (now_millis() / 1000) as u64;
+        chain.mempool_timestamps.insert(txid.clone(), now);
 
         let now = now_millis();
         println!(
@@ -1282,6 +1290,7 @@ impl RpcHandler {
             "amount_zenac": to_coin(amount_sat),
             "fee_satoshi": fee,
             "fee_zenac": to_coin(fee),
+            "fee_rate": fee / estimated_tx_size,
             "nonce": nonce,
             "sendall": is_sendall,
             "mempool_len": self.state.chain.blocking_read().mempool.len(),
