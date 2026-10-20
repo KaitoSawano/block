@@ -17,6 +17,10 @@ pub struct WalletEntry {
     pub secret: String,
     pub label: String,
     pub created_at: u128,
+    /// Unique nonce for AES-GCM encryption of this entry's secret.
+    /// This prevents nonce reuse across multiple encrypted entries.
+    #[serde(default)]
+    pub encryption_nonce: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,7 +29,7 @@ pub struct Wallet {
     pub created_at: u128,
     pub encrypted: bool,
     pub salt: String,
-    pub nonce: String,
+    pub nonce: String, // Legacy field, kept for backward compatibility
 }
 
 impl Wallet {
@@ -51,6 +55,7 @@ impl Wallet {
             secret: kp.secret_key_hex(),
             label,
             created_at: now_millis(),
+            encryption_nonce: String::new(),
         };
 
         self.entries.push(entry);
@@ -76,6 +81,7 @@ impl Wallet {
             secret: kp.secret_key_hex(),
             label,
             created_at: now_millis(),
+            encryption_nonce: String::new(),
         })
     }
 
@@ -109,19 +115,21 @@ impl Wallet {
         }
 
         let salt = crate::utils::random_hex(16);
-        let nonce_hex = crate::utils::random_hex(12);
-
         let key = zenachain_crypto::derive_key(password, &salt);
-        let nonce = crate::utils::hex_to_bytes(&nonce_hex)?;
 
         for entry in self.entries.iter_mut() {
+            // Generate a unique nonce for each entry to prevent nonce reuse.
+            let entry_nonce_hex = crate::utils::random_hex(12);
+            let nonce = crate::utils::hex_to_bytes(&entry_nonce_hex)?;
+            
             let ciphertext = zenachain_crypto::aes_encrypt(&key, &nonce, &entry.secret)?;
             entry.secret = ciphertext;
+            entry.encryption_nonce = entry_nonce_hex;
         }
 
         self.encrypted = true;
         self.salt = salt;
-        self.nonce = nonce_hex;
+        self.nonce = String::new(); // Clear legacy global nonce
 
         Ok(())
     }
@@ -132,11 +140,17 @@ impl Wallet {
         }
 
         let key = zenachain_crypto::derive_key(password, &self.salt);
-        let nonce = crate::utils::hex_to_bytes(&self.nonce)?;
-
         let mut decrypted = self.clone();
 
         for entry in decrypted.entries.iter_mut() {
+            // Use the per-entry nonce. Fallback to the legacy global nonce
+            // for wallets created before this fix.
+            let nonce = if entry.encryption_nonce.is_empty() {
+                crate::utils::hex_to_bytes(&self.nonce)?
+            } else {
+                crate::utils::hex_to_bytes(&entry.encryption_nonce)?
+            };
+            
             let plaintext = zenachain_crypto::aes_decrypt(&key, &nonce, &entry.secret)?;
             entry.secret = plaintext;
         }
