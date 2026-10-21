@@ -7,7 +7,7 @@
 
 use eth_trie::{EthTrie, Trie};
 use keccak_hash::keccak;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::account::Account;
@@ -15,13 +15,20 @@ use super::adapter::LevelDbAdapter;
 
 pub struct StateDB {
     trie: EthTrie<LevelDbAdapter>,
+    // Store the adapter Arc so we can recreate the trie during rollback.
+    adapter: Arc<LevelDbAdapter>,
+    path: PathBuf,
 }
 
 impl StateDB {
     pub fn open(path: &Path) -> Result<Self, String> {
-        let adapter = LevelDbAdapter::open(path)?;
-        let trie = EthTrie::new(Arc::new(adapter));
-        Ok(StateDB { trie })
+        let adapter = Arc::new(LevelDbAdapter::open(path)?);
+        let trie = EthTrie::new(adapter.clone());
+        Ok(StateDB {
+            trie,
+            adapter,
+            path: path.to_path_buf(),
+        })
     }
 
     fn address_key(address: &str) -> [u8; 32] {
@@ -55,37 +62,17 @@ impl StateDB {
     }
 
     /// Rollback the state to a specific root hash. This is used during a chain reorganization.
-    /// Since EthTrie does not support setting the root directly, we create a new trie instance
-    /// from the underlying database using the provided root hash.
+    /// Creates a new trie instance from the stored adapter and the provided root hash.
     pub fn rollback_to(&mut self, root_hash: &[u8; 32]) -> Result<(), String> {
-        // The adapter is wrapped in an Arc inside the existing trie.
-        // We need to access the underlying database to create a new trie from it.
-        // EthTrie does not expose the DB directly, so we must reconstruct it.
-        // However, since `LevelDbAdapter` is the DB, and it is wrapped in Arc,
-        // we can open a new adapter to the same path. But this is inefficient.
-        // A better approach is to store the adapter Arc separately.
-        // For now, we will use the fact that `EthTrie::from` requires an Arc<DB>.
-        // We cannot easily get the Arc<DB> from self.trie.
-        // Therefore, we will modify the struct to hold the adapter Arc.
-
-        // To keep the change minimal, we will re-open the database.
-        // This is safe because LevelDB allows multiple readers/writers via its internal locking.
-        // However, the path is not stored in StateDB. We need to store it.
-        // We will add a `path` field to StateDB.
-
-        // This is a simplified approach. In a production system, you would store the Arc<DB>
-        // in the struct to avoid reopening.
-
-        // Since we don't have the path here, we must return an error.
-        // The correct fix requires changing the struct to hold the path and adapter.
-        // We will implement the proper fix by modifying the struct definition.
-
-        // The proper fix is below. We need to modify the struct and open() method.
-        // For the purpose of this response, we will assume the struct is modified.
-
-        // Placeholder to satisfy the compiler. The actual implementation is in the
-        // "Revised StateDB" section below.
-        Err("rollback_to requires the database path; please use the revised StateDB implementation".into())
+        // Convert the byte array to the H256 type expected by eth_trie.
+        let root = eth_trie::H256::from_slice(root_hash);
+        
+        // Create a new trie from the same adapter, rooted at the given hash.
+        let new_trie = EthTrie::from(self.adapter.clone(), root)
+            .map_err(|e| format!("failed to create trie from root: {}", e))?;
+        
+        self.trie = new_trie;
+        Ok(())
     }
 
     /// Return the total balance, which includes both mature and immature funds.
