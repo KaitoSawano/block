@@ -245,17 +245,16 @@ impl Block {
         Self::genesis_for(spec::current_network())
     }
 
+    /// Check whether the `skip-pow` feature is enabled.
+    /// This function is only compiled when the feature is active.
     #[cfg(feature = "skip-pow")]
     fn is_test_mode() -> bool {
         true
     }
 
-    #[cfg(not(feature = "skip-pow"))]
-    fn is_test_mode() -> bool {
-        false
-    }
-
     pub fn genesis_for(network: Network) -> Self {
+        // In test mode, return the pre-computed genesis block directly.
+        // This code is only compiled when the `skip-pow` feature is enabled.
         #[cfg(feature = "skip-pow")]
         {
             if Self::is_test_mode() {
@@ -294,6 +293,8 @@ impl Block {
         std::process::exit(1);
     }
 
+    /// Construct a genesis block directly from the hardcoded consensus constants.
+    /// This function is only compiled when the `skip-pow` feature is enabled.
     #[cfg(feature = "skip-pow")]
     fn genesis_precomputed_for(network: Network) -> Self {
         let ts = network.genesis_timestamp();
