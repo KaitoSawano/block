@@ -38,6 +38,7 @@ pub struct Block {
     pub genesis_output_script: String,
     pub miner_pubkey: String,
     pub miner_signature: String,
+    pub chainwork: u128,
     pub transactions: Vec<Transaction>,
 }
 
@@ -87,6 +88,29 @@ impl Block {
         hex::encode(layer[0])
     }
 
+    /// Compute the work of a single block given its nbits.
+    /// Work = 2^256 / (target + 1).
+    pub fn compute_work(nbits: u32) -> u128 {
+        let target = pow::nbits_to_target(nbits);
+
+        // Convert target (big-endian [u8; 32]) to u128 by taking the last 16 bytes.
+        // This is an approximation, but sufficient for chainwork comparison.
+        let mut target_u128: u128 = 0;
+        for &b in &target[16..32] {
+            target_u128 = (target_u128 << 8) | (b as u128);
+        }
+
+        if target_u128 == 0 {
+            return u128::MAX;
+        }
+
+        // Approximate 2^256 / (target + 1) using u128.
+        // For very large target (easy difficulty), work is small.
+        // We use 2^128 / (target_u128 + 1) as a scaled approximation.
+        let max_u128 = u128::MAX;
+        max_u128 / (target_u128.saturating_add(1))
+    }
+
     pub fn new(
         index: u64,
         previous_hash: String,
@@ -103,6 +127,7 @@ impl Block {
             transactions,
             String::new(),
             String::new(),
+            0,
         )
     }
 
@@ -115,6 +140,7 @@ impl Block {
         transactions: Vec<Transaction>,
         mined_for: String,
         state_root: String,
+        previous_chainwork: u128,
     ) -> Self {
         let ts = now_millis();
         let coinbase_txid = sha3_256_hex(format!("{}|{}|{}", index, mined_for, ts).as_bytes());
@@ -126,6 +152,9 @@ impl Block {
             + coinbase_txid.len()
             + transactions.iter().map(|t| t.txid.len()).sum::<usize>()
             + 256) as u64;
+
+        let block_work = Self::compute_work(nbits);
+        let chainwork = previous_chainwork.saturating_add(block_work);
 
         let mut b = Block {
             nversion: rules::BLOCK_VERSION,
@@ -147,6 +176,7 @@ impl Block {
             genesis_output_script: String::new(),
             miner_pubkey: String::new(),
             miner_signature: String::new(),
+            chainwork,
             transactions,
         };
         b.hash = b.calculate_hash();
@@ -182,6 +212,8 @@ impl Block {
         let subsidy = crate::consensus::spec::INITIAL_REWARD;
         let total_fees = 0;
 
+        let block_work = Self::compute_work(nbits);
+
         let mut b = Block {
             nversion: rules::BLOCK_VERSION,
             index: 0,
@@ -202,6 +234,7 @@ impl Block {
             genesis_output_script,
             miner_pubkey: String::new(),
             miner_signature: String::new(),
+            chainwork: block_work,
             transactions,
         };
 
@@ -216,21 +249,17 @@ impl Block {
         Self::genesis_for(spec::current_network())
     }
 
-    /// In builds with the `skip-pow` feature, return true.
     #[cfg(feature = "skip-pow")]
     fn is_test_mode() -> bool {
         true
     }
 
-    /// In non-test builds, never skip.
     #[cfg(not(feature = "skip-pow"))]
     fn is_test_mode() -> bool {
         false
     }
 
     pub fn genesis_for(network: Network) -> Self {
-        // In test mode, return the pre-computed genesis block directly.
-        // This code is only compiled when the `skip-pow` feature is enabled.
         #[cfg(feature = "skip-pow")]
         {
             if Self::is_test_mode() {
@@ -269,8 +298,6 @@ impl Block {
         std::process::exit(1);
     }
 
-    /// Construct a genesis block directly from the hardcoded consensus constants.
-    /// This function is only compiled when the `skip-pow` feature is enabled.
     #[cfg(feature = "skip-pow")]
     fn genesis_precomputed_for(network: Network) -> Self {
         let ts = network.genesis_timestamp();
@@ -296,6 +323,8 @@ impl Block {
         let subsidy = crate::consensus::spec::INITIAL_REWARD;
         let total_fees = 0;
 
+        let block_work = Self::compute_work(nbits);
+
         Block {
             nversion: rules::BLOCK_VERSION,
             index: 0,
@@ -316,13 +345,14 @@ impl Block {
             genesis_output_script,
             miner_pubkey: String::new(),
             miner_signature: String::new(),
+            chainwork: block_work,
             transactions,
         }
     }
 
     pub fn calculate_hash(&self) -> String {
         let mut payload = format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.nversion,
             self.index,
             self.timestamp,
@@ -341,6 +371,7 @@ impl Block {
             self.genesis_output_script,
             self.miner_pubkey,
             self.miner_signature,
+            self.chainwork,
             self.transactions.len()
         );
         for tx in &self.transactions {
