@@ -61,7 +61,8 @@ fn transaction_with_zero_amount_is_rejected() {
     let chain = Blockchain::new();
     let from = dummy_address('a');
     let to = dummy_address('b');
-    let tx = Transaction::new(&from, &to, 0, 0);
+    // The fifth argument is the nonce, set to 0 for this test.
+    let tx = Transaction::new(&from, &to, 0, 0, 0);
     let err = validation::validate_transaction(&chain, &tx);
     assert!(err.is_err());
     assert_eq!(err.unwrap_err().code, "E005");
@@ -71,7 +72,8 @@ fn transaction_with_zero_amount_is_rejected() {
 fn transaction_with_self_send_is_rejected() {
     let chain = Blockchain::new();
     let addr = dummy_address('a');
-    let tx = Transaction::new(&addr, &addr, 1, 0);
+    // The fifth argument is the nonce, set to 0 for this test.
+    let tx = Transaction::new(&addr, &addr, 1, 0, 0);
     let err = validation::validate_transaction(&chain, &tx);
     assert!(err.is_err());
     assert_eq!(err.unwrap_err().code, "E004");
@@ -94,7 +96,8 @@ fn zero_hash_constant_is_correct() {
 /// This is a regression test for signature malleability.
 #[test]
 fn txid_changes_when_public_key_changes() {
-    let mut tx = Transaction::new(&dummy_address('a'), &dummy_address('b'), 1, 0);
+    // The fifth argument is the nonce, set to 0 for this test.
+    let mut tx = Transaction::new(&dummy_address('a'), &dummy_address('b'), 1, 0, 0);
     let txid1 = tx.txid.clone();
     tx.public_key = "aa".repeat(33);
     let txid2 = tx.compute_txid();
@@ -105,7 +108,8 @@ fn txid_changes_when_public_key_changes() {
 /// This is a regression test for signature malleability.
 #[test]
 fn txid_changes_when_signature_changes() {
-    let mut tx = Transaction::new(&dummy_address('a'), &dummy_address('b'), 1, 0);
+    // The fifth argument is the nonce, set to 0 for this test.
+    let mut tx = Transaction::new(&dummy_address('a'), &dummy_address('b'), 1, 0, 0);
     let txid1 = tx.txid.clone();
     tx.signature = "bb".repeat(70);
     let txid2 = tx.compute_txid();
