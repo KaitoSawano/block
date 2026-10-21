@@ -2912,6 +2912,7 @@ dependencies = [
 name = "zenachain"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "eth_trie",
  "futures",
  "hex",
