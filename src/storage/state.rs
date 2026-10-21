@@ -5,6 +5,7 @@
 
 //! Ethereum-style state database using Merkle Patricia Trie backed by LevelDB.
 
+use alloy_primitives::B256;
 use eth_trie::{EthTrie, Trie};
 use keccak_hash::keccak;
 use std::path::{Path, PathBuf};
@@ -64,8 +65,8 @@ impl StateDB {
     /// Rollback the state to a specific root hash. This is used during a chain reorganization.
     /// Creates a new trie instance from the stored adapter and the provided root hash.
     pub fn rollback_to(&mut self, root_hash: &[u8; 32]) -> Result<(), String> {
-        // Convert the byte array to the H256 type expected by eth_trie.
-        let root = eth_trie::H256::from_slice(root_hash);
+        // Convert the byte array to the B256 type expected by eth_trie.
+        let root = B256::from_slice(root_hash);
         
         // Create a new trie from the same adapter, rooted at the given hash.
         let new_trie = EthTrie::from(self.adapter.clone(), root)
