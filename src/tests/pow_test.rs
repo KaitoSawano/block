@@ -8,10 +8,6 @@ use zenachain::blockchain;
 use zenachain::pow::{hash_meets_nbits, mine, nbits_to_target};
 use zenachain::transaction::Transaction;
 
-fn is_pow_skipped() -> bool {
-    std::env::var("ZENAC_SKIP_POW").is_ok()
-}
-
 #[test]
 fn nbits_to_target_genesis() {
     let target = nbits_to_target(blockchain::genesis_nbits());
@@ -26,6 +22,7 @@ fn hash_meets_nbits_rejects_easy_hash() {
 }
 
 #[test]
+#[cfg(not(feature = "skip-pow"))]
 fn mining_produces_valid_hash() {
     let nbits = blockchain::genesis_nbits();
     let mut b = Block::new(
@@ -37,13 +34,11 @@ fn mining_produces_valid_hash() {
     );
     let ok = mine(&mut b, nbits);
     assert!(ok);
-    
-    if !is_pow_skipped() {
-        assert!(hash_meets_nbits(&b.hash, nbits));
-    }
+    assert!(hash_meets_nbits(&b.hash, nbits));
 }
 
 #[test]
+#[cfg(not(feature = "skip-pow"))]
 fn mining_increments_nonce() {
     let nbits = blockchain::genesis_nbits();
     let mut b = Block::new(
