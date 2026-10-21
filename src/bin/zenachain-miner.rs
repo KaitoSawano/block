@@ -33,6 +33,7 @@ fn main() {
 
         let height = template["height"].as_u64().unwrap_or(0);
         let previous_hash = template["previous_hash"].as_str().unwrap_or("").to_string();
+        let previous_chainwork = template["previous_chainwork"].as_u64().unwrap_or(0) as u128;
         let nbits = match template["nbits"].as_u64().and_then(|v| u32::try_from(v).ok()) {
             Some(v) => v,
             None => {
@@ -68,6 +69,7 @@ fn main() {
             mempool,
             target_address.clone(),
             state_root,
+            previous_chainwork,
         );
 
         if block.reward != reward_satoshi {
