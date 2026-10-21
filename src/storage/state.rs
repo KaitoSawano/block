@@ -8,7 +8,7 @@
 use alloy_primitives::B256;
 use eth_trie::{EthTrie, Trie};
 use keccak_hash::keccak;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use super::account::Account;
@@ -18,7 +18,6 @@ pub struct StateDB {
     trie: EthTrie<LevelDbAdapter>,
     // Store the adapter Arc so we can recreate the trie during rollback.
     adapter: Arc<LevelDbAdapter>,
-    path: PathBuf,
 }
 
 impl StateDB {
@@ -28,7 +27,6 @@ impl StateDB {
         Ok(StateDB {
             trie,
             adapter,
-            path: path.to_path_buf(),
         })
     }
 
