@@ -6,6 +6,7 @@
 //! Utility functions shared across the crate.
 
 use rand::RngCore;
+use serde::{Deserialize, Deserializer, Serializer};
 
 /// Return the current Unix timestamp in milliseconds.
 pub fn now_millis() -> u128 {
@@ -69,4 +70,24 @@ pub fn random_hex(n: usize) -> String {
 /// Convert a hex string to bytes.
 pub fn hex_to_bytes(hex_str: &str) -> Result<Vec<u8>, String> {
     hex::decode(hex_str).map_err(|e| e.to_string())
+}
+
+/// Serialize a `u128` as a decimal string in JSON.
+pub mod u128_string {
+    use super::*;
+
+    pub fn serialize<S>(value: &u128, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u128, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.parse::<u128>().map_err(serde::de::Error::custom)
+    }
 }
