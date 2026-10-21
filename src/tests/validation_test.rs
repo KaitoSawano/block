@@ -157,6 +157,7 @@ fn block_with_invalid_mined_for_is_rejected() {
             Vec::new(),
             "not-an-address".to_string(),
             String::new(),
+            prev.chainwork,
         );
         b.hash = b.calculate_hash();
         let err = validation::validate_block(&chain, &prev, &b);
@@ -181,6 +182,7 @@ fn block_with_inconsistent_coinbase_is_rejected() {
             Vec::new(),
             addr.clone(),
             String::new(),
+            prev.chainwork,
         );
         b.coinbase_txid = "00".repeat(32);
         b.hash = b.calculate_hash();
