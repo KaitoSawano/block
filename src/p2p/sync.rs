@@ -81,7 +81,7 @@ impl SyncState {
         // Walk back from the new block's parent until we find a block that
         // exists in our current chain.
         let ancestor_hash = new_block.previous_hash.clone();
-        let mut ancestor_index;
+        let ancestor_index;
         
         // Find the fork point.
         loop {
