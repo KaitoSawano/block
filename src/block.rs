@@ -89,12 +89,11 @@ impl Block {
     }
 
     /// Compute the work of a single block given its nbits.
-    /// Work = 2^256 / (target + 1).
+    /// Work = 2^256 / (target + 1). We approximate using u128.
     pub fn compute_work(nbits: u32) -> u128 {
         let target = pow::nbits_to_target(nbits);
 
-        // Convert target (big-endian [u8; 32]) to u128 by taking the last 16 bytes.
-        // This is an approximation, but sufficient for chainwork comparison.
+        // Convert the last 16 bytes of target to u128.
         let mut target_u128: u128 = 0;
         for &b in &target[16..32] {
             target_u128 = (target_u128 << 8) | (b as u128);
@@ -104,11 +103,8 @@ impl Block {
             return u128::MAX;
         }
 
-        // Approximate 2^256 / (target + 1) using u128.
-        // For very large target (easy difficulty), work is small.
-        // We use 2^128 / (target_u128 + 1) as a scaled approximation.
-        let max_u128 = u128::MAX;
-        max_u128 / (target_u128.saturating_add(1))
+        // Approximate 2^256 / (target + 1) using u128::MAX as 2^128.
+        u128::MAX / (target_u128.saturating_add(1))
     }
 
     pub fn new(
