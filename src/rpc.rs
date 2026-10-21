@@ -498,6 +498,7 @@ impl RpcHandler {
             "checkpoints_highest": blockchain::checkpoint::highest(),
             "consensus_fingerprint": self.state.fingerprint(),
             "datadir": datadir::as_str(&datadir::datadir()),
+            "total_chainwork": c.total_chainwork(),
         }))
     }
 
@@ -529,6 +530,7 @@ impl RpcHandler {
             "difficulty_adjust_interval": consensus::difficulty_adjust_interval(),
             "consensus_fingerprint": self.state.fingerprint(),
             "datadir": datadir::as_str(&datadir::datadir()),
+            "total_chainwork": c.total_chainwork(),
         }))
     }
 
@@ -536,12 +538,15 @@ impl RpcHandler {
         let c = self.state.chain.blocking_read();
         let next_height = c.height() + 1;
         let subsidy = Blockchain::calculate_reward(next_height);
-        let prev_hash = c.chain.last().unwrap().hash.clone();
+        let prev = c.chain.last().unwrap();
+        let prev_hash = prev.hash.clone();
+        let previous_chainwork = prev.chainwork;
         let total_fees: u64 = c.mempool.iter().map(|tx| tx.fee).sum();
         let reward = subsidy.saturating_add(total_fees);
         RpcResponse::ok(json!({
             "height": next_height,
             "previous_hash": prev_hash,
+            "previous_chainwork": previous_chainwork,
             "nbits": c.nbits,
             "reward": to_coin(reward),
             "subsidy": to_coin(subsidy),
@@ -710,6 +715,7 @@ impl RpcHandler {
             "genesis_output_script": block.genesis_output_script,
             "miner_pubkey": block.miner_pubkey,
             "miner_signature": block.miner_signature,
+            "chainwork": block.chainwork,
             "transactions": block.transactions,
         }))
     }
@@ -738,6 +744,7 @@ impl RpcHandler {
             "nonce": block.nonce,
             "bits": format!("{:#010x}", block.nbits),
             "previousblockhash": block.previous_hash,
+            "chainwork": block.chainwork,
             "nextblockhash": if block.index + 1 < chain.chain.len() as u64 {
                 Some(chain.chain[(block.index + 1) as usize].hash.clone())
             } else {
@@ -770,7 +777,8 @@ impl RpcHandler {
             "height": chain.height(),
             "hash": tip.hash,
             "branchlen": 0,
-            "status": "active"
+            "status": "active",
+            "chainwork": tip.chainwork,
         }]))
     }
 
@@ -805,6 +813,7 @@ impl RpcHandler {
                 "network": self.state.network.name(),
                 "consensus_fingerprint": self.state.fingerprint(),
                 "transactions": g.transactions,
+                "chainwork": g.chainwork,
             })),
             None => RpcResponse::err("chain is empty"),
         }
@@ -1068,7 +1077,7 @@ impl RpcHandler {
                 break;
             }
 
-            let (next_index, prev_hash, subsidy, nbits, mempool_txs) = {
+            let (next_index, prev_hash, subsidy, nbits, mempool_txs, previous_chainwork) = {
                 let mut chain = self.state.chain.blocking_write();
                 let prev = chain.chain.last().unwrap().clone();
                 let next_index = prev.index + 1;
@@ -1080,7 +1089,7 @@ impl RpcHandler {
 
                 let txs = std::mem::take(&mut chain.mempool);
                 chain.mempool_timestamps.clear();
-                (next_index, prev.hash, subsidy, chain.nbits, txs)
+                (next_index, prev.hash, subsidy, chain.nbits, txs, prev.chainwork)
             };
 
             let total_fees = mempool_txs.iter().map(|tx| tx.fee).sum::<u64>();
@@ -1094,6 +1103,7 @@ impl RpcHandler {
                 mempool_txs.clone(),
                 addr.clone(),
                 String::new(),
+                previous_chainwork,
             );
 
             if !pow::mine_interruptible(&mut block, nbits, Some(&self.state.interrupt)) {
