@@ -232,6 +232,11 @@ impl Blockchain {
         self.state.credit_reward(miner, reward, block_height)
     }
 
+    /// Return the total work of the current chain (from the tip).
+    pub fn total_chainwork(&self) -> u128 {
+        self.chain.last().map(|b| b.chainwork).unwrap_or(0)
+    }
+
     pub fn tx_size_bytes(tx: &Transaction) -> usize {
         let base = 32 + tx.from.len() + tx.to.len() + 8 + 8 + 8 + tx.public_key.len() + tx.signature.len();
         base + tx.note.len()
@@ -381,6 +386,7 @@ impl Blockchain {
             txs.clone(),
             String::new(),
             state_root,
+            prev.chainwork,
         );
         if !pow::mine(&mut new_block, self.nbits) {
             return Err("mining failed: nonce exhausted".into());
