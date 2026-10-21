@@ -87,7 +87,8 @@ mod tests {
 
     fn dummy_peer() -> Peer {
         let addr: SocketAddr = "127.0.0.1:8333".parse().unwrap();
-        Peer::new(1, addr, crate::p2p::peer::ConnectionType::Inbound)
+        // The `mapped_as` parameter is set to 0 for tests.
+        Peer::new(1, addr, crate::p2p::peer::ConnectionType::Inbound, 0)
     }
 
     #[test]
