@@ -78,6 +78,11 @@ alloy-primitives = "1"
 tempfile = "3"
 serial_test = "3"
 
+[features]
+# This feature is only enabled during tests. It allows skipping proof-of-work
+# mining to speed up the test suite. It is never enabled in release builds.
+skip-pow = []
+
 [profile.release]
 opt-level = 3
 lto = true
