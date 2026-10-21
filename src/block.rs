@@ -217,6 +217,14 @@ impl Block {
     }
 
     pub fn genesis_for(network: Network) -> Self {
+        // If ZENAC_SKIP_POW is set, return the pre-computed genesis block
+        // directly, using the hardcoded consensus constants.
+        // This avoids the expensive mining process and the potential
+        // recursive dependency on Block::genesis_unchecked().
+        if std::env::var("ZENAC_SKIP_POW").is_ok() {
+            return Self::genesis_precomputed_for(network);
+        }
+
         let b = Self::genesis_mined_for(network);
 
         let hash_ok = b.hash == genesis::expected_genesis_hash_for(network);
@@ -246,6 +254,57 @@ impl Block {
         eprintln!();
 
         std::process::exit(1);
+    }
+
+    /// Construct a genesis block directly from the hardcoded consensus constants.
+    /// This is used during testing when `ZENAC_SKIP_POW` is set, to avoid mining.
+    fn genesis_precomputed_for(network: Network) -> Self {
+        let ts = network.genesis_timestamp();
+        let coinbase_txid = blockchain::genesis_coinbase_txid_for(network);
+        let genesis_output_script = genesis::GENESIS_OUTPUT_SCRIPT.to_string();
+        let nbits = network.genesis_nbits();
+
+        let transactions = vec![
+            Transaction::coinbase(genesis::GENESIS_MESSAGE.into()),
+            Transaction::secret(genesis::GENESIS_SECRET.into()),
+        ];
+
+        // Use the hardcoded values directly.
+        let merkle_root = genesis::expected_genesis_merkle_root_for(network).to_string();
+        let hash = genesis::expected_genesis_hash_for(network).to_string();
+        let nonce = genesis::expected_genesis_nonce_for(network);
+
+        let size = (genesis_output_script.len()
+            + merkle_root.len()
+            + coinbase_txid.len()
+            + transactions.iter().map(|t| t.txid.len()).sum::<usize>()
+            + 256) as u64;
+
+        let subsidy = crate::consensus::spec::INITIAL_REWARD;
+        let total_fees = 0;
+
+        Block {
+            nversion: rules::BLOCK_VERSION,
+            index: 0,
+            timestamp: ts,
+            mined_at: format_datetime(ts),
+            mined_for: "GENESIS".to_string(),
+            previous_hash: "0".repeat(64),
+            merkle_root,
+            state_root: String::new(),
+            hash,
+            nonce,
+            nbits,
+            reward: subsidy,
+            subsidy,
+            total_fees,
+            coinbase_txid,
+            blockchain_size: size,
+            genesis_output_script,
+            miner_pubkey: String::new(),
+            miner_signature: String::new(),
+            transactions,
+        }
     }
 
     pub fn calculate_hash(&self) -> String {
