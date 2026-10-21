@@ -3,9 +3,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
-use zenachain::block::Block;
 use zenachain::blockchain;
-use zenachain::pow::{hash_meets_nbits, mine, nbits_to_target};
+use zenachain::pow::{hash_meets_nbits, nbits_to_target};
+
+#[cfg(not(feature = "skip-pow"))]
+use zenachain::block::Block;
+#[cfg(not(feature = "skip-pow"))]
+use zenachain::pow::mine;
+#[cfg(not(feature = "skip-pow"))]
 use zenachain::transaction::Transaction;
 
 #[test]
