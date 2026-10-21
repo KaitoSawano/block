@@ -66,7 +66,6 @@ impl SyncState {
         println!("[reorg] potential reorg detected at height {}", new_block.index);
 
         // 1. Compute the total work of the new block's chain.
-        // The new block's chainwork already includes the work of all its ancestors.
         let new_chain_work = new_block.chainwork;
 
         // 2. Compare with our current chain's total work.
