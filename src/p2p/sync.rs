@@ -80,10 +80,8 @@ impl SyncState {
         // 1. Find the common ancestor.
         // Walk back from the new block's parent until we find a block that
         // exists in our current chain.
-        let mut ancestor_hash = new_block.previous_hash.clone();
-        let mut ancestor_index = new_block.index - 1;
-        
-        let mut rollback_blocks = Vec::new();
+        let ancestor_hash = new_block.previous_hash.clone();
+        let mut ancestor_index;
         
         // Find the fork point.
         loop {
@@ -99,12 +97,15 @@ impl SyncState {
         }
         
         // 2. Collect blocks to rollback (from current tip down to ancestor).
+        let rollback_blocks;
         if ancestor_index < chain.height() {
             rollback_blocks = chain.chain
                 .split_off((ancestor_index + 1) as usize)
                 .into_iter()
                 .rev()
-                .collect();
+                .collect::<Vec<_>>();
+        } else {
+            rollback_blocks = Vec::new();
         }
         
         // 3. Rollback state to the ancestor's state_root.
