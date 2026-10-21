@@ -38,6 +38,7 @@ pub struct Block {
     pub genesis_output_script: String,
     pub miner_pubkey: String,
     pub miner_signature: String,
+    #[serde(with = "crate::utils::u128_string")]
     pub chainwork: u128,
     pub transactions: Vec<Transaction>,
 }
