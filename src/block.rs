@@ -216,34 +216,26 @@ impl Block {
         Self::genesis_for(spec::current_network())
     }
 
-    /// In test builds, check whether the environment variable is set.
-    #[cfg(test)]
+    /// In builds with the `skip-pow` feature, return true.
+    #[cfg(feature = "skip-pow")]
     fn is_test_mode() -> bool {
-        std::env::var("ZENAC_SKIP_POW").is_ok()
+        true
     }
 
     /// In non-test builds, never skip.
-    #[cfg(not(test))]
+    #[cfg(not(feature = "skip-pow"))]
     fn is_test_mode() -> bool {
         false
     }
 
     pub fn genesis_for(network: Network) -> Self {
         // In test mode, return the pre-computed genesis block directly.
-        // This code is only compiled during tests.
-        #[cfg(test)]
+        // This code is only compiled when the `skip-pow` feature is enabled.
+        #[cfg(feature = "skip-pow")]
         {
             if Self::is_test_mode() {
                 return Self::genesis_precomputed_for(network);
             }
-        }
-
-        // In non-test builds, this branch is unreachable because `is_test_mode`
-        // always returns false, but we still need to avoid the compiler warning
-        // about unreachable code.
-        #[cfg(not(test))]
-        {
-            let _ = Self::is_test_mode();
         }
 
         let b = Self::genesis_mined_for(network);
@@ -278,8 +270,8 @@ impl Block {
     }
 
     /// Construct a genesis block directly from the hardcoded consensus constants.
-    /// This function is only compiled during tests.
-    #[cfg(test)]
+    /// This function is only compiled when the `skip-pow` feature is enabled.
+    #[cfg(feature = "skip-pow")]
     fn genesis_precomputed_for(network: Network) -> Self {
         let ts = network.genesis_timestamp();
         let coinbase_txid = blockchain::genesis_coinbase_txid_for(network);
