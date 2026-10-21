@@ -88,6 +88,12 @@ pub fn hash_meets_nbits(hash_hex: &str, nbits: u32) -> bool {
     hash_le_target(hash_hex, &target)
 }
 
+/// Check whether proof-of-work mining should be skipped.
+/// This is used by tests to avoid the expensive mining process.
+fn should_skip_pow() -> bool {
+    std::env::var("ZENAC_SKIP_POW").is_ok()
+}
+
 /// Mine the block until the hash meets the target or the nonce is exhausted.
 pub fn mine(block: &mut Block, nbits: u32) -> bool {
     mine_interruptible(block, nbits, None)
@@ -100,6 +106,12 @@ pub fn mine_interruptible(
     nbits: u32,
     interrupt: Option<&AtomicBool>,
 ) -> bool {
+    // If the environment variable is set, skip the actual mining and
+    // return success immediately. This is used to speed up tests.
+    if should_skip_pow() {
+        return true;
+    }
+
     let target = nbits_to_target(nbits);
     loop {
         if let Some(flag) = interrupt {
