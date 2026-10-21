@@ -19,7 +19,7 @@ pub const DEBUG_LOG: &str = "debug.log";
 pub const BLOCK_FILE_PREFIX: &str = "blk";
 pub const PEER_ID_FILE: &str = "peer_id";
 pub const COOKIE_FILE: &str = ".cookie";
-pub const STATE_DB_DIR: &str = "state_db"; // <--- TAMBAHKAN
+pub const STATE_DB_DIR: &str = "state_db";
 
 pub fn datadir() -> PathBuf {
     if let Ok(custom) = std::env::var("ZENAC_DATADIR") {
@@ -36,7 +36,7 @@ pub fn chainstate_dir() -> PathBuf {
     datadir().join(CHAINSTATE_DIR)
 }
 pub fn state_db_path() -> PathBuf {
-    chainstate_dir().join(STATE_DB_DIR) // <--- TAMBAHKAN FUNGSI INI
+    chainstate_dir().join(STATE_DB_DIR)
 }
 pub fn wallet_path() -> PathBuf {
     datadir().join(WALLET_FILE)
@@ -72,7 +72,7 @@ pub fn ensure_dirs() -> std::io::Result<()> {
     std::fs::create_dir_all(datadir())?;
     std::fs::create_dir_all(blocks_dir())?;
     std::fs::create_dir_all(chainstate_dir())?;
-    std::fs::create_dir_all(state_db_path())?; // <--- TAMBAHKAN
+    std::fs::create_dir_all(state_db_path())?;
     Ok(())
 }
 
