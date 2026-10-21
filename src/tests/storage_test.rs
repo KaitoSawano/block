@@ -18,11 +18,20 @@ fn with_temp_datadir<F: FnOnce()>(f: F) {
 #[serial]
 fn save_and_load_chain() {
     with_temp_datadir(|| {
-        let chain = Blockchain::new();
-        storage::save_chain(&chain).expect("save failed");
+        // Step 1: Create a chain and save it.
+        // We use a scope to ensure the chain (and its LevelDB lock) is
+        // released before we attempt to load it again.
+        {
+            let chain = Blockchain::new();
+            storage::save_chain(&chain).expect("save failed");
+            // `chain` is dropped here, releasing the LevelDB lock.
+        }
+
+        // Step 2: Load the chain from disk.
+        // At this point, no other instance holds the lock.
         let loaded = storage::load_chain().expect("load failed");
-        assert_eq!(loaded.height(), chain.height());
-        assert_eq!(loaded.chain.len(), chain.chain.len());
+        assert_eq!(loaded.height(), 0);
+        assert_eq!(loaded.chain.len(), 1);
     });
 }
 
