@@ -23,10 +23,8 @@ fn with_temp_datadir<F: FnOnce()>(f: F) {
 
 #[test]
 #[serial]
+#[cfg(not(feature = "skip-pow"))]
 fn valid_chain_passes() {
-    if std::env::var("ZENAC_SKIP_POW").is_ok() {
-        return;
-    }
     with_temp_datadir(|| {
         let chain = Blockchain::new();
         assert!(validation::validate_chain(&chain).is_ok());
@@ -113,8 +111,6 @@ fn zero_hash_constant_is_correct() {
     assert!(rules::ZERO_HASH.chars().all(|c| c == '0'));
 }
 
-/// The transaction identifier must change when the public key changes.
-/// This is a regression test for signature malleability.
 #[test]
 fn txid_changes_when_public_key_changes() {
     let mut tx = Transaction::new(&dummy_address('a'), &dummy_address('b'), 1, 0, 0);
@@ -124,15 +120,19 @@ fn txid_changes_when_public_key_changes() {
     assert_ne!(txid1, txid2);
 }
 
-/// The block total fees must equal the sum of the fees of all
-/// transactions in the block.
 #[test]
 #[serial]
 fn block_total_fees_mismatch_is_rejected() {
     with_temp_datadir(|| {
         let chain = Blockchain::new();
         let prev = chain.chain.last().unwrap().clone();
-        let mut b = Block::new(prev.index + 1, prev.hash.clone(), 0, chain.nbits, Vec::new());
+        let mut b = Block::new(
+            prev.index + 1,
+            prev.hash.clone(),
+            Blockchain::calculate_reward(prev.index + 1),
+            chain.nbits,
+            Vec::new(),
+        );
         b.total_fees = 1_000_000;
         b.reward = b.subsidy.saturating_add(b.total_fees);
         b.hash = b.calculate_hash();
@@ -142,7 +142,6 @@ fn block_total_fees_mismatch_is_rejected() {
     });
 }
 
-/// A non-genesis block must have a valid mined_for address.
 #[test]
 #[serial]
 fn block_with_invalid_mined_for_is_rejected() {
@@ -166,8 +165,6 @@ fn block_with_invalid_mined_for_is_rejected() {
     });
 }
 
-/// A block whose coinbase_txid does not match index|mined_for|timestamp
-/// must be rejected.
 #[test]
 #[serial]
 fn block_with_inconsistent_coinbase_is_rejected() {
