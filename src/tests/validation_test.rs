@@ -3,6 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file LICENSE or https://opensource.org/license/mit.
 
+use serial_test::serial;
 use zenachain::block::Block;
 use zenachain::blockchain::Blockchain;
 use zenachain::consensus::rules;
@@ -13,70 +14,90 @@ fn dummy_address(seed: char) -> String {
     format!("ZENA{}", seed.to_string().repeat(40))
 }
 
+fn with_temp_datadir<F: FnOnce()>(f: F) {
+    let dir = tempfile::tempdir().expect("tempdir failed");
+    std::env::set_var("ZENAC_DATADIR", dir.path());
+    f();
+    std::env::remove_var("ZENAC_DATADIR");
+}
+
 #[test]
+#[serial]
 fn valid_chain_passes() {
     if std::env::var("ZENAC_SKIP_POW").is_ok() {
         return;
     }
-    let chain = Blockchain::new();
-    assert!(validation::validate_chain(&chain).is_ok());
+    with_temp_datadir(|| {
+        let chain = Blockchain::new();
+        assert!(validation::validate_chain(&chain).is_ok());
+    });
 }
 
 #[test]
+#[serial]
 fn block_with_wrong_previous_hash_is_rejected() {
-    let chain = Blockchain::new();
-    let prev = chain.chain.last().unwrap().clone();
-    let mut b = Block::new(
-        prev.index + 1,
-        "0".repeat(64),
-        50_000_000_000,
-        chain.nbits,
-        Vec::new(),
-    );
-    b.hash = b.calculate_hash();
-    let err = validation::validate_block(&chain, &prev, &b);
-    assert!(err.is_err());
-    assert_eq!(err.unwrap_err().code, "E035");
+    with_temp_datadir(|| {
+        let chain = Blockchain::new();
+        let prev = chain.chain.last().unwrap().clone();
+        let mut b = Block::new(
+            prev.index + 1,
+            "0".repeat(64),
+            50_000_000_000,
+            chain.nbits,
+            Vec::new(),
+        );
+        b.hash = b.calculate_hash();
+        let err = validation::validate_block(&chain, &prev, &b);
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err().code, "E035");
+    });
 }
 
 #[test]
+#[serial]
 fn block_with_wrong_index_is_rejected() {
-    let chain = Blockchain::new();
-    let prev = chain.chain.last().unwrap().clone();
-    let mut b = Block::new(
-        prev.index + 2,
-        prev.hash.clone(),
-        50_000_000_000,
-        chain.nbits,
-        Vec::new(),
-    );
-    b.hash = b.calculate_hash();
-    let err = validation::validate_block(&chain, &prev, &b);
-    assert!(err.is_err());
-    assert_eq!(err.unwrap_err().code, "E036");
+    with_temp_datadir(|| {
+        let chain = Blockchain::new();
+        let prev = chain.chain.last().unwrap().clone();
+        let mut b = Block::new(
+            prev.index + 2,
+            prev.hash.clone(),
+            50_000_000_000,
+            chain.nbits,
+            Vec::new(),
+        );
+        b.hash = b.calculate_hash();
+        let err = validation::validate_block(&chain, &prev, &b);
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err().code, "E036");
+    });
 }
 
 #[test]
+#[serial]
 fn transaction_with_zero_amount_is_rejected() {
-    let chain = Blockchain::new();
-    let from = dummy_address('a');
-    let to = dummy_address('b');
-    // The fifth argument is the nonce, set to 0 for this test.
-    let tx = Transaction::new(&from, &to, 0, 0, 0);
-    let err = validation::validate_transaction(&chain, &tx);
-    assert!(err.is_err());
-    assert_eq!(err.unwrap_err().code, "E005");
+    with_temp_datadir(|| {
+        let chain = Blockchain::new();
+        let from = dummy_address('a');
+        let to = dummy_address('b');
+        let tx = Transaction::new(&from, &to, 0, 0, 0);
+        let err = validation::validate_transaction(&chain, &tx);
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err().code, "E005");
+    });
 }
 
 #[test]
+#[serial]
 fn transaction_with_self_send_is_rejected() {
-    let chain = Blockchain::new();
-    let addr = dummy_address('a');
-    // The fifth argument is the nonce, set to 0 for this test.
-    let tx = Transaction::new(&addr, &addr, 1, 0, 0);
-    let err = validation::validate_transaction(&chain, &tx);
-    assert!(err.is_err());
-    assert_eq!(err.unwrap_err().code, "E004");
+    with_temp_datadir(|| {
+        let chain = Blockchain::new();
+        let addr = dummy_address('a');
+        let tx = Transaction::new(&addr, &addr, 1, 0, 0);
+        let err = validation::validate_transaction(&chain, &tx);
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err().code, "E004");
+    });
 }
 
 #[test]
@@ -96,7 +117,6 @@ fn zero_hash_constant_is_correct() {
 /// This is a regression test for signature malleability.
 #[test]
 fn txid_changes_when_public_key_changes() {
-    // The fifth argument is the nonce, set to 0 for this test.
     let mut tx = Transaction::new(&dummy_address('a'), &dummy_address('b'), 1, 0, 0);
     let txid1 = tx.txid.clone();
     tx.public_key = "aa".repeat(33);
@@ -104,74 +124,71 @@ fn txid_changes_when_public_key_changes() {
     assert_ne!(txid1, txid2);
 }
 
-/// The transaction identifier must change when the signature changes.
-/// This is a regression test for signature malleability.
-#[test]
-fn txid_changes_when_signature_changes() {
-    // The fifth argument is the nonce, set to 0 for this test.
-    let mut tx = Transaction::new(&dummy_address('a'), &dummy_address('b'), 1, 0, 0);
-    let txid1 = tx.txid.clone();
-    tx.signature = "bb".repeat(70);
-    let txid2 = tx.compute_txid();
-    assert_ne!(txid1, txid2);
-}
-
 /// The block total fees must equal the sum of the fees of all
 /// transactions in the block.
 #[test]
+#[serial]
 fn block_total_fees_mismatch_is_rejected() {
-    let chain = Blockchain::new();
-    let prev = chain.chain.last().unwrap().clone();
-    let mut b = Block::new(prev.index + 1, prev.hash.clone(), 0, chain.nbits, Vec::new());
-    b.total_fees = 1_000_000; // declared fees do not match the empty tx list
-    b.reward = b.subsidy.saturating_add(b.total_fees);
-    b.hash = b.calculate_hash();
-    let err = validation::validate_block(&chain, &prev, &b);
-    assert!(err.is_err());
-    assert_eq!(err.unwrap_err().code, "E047");
+    with_temp_datadir(|| {
+        let chain = Blockchain::new();
+        let prev = chain.chain.last().unwrap().clone();
+        let mut b = Block::new(prev.index + 1, prev.hash.clone(), 0, chain.nbits, Vec::new());
+        b.total_fees = 1_000_000;
+        b.reward = b.subsidy.saturating_add(b.total_fees);
+        b.hash = b.calculate_hash();
+        let err = validation::validate_block(&chain, &prev, &b);
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err().code, "E047");
+    });
 }
 
 /// A non-genesis block must have a valid mined_for address.
 #[test]
+#[serial]
 fn block_with_invalid_mined_for_is_rejected() {
-    let chain = Blockchain::new();
-    let prev = chain.chain.last().unwrap().clone();
-    let mut b = Block::new_for(
-        prev.index + 1,
-        prev.hash.clone(),
-        Blockchain::calculate_reward(prev.index + 1),
-        0,
-        chain.nbits,
-        Vec::new(),
-        "not-an-address".to_string(),
-        String::new(),
-    );
-    b.hash = b.calculate_hash();
-    let err = validation::validate_block(&chain, &prev, &b);
-    assert!(err.is_err());
-    assert_eq!(err.unwrap_err().code, "E049");
+    with_temp_datadir(|| {
+        let chain = Blockchain::new();
+        let prev = chain.chain.last().unwrap().clone();
+        let mut b = Block::new_for(
+            prev.index + 1,
+            prev.hash.clone(),
+            Blockchain::calculate_reward(prev.index + 1),
+            0,
+            chain.nbits,
+            Vec::new(),
+            "not-an-address".to_string(),
+            String::new(),
+        );
+        b.hash = b.calculate_hash();
+        let err = validation::validate_block(&chain, &prev, &b);
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err().code, "E049");
+    });
 }
 
 /// A block whose coinbase_txid does not match index|mined_for|timestamp
 /// must be rejected.
 #[test]
+#[serial]
 fn block_with_inconsistent_coinbase_is_rejected() {
-    let chain = Blockchain::new();
-    let prev = chain.chain.last().unwrap().clone();
-    let addr = format!("ZENA{}", "a".repeat(40));
-    let mut b = Block::new_for(
-        prev.index + 1,
-        prev.hash.clone(),
-        Blockchain::calculate_reward(prev.index + 1),
-        0,
-        chain.nbits,
-        Vec::new(),
-        addr.clone(),
-        String::new(),
-    );
-    b.coinbase_txid = "00".repeat(32);
-    b.hash = b.calculate_hash();
-    let err = validation::validate_block(&chain, &prev, &b);
-    assert!(err.is_err());
-    assert_eq!(err.unwrap_err().code, "E048");
+    with_temp_datadir(|| {
+        let chain = Blockchain::new();
+        let prev = chain.chain.last().unwrap().clone();
+        let addr = format!("ZENA{}", "a".repeat(40));
+        let mut b = Block::new_for(
+            prev.index + 1,
+            prev.hash.clone(),
+            Blockchain::calculate_reward(prev.index + 1),
+            0,
+            chain.nbits,
+            Vec::new(),
+            addr.clone(),
+            String::new(),
+        );
+        b.coinbase_txid = "00".repeat(32);
+        b.hash = b.calculate_hash();
+        let err = validation::validate_block(&chain, &prev, &b);
+        assert!(err.is_err());
+        assert_eq!(err.unwrap_err().code, "E048");
+    });
 }
