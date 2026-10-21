@@ -71,8 +71,8 @@ rlp = "0.5"
 rusty-leveldb = "1.0"
 keccak-hash = "0.10"
 
-# --- ALLOY PRIMITIVES (Required for eth_trie B256 type) ---
-alloy-primitives = "0.8"
+# --- ALLOY PRIMITIVES (Must match eth_trie's version) ---
+alloy-primitives = "1"
 
 [dev-dependencies]
 tempfile = "3"
