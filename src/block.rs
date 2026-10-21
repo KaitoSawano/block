@@ -216,12 +216,22 @@ impl Block {
         Self::genesis_for(spec::current_network())
     }
 
+    /// In test builds, check whether the environment variable is set.
+    #[cfg(test)]
+    fn is_test_mode() -> bool {
+        std::env::var("ZENAC_SKIP_POW").is_ok()
+    }
+
+    /// In non-test builds, never skip.
+    #[cfg(not(test))]
+    fn is_test_mode() -> bool {
+        false
+    }
+
     pub fn genesis_for(network: Network) -> Self {
-        // If ZENAC_SKIP_POW is set, return the pre-computed genesis block
-        // directly, using the hardcoded consensus constants.
-        // This avoids the expensive mining process and the potential
-        // recursive dependency on Block::genesis_unchecked().
-        if std::env::var("ZENAC_SKIP_POW").is_ok() {
+        // In test mode, return the pre-computed genesis block directly.
+        // This code is only compiled during tests.
+        if Self::is_test_mode() {
             return Self::genesis_precomputed_for(network);
         }
 
@@ -257,7 +267,8 @@ impl Block {
     }
 
     /// Construct a genesis block directly from the hardcoded consensus constants.
-    /// This is used during testing when `ZENAC_SKIP_POW` is set, to avoid mining.
+    /// This function is only compiled during tests.
+    #[cfg(test)]
     fn genesis_precomputed_for(network: Network) -> Self {
         let ts = network.genesis_timestamp();
         let coinbase_txid = blockchain::genesis_coinbase_txid_for(network);
@@ -269,7 +280,6 @@ impl Block {
             Transaction::secret(genesis::GENESIS_SECRET.into()),
         ];
 
-        // Use the hardcoded values directly.
         let merkle_root = genesis::expected_genesis_merkle_root_for(network).to_string();
         let hash = genesis::expected_genesis_hash_for(network).to_string();
         let nonce = genesis::expected_genesis_nonce_for(network);
