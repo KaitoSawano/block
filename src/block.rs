@@ -231,8 +231,19 @@ impl Block {
     pub fn genesis_for(network: Network) -> Self {
         // In test mode, return the pre-computed genesis block directly.
         // This code is only compiled during tests.
-        if Self::is_test_mode() {
-            return Self::genesis_precomputed_for(network);
+        #[cfg(test)]
+        {
+            if Self::is_test_mode() {
+                return Self::genesis_precomputed_for(network);
+            }
+        }
+
+        // In non-test builds, this branch is unreachable because `is_test_mode`
+        // always returns false, but we still need to avoid the compiler warning
+        // about unreachable code.
+        #[cfg(not(test))]
+        {
+            let _ = Self::is_test_mode();
         }
 
         let b = Self::genesis_mined_for(network);
