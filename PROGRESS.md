@@ -2,6 +2,7 @@
 
 ## 1. Gambaran Proyek
 ZenaChain adalah blockchain berbasis Rust dengan model *account-based* (seperti Ethereum). Jaringan P2P menggunakan TCP mentah, RPC server multi-threaded, dan dompet multi-alamat dengan enkripsi AES-256-GCM.
+Zenachain menganut "if it ain't broke, don't fix it" jadi kode yg stabil dilarang disentuh!
 
 Sekarang mendukung tiga jaringan: **Mainnet**, **Testnet**, dan **Regtest**, dengan parameter, genesis, magic bytes, port, address prefix, dan datadir yang terpisah sepenuhnya.
 
