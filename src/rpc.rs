@@ -498,7 +498,7 @@ impl RpcHandler {
             "checkpoints_highest": blockchain::checkpoint::highest(),
             "consensus_fingerprint": self.state.fingerprint(),
             "datadir": datadir::as_str(&datadir::datadir()),
-            "total_chainwork": c.total_chainwork(),
+            "total_chainwork": c.total_chainwork().to_string(),
         }))
     }
 
@@ -530,7 +530,7 @@ impl RpcHandler {
             "difficulty_adjust_interval": consensus::difficulty_adjust_interval(),
             "consensus_fingerprint": self.state.fingerprint(),
             "datadir": datadir::as_str(&datadir::datadir()),
-            "total_chainwork": c.total_chainwork(),
+            "total_chainwork": c.total_chainwork().to_string(),
         }))
     }
 
@@ -546,7 +546,7 @@ impl RpcHandler {
         RpcResponse::ok(json!({
             "height": next_height,
             "previous_hash": prev_hash,
-            "previous_chainwork": previous_chainwork,
+            "previous_chainwork": previous_chainwork.to_string(),
             "nbits": c.nbits,
             "reward": to_coin(reward),
             "subsidy": to_coin(subsidy),
@@ -715,7 +715,7 @@ impl RpcHandler {
             "genesis_output_script": block.genesis_output_script,
             "miner_pubkey": block.miner_pubkey,
             "miner_signature": block.miner_signature,
-            "chainwork": block.chainwork,
+            "chainwork": block.chainwork.to_string(),
             "transactions": block.transactions,
         }))
     }
@@ -744,7 +744,7 @@ impl RpcHandler {
             "nonce": block.nonce,
             "bits": format!("{:#010x}", block.nbits),
             "previousblockhash": block.previous_hash,
-            "chainwork": block.chainwork,
+            "chainwork": block.chainwork.to_string(),
             "nextblockhash": if block.index + 1 < chain.chain.len() as u64 {
                 Some(chain.chain[(block.index + 1) as usize].hash.clone())
             } else {
@@ -778,7 +778,7 @@ impl RpcHandler {
             "hash": tip.hash,
             "branchlen": 0,
             "status": "active",
-            "chainwork": tip.chainwork,
+            "chainwork": tip.chainwork.to_string(),
         }]))
     }
 
@@ -813,7 +813,7 @@ impl RpcHandler {
                 "network": self.state.network.name(),
                 "consensus_fingerprint": self.state.fingerprint(),
                 "transactions": g.transactions,
-                "chainwork": g.chainwork,
+                "chainwork": g.chainwork.to_string(),
             })),
             None => RpcResponse::err("chain is empty"),
         }
