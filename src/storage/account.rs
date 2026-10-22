@@ -23,6 +23,7 @@ impl Encodable for Account {
         s.append(&self.balance);
         s.begin_list(self.immature_rewards.len());
         for (height, amount) in &self.immature_rewards {
+            s.begin_list(2);
             s.append(height);
             s.append(amount);
         }
