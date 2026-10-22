@@ -27,79 +27,88 @@ Sekarang mendukung tiga jaringan: **Mainnet**, **Testnet**, dan **Regtest**, den
 
 ---
 
-## 2. Status Terkini (Terakhir Diperbarui: 2026-10-22)
+## 2. Prinsip Pengembangan
+**"If it ain't broke, don't fix it."**
+
+Proyek ini menganut prinsip konservatif dalam pengembangan:
+- **JANGAN menyentuh kode yang sudah stabil** kecuali ada bug nyata atau fitur baru yang memerlukan modifikasi.
+- **Fokus pada penambahan fitur**, bukan perubahan pada kode yang sudah teruji.
+- **Setiap perubahan harus memiliki alasan yang jelas** dan diuji secara menyeluruh.
+
+### Daftar Kode Stabil (JANGAN DISENTUH)
+Kode berikut sudah **stabil dan teruji**. Jangan mengubahnya tanpa alasan yang sangat kuat:
+
+1.  `src/transaction.rs` — Model transaksi, tanda tangan, nonce.
+2.  `src/blockchain.rs` — State chain, reward, difficulty, mempool.
+3.  `src/storage/` — LevelDB, MPT, `Account`, `StateDB`.
+4.  `src/storage_legacy.rs` — Snapshot JSON.
+5.  `src/validation.rs` — Aturan konsensus.
+6.  `src/rpc.rs` — `m_sendtoaddress`, `m_getbalance`, `m_getnonce`, `m_stop`, `m_generatetoaddress`, `m_submitblock`.
+7.  `src/p2p/dns_seed.rs` — Resolusi DNS.
+8.  `src/storage/account.rs` — Struktur `Account` dengan `immature_rewards`.
+9.  `src/storage/state.rs` — `credit_reward`, `apply_transaction`, `rollback_to`.
+10. `src/p2p/sync.rs` — `handle_reorg`, `accept_block`.
+
+---
+
+## 3. Status Terkini (Terakhir Diperbarui: 2026-10-22)
 
 ### 🟢 CHECKPOINT: `fase-4-lengkap`
 Sistem transfer *account-based* mainnet **STABIL** dan **TERUJI**. Fondasi penyimpanan telah dimigrasikan ke LevelDB + MPT. **Coinbase Maturity**, **Reorg Logic**, **DNS Seed Discovery**, dan **Uji Beban** telah diimplementasikan dan **diuji**.
 
-**JANGAN UBAH** kode berikut kecuali ada bug nyata:
-- `src/transaction.rs`, `src/blockchain.rs`, `src/storage/`, `src/storage_legacy.rs`.
-- `src/validation.rs` (kecuali aturan baru untuk *Policy*).
-- `src/rpc.rs` (khusus `m_sendtoaddress`, `m_getbalance`, `m_getnonce`, `m_stop`, `m_generatetoaddress`, `m_submitblock`).
-- `src/p2p/dns_seed.rs`.
-
 ### 🟢 FASE 2: HARDENING MAINNET (SELESAI)
 Semua pilar keamanan dan ekonomi telah diimplementasikan:
 
-- ✅ **Dynamic Fee (Bitcoin-Style):** Fee market murni dengan `min_relay_fee_per_byte` (1 sat/byte). Tidak ada *base fee* dinamis di state.
+- ✅ **Dynamic Fee (Bitcoin-Style):** Fee market murni dengan `min_relay_fee_per_byte` (1 sat/byte).
 - ✅ **Mempool Eviction:** Batas 300 MB, evict transaksi dengan *fee rate* terendah, dan expiry 14 hari.
-- ✅ **P2P Rate Limiting:** Batas 50 tx/detik dan 100 inv/detik per peer. Putus koneksi jika melanggar.
-- ✅ **RPC Security:** Cookie Authentication (tanpa password manual) + proteksi *bind address* (menolak RPC publik tanpa konfigurasi eksplisit).
+- ✅ **P2P Rate Limiting:** Batas 50 tx/detik dan 100 inv/detik per peer.
+- ✅ **RPC Security:** Cookie Authentication + proteksi *bind address*.
 - ✅ **Moving Download Window:** Batas 16 blok *in-flight* saat sinkronisasi P2P.
 - ✅ **Wallet Nonce Reuse AES-GCM:** Setiap entry memiliki nonce enkripsi unik.
 - ✅ **PBKDF2 600.000 Iterasi:** Standar keamanan OWASP.
-- ✅ **Replay Protection (Chain ID):** *Signing hash* menyertakan *magic bytes* jaringan, sehingga transaksi Regtest tidak valid di Testnet/Mainnet.
-- ✅ **RBF (Replace-By-Fee):** Transaksi dengan fee rendah bisa digantikan oleh transaksi fee tinggi (minimal +10%) dengan nonce yang sama.
+- ✅ **Replay Protection (Chain ID):** *Signing hash* menyertakan *magic bytes* jaringan.
+- ✅ **RBF (Replace-By-Fee):** Transaksi dengan fee rendah bisa digantikan oleh transaksi fee tinggi (minimal +10%).
 - ✅ **Regtest Mode:** Jaringan ketiga untuk *development* dan *testing* instan.
 
 ### 🟢 FASE 3: MIGRASI STORAGE (SELESAI)
 Penyimpanan *state* telah dimigrasikan dari `HashMap` + JSON ke **LevelDB + Merkle Patricia Trie (MPT)** ala Ethereum.
 
-- ✅ **LevelDB (Pure Rust):** Menggunakan `rusty-leveldb` untuk menghindari drama CMake/C++.
-- ✅ **Merkle Patricia Trie (MPT):** Menggunakan `eth_trie` + `rlp` untuk struktur *state* yang efisien dan bisa diverifikasi.
+- ✅ **LevelDB (Pure Rust):** Menggunakan `rusty-leveldb`.
+- ✅ **Merkle Patricia Trie (MPT):** Menggunakan `eth_trie` + `rlp`.
 - ✅ **Account Object:** Setiap akun menyimpan `nonce`, `balance`, dan `immature_rewards` dalam format RLP.
-- ✅ **State Snapshot (JSON):** Saat `stop`, state disimpan ke `state_snapshot.json` untuk persistensi antar-*session*. Saat *start*, *snapshot* dimuat kembali ke LevelDB jika kosong.
-- ✅ **Flush on Write:** Setiap penulisan ke LevelDB langsung di-*flush* ke disk untuk menjamin persistensi.
-- ✅ **`state_root` di Block:** Setiap blok sekarang memiliki `state_root` yang menyimpan *root hash* MPT setelah blok diterapkan.
+- ✅ **State Snapshot (JSON):** Saat `stop`, state disimpan ke `state_snapshot.json`.
+- ✅ **Flush on Write:** Setiap penulisan ke LevelDB langsung di-*flush* ke disk.
+- ✅ **`state_root` di Block:** Setiap blok memiliki `state_root` yang menyimpan *root hash* MPT.
 
 ### 🟢 FASE 4: COINBASE MATURITY (SELESAI & TERUJI)
-Fitur krusial untuk keamanan ekonomi telah diimplementasikan dan diuji.
-
-- ✅ **Coinbase Maturity (100 blok):** Hadiah *mining* masuk ke `immature_rewards` dan dipindahkan ke `balance` (mature) setelah 100 blok. Transaksi hanya bisa membelanjakan dari `balance`.
-- ✅ **Pengujian Regtest:** Mining 110 blok, verifikasi `spendable_balance` = 0 sebelum 100 blok, dan menjadi 500 setelah 101 blok. Transaksi berhasil setelah maturity.
-- ✅ **Keamanan `skip-pow`:** Menggunakan *feature flag* `skip-pow` yang hanya aktif saat `cargo test --features skip-pow`. *Binary* rilis tidak memiliki kode skip.
+- ✅ **Coinbase Maturity (100 blok):** Hadiah *mining* masuk ke `immature_rewards` dan dipindahkan ke `balance` setelah 100 blok.
+- ✅ **Pengujian Regtest:** Mining 110 blok, verifikasi `spendable_balance` = 0 sebelum 100 blok, dan menjadi 500 setelah 101 blok.
+- ✅ **Keamanan `skip-pow`:** Menggunakan *feature flag* `skip-pow` yang hanya aktif saat `cargo test --features skip-pow`.
 
 ### 🟢 FASE 4: REORG LOGIC (SELESAI & TERUJI)
-Fitur paling berbahaya telah diimplementasikan dan **terbukti bekerja** melalui pengujian end-to-end dengan dua node Regtest.
-
-- ✅ **Reorg Logic (Total Work):** Setiap blok memiliki `chainwork` (akumulasi work). `handle_reorg` membandingkan total work dan melakukan *rollback* state ke *common ancestor* menggunakan `state_root` jika rantai baru memiliki work lebih besar.
+- ✅ **Reorg Logic (Total Work):** Setiap blok memiliki `chainwork`. `handle_reorg` membandingkan total work dan melakukan *rollback* state ke *common ancestor*.
 - ✅ **StateDB Rollback:** Menggunakan `EthTrie::from(adapter, root)` untuk *rollback* ke *state root* tertentu.
 - ✅ **Pengujian End-to-End:** 
-    - Node A mining 5 blok (chainwork = 5).
-    - Node B mining 10 blok (chainwork = 10).
+    - Node A mining 5 blok.
+    - Node B mining 10 blok.
     - Blok 1-10 dari Node B dikirim ke Node A via `submitblock`.
     - Node A berhasil melakukan reorg, best block hash sama dengan Node B.
     - Saldo alamat Node A menjadi 0 (rollback), saldo alamat Node B menjadi 500 (state baru).
-- ✅ **RPC `submitblock` Diperbaiki:** Sekarang mendeteksi reorg dan memanggil `handle_reorg` alih-alih langsung menolak blok yang tidak terhubung ke tip.
+- ✅ **RPC `submitblock` Diperbaiki:** Mendeteksi reorg dan memanggil `handle_reorg`.
 
 ### 🟢 DNS SEED DISCOVERY (SELESAI & TERUJI)
-Mekanisme *peer discovery* otomatis telah diimplementasikan dan diuji.
-
 - ✅ **Modul `dns_seed` di `blockchain.rs`:** Daftar seed untuk Mainnet, Testnet, dan Regtest.
 - ✅ **Resolusi DNS:** Menggunakan `tokio::net::lookup_host` dengan port default jaringan.
-- ✅ **Pengujian:** Node Testnet berhasil me-resolve seed Bitcoin dan menemukan 23 peer (sebagai bukti mekanisme bekerja).
-- ⚠️ **Catatan:** Daftar seed saat ini kosong (setelah pengujian). Harus diisi dengan domain ZenaChain yang sebenarnya sebelum peluncuran publik.
+- ✅ **Pengujian:** Node Testnet berhasil me-resolve seed Bitcoin dan menemukan 23 peer.
+- ⚠️ **Catatan:** Daftar seed saat ini kosong (setelah pengujian). Harus diisi dengan domain ZenaChain sebelum peluncuran.
 
 ### 🟢 UJI BEBAN (SELESAI & TERUJI)
-Sistem telah diuji dengan ribuan bahkan jutaan transaksi tanpa crash.
-
 - ✅ **Pengujian:** Dilakukan menggunakan gabungan Testnet dan Regtest.
-- ✅ **Hasil:** Sistem stabil, tidak ada crash, dan mampu memproses transaksi dalam jumlah besar.
-- ✅ **Catatan:** Ini membuktikan bahwa arsitektur *account-based* dengan LevelDB + MPT mampu menangani beban tinggi.
+- ✅ **Hasil:** Sistem stabil, tidak ada crash, mampu memproses jutaan transaksi.
 
 ---
 
-## 3. Tugas Berikutnya (FASE 5: Dokumentasi, Audit, Testnet Publik)
+## 4. Tugas Berikutnya (FASE 5: Dokumentasi, Audit, Testnet Publik)
 
 ### Prioritas Tinggi (Wajib sebelum Testnet Publik)
 - [ ] **Uji P2P Sync Multi-Node:** Jalankan 3-5 node Testnet dan uji sinkronisasi.
@@ -108,7 +117,7 @@ Sistem telah diuji dengan ribuan bahkan jutaan transaksi tanpa crash.
 
 ### Prioritas Sedang (Wajib sebelum Mainnet)
 - [ ] **Uji Difficulty Adjustment:** Di Testnet, uji dengan parameter dipercepat (misalnya `DIFFICULTY_ADJUST_INTERVAL = 100`).
-- [ ] **Audit Keamanan:** Undang pihak ketiga untuk mengaudit kode (terutama `storage/`, `validation.rs`, dan `p2p/sync.rs`).
+- [ ] **Audit Keamanan:** Undang pihak ketiga untuk mengaudit kode.
 - [ ] **Uji Wallet Recovery:** Uji skenario *restore* wallet dari *backup*.
 - [ ] **Uji Serangan Umum:** Uji *eclipse*, *sybil*, *double-spend*, *selfish mining*.
 
@@ -118,29 +127,29 @@ Sistem telah diuji dengan ribuan bahkan jutaan transaksi tanpa crash.
 
 ---
 
-## 4. Catatan Penting
-- **Difficulty Adjustment:** Fitur berjalan sempurna. Di Testnet, saat mencapai blok 69.120, kesulitan naik drastis. Ini fitur, bukan bug.
-- **Jeda 5.000 Blok:** Batas batch sync P2P sudah dinaikkan jadi 5.000 header agar sinkronisasi lebih cepat.
+## 5. Catatan Penting
+- **Difficulty Adjustment:** Fitur berjalan sempurna. Di Testnet, saat mencapai blok 69.120, kesulitan naik drastis.
+- **Jeda 5.000 Blok:** Batas batch sync P2P sudah dinaikkan jadi 5.000 header.
 - **LevelDB Lock:** `rusty-leveldb` mengunci database saat dibuka. CLI tidak boleh membuka LevelDB secara langsung saat `zenachaind` mati. Gunakan *snapshot* JSON sebagai *fallback*.
-- **Persistensi:** Data *state* disimpan di LevelDB (saat *running*) dan JSON *snapshot* (saat *stop*). Keduanya sinkron.
-- **`state_root`:** Setiap blok sekarang memiliki `state_root` yang dihitung setelah transaksi diterapkan. Ini adalah kunci untuk Reorg Logic.
-- **`chainwork`:** Setiap blok memiliki `chainwork` (u128) yang dihitung dari `nbits`. Digunakan untuk membandingkan rantai saat reorg.
+- **Persistensi:** Data *state* disimpan di LevelDB (saat *running*) dan JSON *snapshot* (saat *stop*).
+- **`state_root`:** Setiap blok memiliki `state_root` yang dihitung setelah transaksi diterapkan.
+- **`chainwork`:** Setiap blok memiliki `chainwork` (u128) yang dihitung dari `nbits`.
 - **`immature_rewards`:** Setiap akun memiliki daftar reward yang belum matang. Maturity = 100 blok.
-- **`ZENAC_SKIP_POW`:** Sudah tidak digunakan. Beralih ke *feature flag* `skip-pow`. Gunakan `cargo test --features skip-pow` untuk tes cepat.
-- **DNS Seed:** Mekanisme resolusi DNS sudah berfungsi. Daftar seed saat ini kosong (setelah pengujian). Isi dengan domain ZenaChain sebelum peluncuran.
-- **RPC `getblock`:** Sudah diperbaiki. Field `index`, `nbits`, `reward`, `subsidy`, `total_fees` dikembalikan sebagai angka (`u32`/`u64`), bukan string. Ini memungkinkan `submitblock` mem-*parse* JSON dengan benar.
-- **RPC `submitblock`:** Sudah diperbaiki. Sekarang mendeteksi reorg (jika `previous_hash` tidak cocok dengan tip) dan memanggil `handle_reorg`.
-- **Uji Beban:** Sistem sudah diuji dengan jutaan transaksi tanpa crash (menggunakan Testnet & Regtest).
+- **`ZENAC_SKIP_POW`:** Sudah tidak digunakan. Beralih ke *feature flag* `skip-pow`.
+- **DNS Seed:** Mekanisme resolusi DNS sudah berfungsi. Daftar seed saat ini kosong. Isi dengan domain ZenaChain sebelum peluncuran.
+- **RPC `getblock`:** Field `index`, `nbits`, `reward`, `subsidy`, `total_fees` dikembalikan sebagai angka.
+- **RPC `submitblock`:** Mendeteksi reorg dan memanggil `handle_reorg`.
+- **Uji Beban:** Sistem sudah diuji dengan jutaan transaksi tanpa crash.
 
 ---
 
-## 5. Cara Melanjutkan di Chat Baru
+## 6. Cara Melanjutkan di Chat Baru
 Copy file ini dan tempel ke chat baru, lalu ketik:
-> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, 4 (Coinbase Maturity, Reorg Logic), DNS Seed, dan Uji Beban selesai. Lanjut FASE 5: Dokumentasi, Audit, dan Testnet Publik."
+> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, 4 (Coinbase Maturity, Reorg Logic), DNS Seed, dan Uji Beban selesai. Lanjut FASE 5: Dokumentasi, Audit, dan Testnet Publik. Patuhi prinsip 'If it ain't broke, don't fix it'."
 
 ---
 
-## 6. Perintah Penting
+## 7. Perintah Penting
 
 ### Mainnet
 - Start: `./zenachaind`
