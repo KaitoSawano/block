@@ -57,20 +57,22 @@ pub mod checkpoint {
 /// They must be populated with real, operational seed nodes before a
 /// public network launch. For local development (Regtest), this list
 /// is intentionally empty.
+///
+/// NOTE: The current entries are public Bitcoin DNS seeds, used only
+/// to verify that the DNS resolution mechanism works. They MUST be
+/// replaced with ZenaChain-specific seeds before any public launch.
 pub mod dns_seed {
     use crate::consensus::spec;
 
-    /// Mainnet DNS seeds.
+    /// Mainnet DNS seeds (currently using Bitcoin seeds for testing).
     pub const MAINNET_SEEDS: &[&str] = &[
-        // TODO: Replace with real operational seed hostnames before Mainnet launch.
-        // Example: "seed.zenachain.org",
-        // Example: "seed2.zenachain.org",
+        "seed.bitcoin.sipa.be",
+        "dnsseed.bluematt.me",
     ];
 
-    /// Testnet DNS seeds.
+    /// Testnet DNS seeds (currently using Bitcoin testnet seeds for testing).
     pub const TESTNET_SEEDS: &[&str] = &[
-        // TODO: Replace with real operational seed hostnames before Testnet launch.
-        // Example: "testnet-seed.zenachain.org",
+        "testnet-seed.bitcoin.jonasschnelli.ch",
     ];
 
     /// Regtest does not use DNS seeds.
