@@ -609,7 +609,7 @@ impl RpcHandler {
             "merkle_root": block.merkle_root,
             "mined_at": block.mined_at,
             "mined_for": block.mined_for,
-            "nbits": format!("{:#010x}", block.nbits),
+            "nbits": block.nbits,
         }))
     }
 
@@ -706,7 +706,7 @@ impl RpcHandler {
             "mined_at": block.mined_at,
             "mined_for": block.mined_for,
             "nonce": block.nonce,
-            "nbits": format!("{:#010x}", block.nbits),
+            "nbits": block.nbits,
             "reward": to_coin(block.reward),
             "subsidy": to_coin(block.subsidy),
             "total_fees": to_coin(block.total_fees),
@@ -742,7 +742,7 @@ impl RpcHandler {
             "time": block.timestamp,
             "mediantime": block.timestamp,
             "nonce": block.nonce,
-            "bits": format!("{:#010x}", block.nbits),
+            "bits": block.nbits,
             "previousblockhash": block.previous_hash,
             "chainwork": block.chainwork.to_string(),
             "nextblockhash": if block.index + 1 < chain.chain.len() as u64 {
@@ -803,7 +803,7 @@ impl RpcHandler {
                 "merkle_root": g.merkle_root,
                 "state_root": g.state_root,
                 "nonce": g.nonce,
-                "nbits": format!("{:#010x}", g.nbits),
+                "nbits": g.nbits,
                 "reward": to_coin(g.reward),
                 "subsidy": to_coin(g.subsidy),
                 "total_fees": to_coin(g.total_fees),
