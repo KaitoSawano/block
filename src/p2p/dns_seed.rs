@@ -7,14 +7,13 @@
 
 use std::net::SocketAddr;
 
-/// List of ZenaChain DNS seeds.
-/// Populate this list with real hostnames once the seeds are deployed.
-pub const DNS_SEEDS: &[&str] = &[];
+use crate::blockchain::dns_seed;
 
-/// Resolve every DNS seed and return the resulting socket addresses.
+/// Resolve every DNS seed for the current network and return the
+/// resulting socket addresses.
 pub async fn resolve_seeds() -> Vec<SocketAddr> {
     let mut out = Vec::new();
-    for seed in DNS_SEEDS {
+    for seed in dns_seed::seeds_for_current_network() {
         match tokio::net::lookup_host(seed).await {
             Ok(iter) => {
                 for addr in iter {
