@@ -30,7 +30,7 @@ Sekarang mendukung tiga jaringan: **Mainnet**, **Testnet**, dan **Regtest**, den
 ## 2. Status Terkini (Terakhir Diperbarui: 2026-10-22)
 
 ### 🟢 CHECKPOINT: `fase-4-dan-dns-seed-selesai`
-Sistem transfer *account-based* mainnet **STABIL** dan **TERUJI**. Fondasi penyimpanan telah dimigrasikan ke LevelDB + MPT. **Coinbase Maturity**, **Reorg Logic**, dan **DNS Seed Discovery** telah diimplementasikan dan diuji.
+Sistem transfer *account-based* mainnet **STABIL** dan **TERUJI**. Fondasi penyimpanan telah dimigrasikan ke LevelDB + MPT. **Coinbase Maturity**, **Reorg Logic**, dan **DNS Seed Discovery** telah diimplementasikan.
 
 **JANGAN UBAH** kode berikut kecuali ada bug nyata:
 - `src/transaction.rs`, `src/blockchain.rs`, `src/storage/`, `src/storage_legacy.rs`.
@@ -62,15 +62,19 @@ Penyimpanan *state* telah dimigrasikan dari `HashMap` + JSON ke **LevelDB + Merk
 - ✅ **Flush on Write:** Setiap penulisan ke LevelDB langsung di-*flush* ke disk untuk menjamin persistensi.
 - ✅ **`state_root` di Block:** Setiap blok sekarang memiliki `state_root` yang menyimpan *root hash* MPT setelah blok diterapkan.
 
-### 🟢 FASE 4: COINBASE MATURITY & REORG LOGIC (SELESAI)
-Dua fitur krusial untuk keamanan ekonomi dan konsensus telah diimplementasikan dan diuji.
+### 🟢 FASE 4: COINBASE MATURITY (SELESAI)
+Fitur krusial untuk keamanan ekonomi telah diimplementasikan dan diuji.
 
 - ✅ **Coinbase Maturity (100 blok):** Hadiah *mining* masuk ke `immature_rewards` dan dipindahkan ke `balance` (mature) setelah 100 blok. Transaksi hanya bisa membelanjakan dari `balance`.
-- ✅ **Reorg Logic (Total Work):** Setiap blok memiliki `chainwork` (akumulasi work). `handle_reorg` membandingkan total work dan melakukan *rollback* state ke *common ancestor* menggunakan `state_root` jika rantai baru memiliki work lebih besar.
-- ✅ **StateDB Rollback:** Menggunakan `EthTrie::from(adapter, root)` untuk *rollback* ke *state root* tertentu.
-- ✅ **Genesis Baru:** Hash genesis diperbarui karena `chainwork` ditambahkan ke `calculate_hash`.
 - ✅ **Pengujian Regtest:** Mining 110 blok, verifikasi `spendable_balance` = 0 sebelum 100 blok, dan menjadi 500 setelah 101 blok. Transaksi berhasil setelah maturity.
 - ✅ **Keamanan `skip-pow`:** Menggunakan *feature flag* `skip-pow` yang hanya aktif saat `cargo test --features skip-pow`. *Binary* rilis tidak memiliki kode skip.
+
+### 🟡 FASE 4: REORG LOGIC (KODE SELESAI, PENGUJIAN TERTUNDA)
+Kode Reorg Logic sudah diimplementasikan, tetapi pengujian end-to-end tertunda karena masalah serialisasi JSON.
+
+- ✅ **Reorg Logic (Total Work):** Setiap blok memiliki `chainwork` (akumulasi work). `handle_reorg` membandingkan total work dan melakukan *rollback* state ke *common ancestor* menggunakan `state_root` jika rantai baru memiliki work lebih besar.
+- ✅ **StateDB Rollback:** Menggunakan `EthTrie::from(adapter, root)` untuk *rollback* ke *state root* tertentu.
+- ⚠️ **Pengujian Tertunda:** Pengujian reorg dengan dua node Regtest terhenti karena `submitblock` gagal mem-*parse* JSON. Field `nbits`, `reward`, `subsidy`, dan `total_fees` di `getblock` masih dikembalikan sebagai string (hex/coin), bukan angka (`u32`/`u64`). Perbaikan sudah disiapkan (mengubah `getblock` agar mengembalikan angka), tetapi belum diterapkan.
 
 ### 🟢 DNS SEED DISCOVERY (SELESAI)
 Mekanisme *peer discovery* otomatis telah diimplementasikan dan diuji.
@@ -82,17 +86,25 @@ Mekanisme *peer discovery* otomatis telah diimplementasikan dan diuji.
 
 ---
 
-## 3. Tugas Berikutnya (FASE 5: Dokumentasi, Audit, dan Testnet Publik)
+## 3. Tugas Berikutnya (FASE 5: Penyelesaian Reorg, Dokumentasi, Audit, Testnet Publik)
 
-Sebelum Mainnet diluncurkan, ada beberapa tugas yang harus diselesaikan:
+### Prioritas Tinggi (Wajib sebelum Testnet Publik)
+- [ ] **Perbaiki Serialisasi JSON di `getblock`:** Ubah `nbits`, `reward`, `subsidy`, dan `total_fees` agar dikembalikan sebagai angka (`u32`/`u64`), bukan string.
+- [ ] **Uji Reorg Logic:** Setelah perbaikan JSON, ulangi pengujian reorg dengan dua node Regtest. Pastikan rollback state bekerja dan saldo konsisten.
+- [ ] **Uji P2P Sync Multi-Node:** Jalankan 3-5 node Testnet dan uji sinkronisasi.
+- [ ] **Isi Checkpoint:** Tambahkan hash blok yang sudah dikonfirmasi ke `CHECKPOINTS`.
+- [ ] **DNS Seed ZenaChain:** Daftarkan domain ZenaChain untuk *peer discovery*.
 
-- [ ] **Dokumentasi:** Memperbarui `README.md` dengan panduan instalasi, penggunaan, dan arsitektur.
-- [ ] **Audit Keamanan:** Mengundang pihak ketiga untuk mengaudit kode (terutama `storage/`, `validation.rs`, dan `p2p/sync.rs`).
-- [ ] **Testnet Publik:** Meluncurkan Testnet untuk diuji oleh komunitas.
-- [ ] **DNS Seeds ZenaChain:** Mendaftarkan *domain* untuk *peer discovery* otomatis.
-- [ ] **Checkpoint:** Mengisi `CHECKPOINTS` dengan hash blok yang sudah dikonfirmasi (saat ini masih kosong).
+### Prioritas Sedang (Wajib sebelum Mainnet)
+- [ ] **Uji Difficulty Adjustment:** Di Testnet, uji dengan parameter dipercepat (misalnya `DIFFICULTY_ADJUST_INTERVAL = 100`).
+- [ ] **Audit Keamanan:** Undang pihak ketiga untuk mengaudit kode (terutama `storage/`, `validation.rs`, dan `p2p/sync.rs`).
+- [ ] **Uji Wallet Recovery:** Uji skenario *restore* wallet dari *backup*.
+- [ ] **Uji Serangan Umum:** Uji *eclipse*, *sybil*, *double-spend*, *selfish mining*.
+
+### Prioritas Rendah (Setelah Mainnet)
 - [ ] **Pruning:** Implementasi *pruning* untuk menghemat disk.
-- [ ] **Optimasi P2P:** *Parallel block download* untuk sinkronisasi lebih cepat.
+- [ ] **Uji Beban:** Uji dengan ribuan transaksi per detik.
+- [ ] **Optimasi P2P:** *Parallel block download*.
 
 ---
 
@@ -106,12 +118,13 @@ Sebelum Mainnet diluncurkan, ada beberapa tugas yang harus diselesaikan:
 - **`immature_rewards`:** Setiap akun memiliki daftar reward yang belum matang. Maturity = 100 blok.
 - **`ZENAC_SKIP_POW`:** Sudah tidak digunakan. Beralih ke *feature flag* `skip-pow`. Gunakan `cargo test --features skip-pow` untuk tes cepat.
 - **DNS Seed:** Mekanisme resolusi DNS sudah berfungsi. Daftar seed saat ini kosong (setelah pengujian). Isi dengan domain ZenaChain sebelum peluncuran.
+- **Serialisasi JSON:** `getblock` saat ini mengembalikan `nbits`, `reward`, `subsidy`, dan `total_fees` sebagai string. Ini menyebabkan `submitblock` gagal mem-*parse* JSON. Perbaikan sudah disiapkan tetapi belum diterapkan.
 
 ---
 
 ## 5. Cara Melanjutkan di Chat Baru
 Copy file ini dan tempel ke chat baru, lalu ketik:
-> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, 4, dan DNS Seed selesai. Lanjut FASE 5: Dokumentasi, Audit, dan Testnet Publik."
+> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, 4 (Coinbase Maturity), dan DNS Seed selesai. Reorg Logic kodenya selesai tapi pengujian tertunda karena masalah serialisasi JSON di `getblock`. Lanjut FASE 5: Perbaiki serialisasi JSON, uji reorg, lalu dokumentasi dan audit."
 
 ---
 
