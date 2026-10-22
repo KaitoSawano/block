@@ -29,13 +29,14 @@ Sekarang mendukung tiga jaringan: **Mainnet**, **Testnet**, dan **Regtest**, den
 
 ## 2. Status Terkini (Terakhir Diperbarui: 2026-10-22)
 
-### 🟢 CHECKPOINT: `fase-4-selesai` (Fase 2, 3, dan 4 Selesai)
-Sistem transfer *account-based* mainnet **STABIL** dan **TERUJI**. Fondasi penyimpanan telah dimigrasikan ke LevelDB + MPT. **Coinbase Maturity** dan **Reorg Logic** telah diimplementasikan dan diuji di Regtest.
+### 🟢 CHECKPOINT: `fase-4-dan-dns-seed-selesai`
+Sistem transfer *account-based* mainnet **STABIL** dan **TERUJI**. Fondasi penyimpanan telah dimigrasikan ke LevelDB + MPT. **Coinbase Maturity**, **Reorg Logic**, dan **DNS Seed Discovery** telah diimplementasikan dan diuji.
 
 **JANGAN UBAH** kode berikut kecuali ada bug nyata:
 - `src/transaction.rs`, `src/blockchain.rs`, `src/storage/`, `src/storage_legacy.rs`.
 - `src/validation.rs` (kecuali aturan baru untuk *Policy*).
 - `src/rpc.rs` (khusus `m_sendtoaddress`, `m_getbalance`, `m_getnonce`, `m_stop`, `m_generatetoaddress`).
+- `src/p2p/dns_seed.rs`.
 
 ### 🟢 FASE 2: HARDENING MAINNET (SELESAI)
 Semua pilar keamanan dan ekonomi telah diimplementasikan:
@@ -71,6 +72,14 @@ Dua fitur krusial untuk keamanan ekonomi dan konsensus telah diimplementasikan d
 - ✅ **Pengujian Regtest:** Mining 110 blok, verifikasi `spendable_balance` = 0 sebelum 100 blok, dan menjadi 500 setelah 101 blok. Transaksi berhasil setelah maturity.
 - ✅ **Keamanan `skip-pow`:** Menggunakan *feature flag* `skip-pow` yang hanya aktif saat `cargo test --features skip-pow`. *Binary* rilis tidak memiliki kode skip.
 
+### 🟢 DNS SEED DISCOVERY (SELESAI)
+Mekanisme *peer discovery* otomatis telah diimplementasikan dan diuji.
+
+- ✅ **Modul `dns_seed` di `blockchain.rs`:** Daftar seed untuk Mainnet, Testnet, dan Regtest.
+- ✅ **Resolusi DNS:** Menggunakan `tokio::net::lookup_host` dengan port default jaringan.
+- ✅ **Pengujian:** Node Testnet berhasil me-resolve seed Bitcoin dan menemukan 23 peer (sebagai bukti mekanisme bekerja).
+- ⚠️ **Catatan:** Daftar seed saat ini kosong (setelah pengujian). Harus diisi dengan domain ZenaChain yang sebenarnya sebelum peluncuran publik.
+
 ---
 
 ## 3. Tugas Berikutnya (FASE 5: Dokumentasi, Audit, dan Testnet Publik)
@@ -80,7 +89,7 @@ Sebelum Mainnet diluncurkan, ada beberapa tugas yang harus diselesaikan:
 - [ ] **Dokumentasi:** Memperbarui `README.md` dengan panduan instalasi, penggunaan, dan arsitektur.
 - [ ] **Audit Keamanan:** Mengundang pihak ketiga untuk mengaudit kode (terutama `storage/`, `validation.rs`, dan `p2p/sync.rs`).
 - [ ] **Testnet Publik:** Meluncurkan Testnet untuk diuji oleh komunitas.
-- [ ] **DNS Seeds:** Mendaftarkan *domain* untuk *peer discovery* otomatis.
+- [ ] **DNS Seeds ZenaChain:** Mendaftarkan *domain* untuk *peer discovery* otomatis.
 - [ ] **Checkpoint:** Mengisi `CHECKPOINTS` dengan hash blok yang sudah dikonfirmasi (saat ini masih kosong).
 - [ ] **Pruning:** Implementasi *pruning* untuk menghemat disk.
 - [ ] **Optimasi P2P:** *Parallel block download* untuk sinkronisasi lebih cepat.
@@ -96,12 +105,13 @@ Sebelum Mainnet diluncurkan, ada beberapa tugas yang harus diselesaikan:
 - **`chainwork`:** Setiap blok memiliki `chainwork` (u128) yang dihitung dari `nbits`. Digunakan untuk membandingkan rantai saat reorg.
 - **`immature_rewards`:** Setiap akun memiliki daftar reward yang belum matang. Maturity = 100 blok.
 - **`ZENAC_SKIP_POW`:** Sudah tidak digunakan. Beralih ke *feature flag* `skip-pow`. Gunakan `cargo test --features skip-pow` untuk tes cepat.
+- **DNS Seed:** Mekanisme resolusi DNS sudah berfungsi. Daftar seed saat ini kosong (setelah pengujian). Isi dengan domain ZenaChain sebelum peluncuran.
 
 ---
 
 ## 5. Cara Melanjutkan di Chat Baru
 Copy file ini dan tempel ke chat baru, lalu ketik:
-> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, dan 4 selesai. Lanjut FASE 5: Dokumentasi, Audit, dan Testnet Publik."
+> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, 4, dan DNS Seed selesai. Lanjut FASE 5: Dokumentasi, Audit, dan Testnet Publik."
 
 ---
 
