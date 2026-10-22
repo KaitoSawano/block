@@ -206,6 +206,38 @@ fn main() {
             };
             rpc::call_and_print("getbalance", params);
         }
+        // --- NEW COMMANDS FOR REORG TESTING ---
+        "submitblock" => {
+            if args.len() < 3 {
+                println!("usage: zenachain submitblock <block_json_file>");
+                return;
+            }
+            let path = &args[2];
+            let data = match std::fs::read_to_string(path) {
+                Ok(d) => d,
+                Err(e) => {
+                    println!("failed to read file {}: {}", path, e);
+                    return;
+                }
+            };
+            let block: serde_json::Value = match serde_json::from_str(&data) {
+                Ok(b) => b,
+                Err(e) => {
+                    println!("failed to parse block JSON: {}", e);
+                    return;
+                }
+            };
+            rpc::call_and_print("submitblock", vec![block]);
+        }
+        "connect" => {
+            if args.len() < 3 {
+                println!("usage: zenachain connect <addr>");
+                return;
+            }
+            // This is a P2P command, but for now we can just print it.
+            // A full implementation would send a command to the network loop.
+            println!("connect command is not yet implemented in CLI. Use P2P bootstrap instead.");
+        }
         _ => {
             println!("unknown command: {}", args[1]);
             print_help();
@@ -258,6 +290,7 @@ fn print_help() {
     println!("  getaddtoaddress \"<address>\"         set a manual mining address");
     println!("  generatetoaddress <n> \"<address>\"   mine n blocks directly to the given address");
     println!("  sendtoaddress <amount> \"<address>\" [\"<from>\"] send coins from the wallet to the destination");
+    println!("  submitblock <block_json_file>       submit a block from a JSON file");
     println!("  dumpprivkey \"<address>\"             display the private key for the given address");
     println!("  importprivkey \"<privkey>\"           import a private key into the wallet");
     println!("  getbalance [address]                compute the wallet balance");
