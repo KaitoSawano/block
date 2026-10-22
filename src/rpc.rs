@@ -697,8 +697,8 @@ impl RpcHandler {
         };
         RpcResponse::ok(json!({
             "nversion": block.nversion,
+            "index": block.index,
             "hash": block.hash,
-            "height": block.index,
             "previous_hash": block.previous_hash,
             "merkle_root": block.merkle_root,
             "state_root": block.state_root,
