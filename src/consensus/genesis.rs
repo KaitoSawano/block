@@ -64,13 +64,13 @@ pub const TESTNET_EXPECTED_GENESIS_NONCE: u64 = 491730;
 
 pub const REGTEST_GENESIS_TIMESTAMP: u128 = 1792303198447;
 
-pub const REGTEST_EXPECTED_GENESIS_HASH: &str = "1fe571bb1af8efb2e4a4769445f41d99655769396208e43666d1a30e95ef1438";
+pub const REGTEST_EXPECTED_GENESIS_HASH: &str = "7c6e5e0514725895cdb0e0f1d0fe41ebb720c37a2b34da771b8f4e9ee4af7a4b";
 
 pub const REGTEST_EXPECTED_GENESIS_MERKLE_ROOT: &str = "66b3fa4e2de637bb17964e16ecefe77e45872b8913f2aedc77b3fe354a2daf2b";
 
 pub const REGTEST_EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198447;
 
-pub const REGTEST_EXPECTED_GENESIS_NONCE: u64 = 0;
+pub const REGTEST_EXPECTED_GENESIS_NONCE: u64 = 3;
 
 // ----------------------------------------------------------------------
 // Network-aware accessors
