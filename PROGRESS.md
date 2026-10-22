@@ -49,6 +49,8 @@ Kode berikut sudah **stabil dan teruji**. Jangan mengubahnya tanpa alasan yang s
 9.  `src/storage/state.rs` — `credit_reward`, `apply_transaction`, `rollback_to`.
 10. `src/p2p/sync.rs` — `handle_reorg`, `accept_block`.
 
+Tapi.. sebenarnya boleh saja mengubah memperbaiki. atau menambahkan kode. selagi ada bug atau keanehan pada kode. jika stabil dilarang keras menyentuh/mengubah kode!.
+
 ---
 
 ## 3. Status Terkini (Terakhir Diperbarui: 2026-10-22)
