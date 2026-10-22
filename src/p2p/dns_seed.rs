@@ -24,7 +24,10 @@ pub async fn resolve_seeds() -> Vec<SocketAddr> {
             format!("{}:{}", seed, port)
         };
 
-        match tokio::net::lookup_host(&host).await {
+        // Bind the result to a local variable so that the borrow of
+        // `host` ends before `host` is dropped.
+        let lookup_result = tokio::net::lookup_host(&host).await;
+        match lookup_result {
             Ok(iter) => {
                 for addr in iter {
                     out.push(addr);
@@ -47,7 +50,10 @@ pub async fn resolve_one(seed: &str) -> Vec<SocketAddr> {
         format!("{}:{}", seed, port)
     };
 
-    match tokio::net::lookup_host(&host).await {
+    // Bind the result to a local variable to avoid the borrow
+    // outliving `host`.
+    let lookup_result = tokio::net::lookup_host(&host).await;
+    match lookup_result {
         Ok(iter) => iter.collect(),
         Err(e) => {
             eprintln!("[dns_seed] failed to resolve {}: {}", host, e);
