@@ -16,7 +16,6 @@ use super::adapter::LevelDbAdapter;
 
 pub struct StateDB {
     trie: EthTrie<LevelDbAdapter>,
-    // Store the adapter Arc so we can recreate the trie during rollback.
     adapter: Arc<LevelDbAdapter>,
 }
 
@@ -24,10 +23,7 @@ impl StateDB {
     pub fn open(path: &Path) -> Result<Self, String> {
         let adapter = Arc::new(LevelDbAdapter::open(path)?);
         let trie = EthTrie::new(adapter.clone());
-        Ok(StateDB {
-            trie,
-            adapter,
-        })
+        Ok(StateDB { trie, adapter })
     }
 
     fn address_key(address: &str) -> [u8; 32] {
@@ -60,29 +56,26 @@ impl StateDB {
         Ok(arr)
     }
 
-    /// Rollback the state to a specific root hash. This is used during a chain reorganization.
-    /// Creates a new trie instance from the stored adapter and the provided root hash.
     pub fn rollback_to(&mut self, root_hash: &[u8; 32]) -> Result<(), String> {
-        // Convert the byte array to the B256 type expected by eth_trie.
         let root = B256::from_slice(root_hash);
-        
-        // Create a new trie from the same adapter, rooted at the given hash.
         let new_trie = EthTrie::from(self.adapter.clone(), root)
             .map_err(|e| format!("failed to create trie from root: {}", e))?;
-        
         self.trie = new_trie;
         Ok(())
     }
 
-    /// Return the total balance, which includes both mature and immature funds.
+    /// Return the total balance (mature + immature).
     pub fn balance_of(&self, address: &str) -> u64 {
         match self.get_account(address) {
-            Ok(Some(acc)) => acc.balance.saturating_add(acc.immature_balance),
+            Ok(Some(acc)) => {
+                let immature: u64 = acc.immature_rewards.iter().map(|(_, a)| a).sum();
+                acc.balance.saturating_add(immature)
+            }
             _ => 0,
         }
     }
 
-    /// Return the spendable balance, which excludes immature mining rewards.
+    /// Return the spendable (mature) balance.
     pub fn spendable_balance_of(&self, address: &str) -> u64 {
         match self.get_account(address) {
             Ok(Some(acc)) => acc.balance,
@@ -107,7 +100,7 @@ impl StateDB {
     ) -> Result<(), String> {
         let mut from_acc = self
             .get_account(from)?
-            .unwrap_or(Account { nonce: 0, balance: 0, immature_balance: 0, last_reward_height: 0 });
+            .unwrap_or(Account { nonce: 0, balance: 0, immature_rewards: Vec::new() });
 
         if from_acc.nonce != nonce {
             return Err(format!(
@@ -120,17 +113,16 @@ impl StateDB {
             .checked_add(fee)
             .ok_or_else(|| "amount + fee overflows u64".to_string())?;
 
-        // Coinbase Maturity enforcement: transactions can only spend mature funds.
         if from_acc.balance < total {
             return Err(format!(
-                "insufficient mature balance: required {}, available {} (immature: {})",
-                total, from_acc.balance, from_acc.immature_balance
+                "insufficient mature balance: required {}, available {}",
+                total, from_acc.balance
             ));
         }
 
         let mut to_acc = self
             .get_account(to)?
-            .unwrap_or(Account { nonce: 0, balance: 0, immature_balance: 0, last_reward_height: 0 });
+            .unwrap_or(Account { nonce: 0, balance: 0, immature_rewards: Vec::new() });
 
         from_acc.balance -= total;
         from_acc.nonce += 1;
@@ -145,36 +137,35 @@ impl StateDB {
         Ok(())
     }
 
-    /// Credit a mining reward to an account. The reward enters the `immature_balance`
-    /// and is moved to the `balance` after the `COINBASE_MATURITY` window has elapsed.
+    /// Credit a mining reward to an account. The reward is added to the list of
+    /// immature rewards. On each call, any reward that has reached `COINBASE_MATURITY`
+    /// (100 blocks) is moved to the mature balance.
     pub fn credit_reward(&mut self, miner: &str, reward: u64, block_height: u64) -> Result<(), String> {
         let mut acc = self
             .get_account(miner)?
-            .unwrap_or(Account { nonce: 0, balance: 0, immature_balance: 0, last_reward_height: 0 });
+            .unwrap_or(Account { nonce: 0, balance: 0, immature_rewards: Vec::new() });
 
-        let maturity_window = crate::consensus::rules::COINBASE_MATURITY;
+        let maturity = crate::consensus::rules::COINBASE_MATURITY;
 
-        // Step 1: Mature any previous immature balance if the maturity window has passed.
-        if acc.immature_balance > 0 && block_height >= acc.last_reward_height.saturating_add(maturity_window) {
-            acc.balance = acc.balance.saturating_add(acc.immature_balance);
-            acc.immature_balance = 0;
+        // Mature any rewards that have reached the maturity window.
+        let mut still_immature = Vec::new();
+        for (height, amount) in acc.immature_rewards.drain(..) {
+            if block_height >= height.saturating_add(maturity) {
+                acc.balance = acc.balance.saturating_add(amount);
+            } else {
+                still_immature.push((height, amount));
+            }
         }
+        acc.immature_rewards = still_immature;
 
-        // Step 2: Add the new reward to the immature balance.
-        acc.immature_balance = acc
-            .immature_balance
-            .checked_add(reward)
-            .ok_or_else(|| "miner balance overflow".to_string())?;
-        
-        // Step 3: Update the height at which the last reward was credited.
-        acc.last_reward_height = block_height;
+        // Add the new reward.
+        acc.immature_rewards.push((block_height, reward));
 
         self.update_account(miner, &acc)?;
         Ok(())
     }
 
     pub fn flush(&mut self) -> Result<(), String> {
-        // The adapter flushes on every write, so this is a no-op.
         Ok(())
     }
 }
