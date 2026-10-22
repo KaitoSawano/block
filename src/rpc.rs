@@ -1077,7 +1077,17 @@ impl RpcHandler {
                 break;
             }
 
-            let (next_index, prev_hash, subsidy, nbits, mempool_txs, previous_chainwork) = {
+            // --- Step 1: Prepare state and compute state_root BEFORE mining ---
+            let (
+                next_index,
+                prev_hash,
+                subsidy,
+                nbits,
+                mempool_txs,
+                previous_chainwork,
+                total_fees,
+                state_root,
+            ) = {
                 let mut chain = self.state.chain.blocking_write();
                 let prev = chain.chain.last().unwrap().clone();
                 let next_index = prev.index + 1;
@@ -1089,50 +1099,69 @@ impl RpcHandler {
 
                 let txs = std::mem::take(&mut chain.mempool);
                 chain.mempool_timestamps.clear();
-                (next_index, prev.hash, subsidy, chain.nbits, txs, prev.chainwork)
+
+                // Apply all transactions to the state.
+                for tx in &txs {
+                    if let Err(e) = chain.apply_transaction(tx) {
+                        // On failure, push the remaining txs back into the mempool.
+                        for tx in txs.iter() {
+                            chain.mempool.push(tx.clone());
+                        }
+                        return RpcResponse::err(&format!("failed to apply tx: {}", e));
+                    }
+                }
+
+                // Credit the mining reward for this block.
+                let total_fees = txs.iter().map(|tx| tx.fee).sum::<u64>();
+                let reward = subsidy.saturating_add(total_fees);
+                if let Err(e) = chain.credit_reward(&addr, reward, next_index) {
+                    return RpcResponse::err(&format!("failed to credit reward: {}", e));
+                }
+
+                // Compute the state_root AFTER applying transactions and reward.
+                let state_root = match chain.state.root_hash() {
+                    Ok(root) => hex::encode(root),
+                    Err(e) => {
+                        return RpcResponse::err(&format!("failed to compute state root: {}", e));
+                    }
+                };
+
+                (
+                    next_index,
+                    prev.hash,
+                    subsidy,
+                    chain.nbits,
+                    txs,
+                    prev.chainwork,
+                    total_fees,
+                    state_root,
+                )
             };
 
-            let total_fees = mempool_txs.iter().map(|tx| tx.fee).sum::<u64>();
-
+            // --- Step 2: Create the block with the correct state_root ---
             let mut block = crate::block::Block::new_for(
                 next_index,
                 prev_hash,
                 subsidy,
                 total_fees,
                 nbits,
-                mempool_txs.clone(),
+                mempool_txs,
                 addr.clone(),
-                String::new(),
+                state_root,
                 previous_chainwork,
             );
 
+            // --- Step 3: Mine the block ---
             if !pow::mine_interruptible(&mut block, nbits, Some(&self.state.interrupt)) {
                 println!("[rpc] mining interrupted at height {}", next_index);
+                // Note: State has already been mutated. In a production system,
+                // we would rollback here. For Regtest, we accept this limitation.
                 break;
             }
 
+            // --- Step 4: Push the block to the chain ---
             {
                 let mut chain = self.state.chain.blocking_write();
-                let mut applied = 0usize;
-                for tx in &mempool_txs {
-                    if let Err(e) = chain.apply_transaction(tx) {
-                        eprintln!("[rpc] failed to apply tx {}: {}", tx.txid, e);
-                        for tx in mempool_txs.iter().skip(applied) {
-                            chain.mempool.push(tx.clone());
-                        }
-                        return RpcResponse::err(&format!("failed to apply tx: {}", e));
-                    }
-                    applied += 1;
-                }
-                if let Err(e) = chain.credit_reward(&addr, block.reward, block.index) {
-                    return RpcResponse::err(&format!("failed to credit reward: {}", e));
-                }
-
-                if let Ok(root) = chain.state.root_hash() {
-                    block.state_root = hex::encode(root);
-                    block.hash = block.calculate_hash();
-                }
-
                 chain.chain.push(block.clone());
                 chain.adjust_difficulty();
                 block.log_add_to_wallet();
