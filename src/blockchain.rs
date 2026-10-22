@@ -135,8 +135,7 @@ impl Blockchain {
                     &Account {
                         nonce: 0,
                         balance: genesis.reward,
-                        immature_balance: 0,
-                        last_reward_height: 0,
+                        immature_rewards: Vec::new(),
                     },
                 )
                 .expect("failed to init genesis account");
