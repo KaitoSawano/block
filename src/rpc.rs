@@ -571,6 +571,32 @@ impl RpcHandler {
         let mut chain = self.state.chain.blocking_write();
         let prev = chain.chain.last().unwrap().clone();
 
+        // If the block does not connect to our tip, it might be a reorg.
+        if block.previous_hash != prev.hash {
+            if chain.chain.iter().any(|b| b.hash == block.previous_hash) {
+                println!("[rpc] submitblock: potential reorg detected, calling handle_reorg");
+                let result = crate::p2p::sync::SyncState::handle_reorg(&mut chain, block.clone());
+                drop(chain);
+                return match result {
+                    Ok(_) => {
+                        let tx = self.state.network_cmd_tx.clone();
+                        let hash = block.hash.clone();
+                        let _ = tx.blocking_send(NetworkCommand::BroadcastBlock(hash));
+                        RpcResponse::ok(json!({
+                            "accepted": true,
+                            "height": block.index,
+                            "hash": block.hash,
+                            "reorg": true,
+                        }))
+                    }
+                    Err(e) => RpcResponse::err(&format!("reorg failed: {}", e)),
+                };
+            } else {
+                return RpcResponse::err("block rejected: parent not found (orphan)");
+            }
+        }
+
+        // Normal path: block connects to the tip.
         if let Err(e) = validation::validate_block(&chain, &prev, &block) {
             return RpcResponse::err(&format!("block rejected: {}", e));
         }
