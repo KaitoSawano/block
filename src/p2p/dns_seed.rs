@@ -8,20 +8,30 @@
 use std::net::SocketAddr;
 
 use crate::blockchain::dns_seed;
+use crate::consensus::spec;
 
 /// Resolve every DNS seed for the current network and return the
 /// resulting socket addresses.
 pub async fn resolve_seeds() -> Vec<SocketAddr> {
     let mut out = Vec::new();
+    let port = spec::current_network().default_port();
     for seed in dns_seed::seeds_for_current_network() {
-        match tokio::net::lookup_host(seed).await {
+        // `lookup_host` requires a port in the string. Append the
+        // network's default P2P port if it is not already present.
+        let host = if seed.contains(':') {
+            seed.to_string()
+        } else {
+            format!("{}:{}", seed, port)
+        };
+
+        match tokio::net::lookup_host(&host).await {
             Ok(iter) => {
                 for addr in iter {
                     out.push(addr);
                 }
             }
             Err(e) => {
-                eprintln!("[dns_seed] failed to resolve {}: {}", seed, e);
+                eprintln!("[dns_seed] failed to resolve {}: {}", host, e);
             }
         }
     }
@@ -30,10 +40,17 @@ pub async fn resolve_seeds() -> Vec<SocketAddr> {
 
 /// Resolve a single DNS seed.
 pub async fn resolve_one(seed: &str) -> Vec<SocketAddr> {
-    match tokio::net::lookup_host(seed).await {
+    let port = spec::current_network().default_port();
+    let host = if seed.contains(':') {
+        seed.to_string()
+    } else {
+        format!("{}:{}", seed, port)
+    };
+
+    match tokio::net::lookup_host(&host).await {
         Ok(iter) => iter.collect(),
         Err(e) => {
-            eprintln!("[dns_seed] failed to resolve {}: {}", seed, e);
+            eprintln!("[dns_seed] failed to resolve {}: {}", host, e);
             Vec::new()
         }
     }
