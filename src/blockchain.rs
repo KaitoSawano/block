@@ -51,6 +51,41 @@ pub mod checkpoint {
     }
 }
 
+/// DNS seeds for peer discovery.
+///
+/// These hostnames are resolved at startup to bootstrap the P2P network.
+/// They must be populated with real, operational seed nodes before a
+/// public network launch. For local development (Regtest), this list
+/// is intentionally empty.
+pub mod dns_seed {
+    use crate::consensus::spec;
+
+    /// Mainnet DNS seeds.
+    pub const MAINNET_SEEDS: &[&str] = &[
+        // TODO: Replace with real operational seed hostnames before Mainnet launch.
+        // Example: "seed.zenachain.org",
+        // Example: "seed2.zenachain.org",
+    ];
+
+    /// Testnet DNS seeds.
+    pub const TESTNET_SEEDS: &[&str] = &[
+        // TODO: Replace with real operational seed hostnames before Testnet launch.
+        // Example: "testnet-seed.zenachain.org",
+    ];
+
+    /// Regtest does not use DNS seeds.
+    pub const REGTEST_SEEDS: &[&str] = &[];
+
+    /// Return the DNS seeds for the currently active network.
+    pub fn seeds_for_current_network() -> &'static [&'static str] {
+        match spec::current_network() {
+            spec::Network::Main => MAINNET_SEEDS,
+            spec::Network::Test => TESTNET_SEEDS,
+            spec::Network::Regtest => REGTEST_SEEDS,
+        }
+    }
+}
+
 pub mod network {
     use crate::consensus::spec;
 
