@@ -81,7 +81,15 @@ pub fn load_state_snapshot(chain: &mut Blockchain) -> std::io::Result<()> {
     }
 
     let data = std::fs::read_to_string(&path)?;
-    let accounts: HashMap<String, Account> = serde_json::from_str(&data).map_err(Error::other)?;
+    // Attempt to parse the snapshot. If the format is incompatible
+    // (e.g., from an older Account structure), silently ignore it.
+    let accounts: HashMap<String, Account> = match serde_json::from_str(&data) {
+        Ok(a) => a,
+        Err(_) => {
+            // Incompatible snapshot format; skip loading.
+            return Ok(());
+        }
+    };
 
     for (addr, acc) in accounts {
         // Only insert if not already present in LevelDB.
