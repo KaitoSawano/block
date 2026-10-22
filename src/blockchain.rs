@@ -142,10 +142,12 @@ impl Blockchain {
                 .expect("failed to init genesis account");
         }
 
-        // Isi state_root genesis setelah inisialisasi.
+        // Fill the genesis state_root after initialization and
+        // recalculate the hash to include the new state_root.
         let mut genesis = genesis;
         if let Ok(root) = state.root_hash() {
             genesis.state_root = hex::encode(root);
+            genesis.hash = genesis.calculate_hash();
         }
 
         Blockchain {
