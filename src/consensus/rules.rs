@@ -4,16 +4,37 @@
 
 //! Consensus validation rule constants for ZenaChain.
 
+// The number of blocks a coinbase reward must mature before it can be spent.
 pub const COINBASE_MATURITY: u64 = 100;
+
+// The address prefix for Mainnet.
+// IMPORTANT: Do NOT use this constant directly for cross-network validation.
+// Use `spec::current_network().address_prefix()` instead, so that Testnet
+// (`ZTES`) and Regtest (`ZREG`) are handled correctly.
 pub const ADDRESS_PREFIX: &str = "ZENA";
+
+// The length of the hex part of an address (40 characters = 20 bytes).
 pub const ADDRESS_HEX_LEN: usize = 40;
+
+// The maximum number of transactions allowed in a single block.
 pub const MAX_TX_PER_BLOCK: usize = 10_000;
+
+// The maximum number of inputs per transaction (unused in the account-based model).
 pub const MAX_INPUTS_PER_TX: usize = 1_000;
+
+// The maximum number of outputs per transaction (unused in the account-based model).
 pub const MAX_OUTPUTS_PER_TX: usize = 1_000;
+
+// The maximum length of a transaction note, in bytes.
 pub const MAX_NOTE_LEN: usize = 256;
+
+// The zero hash used as the `previous_hash` of the genesis block.
 pub const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+// The block version supported by the current consensus rules.
 pub const BLOCK_VERSION: u32 = 1;
 
+// Helper function to return the maximum number of transactions per block.
 pub fn max_tx_per_block() -> usize {
-    MAX_TX_PER_BLOCK
+    MAX_TX_PER_BLOCK // Return the constant value.
 }
