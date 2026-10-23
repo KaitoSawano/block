@@ -18,19 +18,18 @@ use zenachain::p2p::network::{NetworkCommand, NetworkConfig, PeerRegistry, spawn
 use zenachain::rpc::RpcServer; // The RPC server.
 use zenachain::storage; // The storage layer.
 
-// Flag to indicate whether the node is running as a daemon (background process).
-static IS_DAEMON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = std::env::args().collect(); // Collect command-line arguments.
 
     let mut selected_network = Network::Main; // Default to Mainnet.
+    let mut is_daemon_child = false; // Whether this is the background child process.
 
     for arg in &args[1..] {
         match arg.as_str() {
             "-testnet" | "--testnet" => selected_network = Network::Test, // Select Testnet.
             "-regtest" | "--regtest" => selected_network = Network::Regtest, // Select Regtest.
+            "--daemon-child" => is_daemon_child = true, // Internal flag: this is the background child.
             "--help" | "-h" => {
                 println!("Usage: zenachaind [-testnet|--testnet] [-regtest|--regtest]"); // Print help.
                 return;
@@ -54,8 +53,12 @@ async fn main() {
     spec::set_current_network(selected_network); // Set the active network.
 
     println!("ZenaChain server starting (network: {})", selected_network.name()); // Log the network.
-    println!("Press Ctrl+C to detach the node into the background."); // Log the detach behavior.
-    println!("Use `./zenachain stop` to stop the node completely."); // Log the stop command.
+    if is_daemon_child {
+        println!("[daemon] running in the background."); // Log that this is the background child.
+    } else {
+        println!("Press Ctrl+C to detach the node into the background."); // Log the detach behavior.
+        println!("Use `./zenachain stop` to stop the node completely."); // Log the stop command.
+    }
 
     let config = Config::load_or_default(); // Load the configuration.
     println!("[config] network      : {}", config.network.name()); // Log the network.
@@ -142,8 +145,8 @@ async fn main() {
         }
     });
 
-    // Install signal handlers that trigger a graceful shutdown or daemonize.
-    install_signal_handlers(rpc_shutdown.clone()); // Pass the shutdown flag.
+    // Install signal handlers. If this is the daemon child, ignore SIGINT.
+    install_signal_handlers(rpc_shutdown.clone(), is_daemon_child);
 
     loop {
         if rpc_shutdown.load(Ordering::SeqCst) {
@@ -169,118 +172,159 @@ async fn main() {
     println!("[node] shutdown complete"); // Log completion.
 }
 
-// Installs signal handlers that trigger a graceful shutdown or daemonize.
-fn install_signal_handlers(shutdown_flag: Arc<std::sync::atomic::AtomicBool>) {
+// Installs signal handlers.
+// If `is_daemon_child` is true, SIGINT is ignored (the child runs forever).
+// Otherwise, SIGINT triggers a detach: spawn a new background child and exit.
+fn install_signal_handlers(shutdown_flag: Arc<std::sync::atomic::AtomicBool>, is_daemon_child: bool) {
     use tokio::signal::unix::{signal, SignalKind}; // For Unix signal handling.
 
-    // SIGINT (Ctrl+C) triggers a detach (daemonize).
-    // SIGTERM (kill) triggers a graceful shutdown.
-    // SIGHUP (terminal closed) triggers a detach.
-    // SIGQUIT (Ctrl+\) is a debug signal that does nothing.
+    if is_daemon_child {
+        // The daemon child ignores SIGINT and SIGHUP so it survives terminal closure.
+        // SIGTERM triggers a graceful shutdown.
+        match signal(SignalKind::interrupt()) {
+            Ok(mut sig) => {
+                tokio::spawn(async move {
+                    loop {
+                        if sig.recv().await.is_some() {
+                            println!("[signal] SIGINT received (ignored in daemon mode).");
+                        }
+                    }
+                });
+            }
+            Err(e) => eprintln!("[signal] failed to install SIGINT handler: {}", e),
+        }
 
-    // Install SIGINT handler for detaching.
+        match signal(SignalKind::hangup()) {
+            Ok(mut sig) => {
+                tokio::spawn(async move {
+                    loop {
+                        if sig.recv().await.is_some() {
+                            println!("[signal] SIGHUP received (ignored in daemon mode).");
+                        }
+                    }
+                });
+            }
+            Err(e) => eprintln!("[signal] failed to install SIGHUP handler: {}", e),
+        }
+
+        match signal(SignalKind::terminate()) {
+            Ok(mut sig) => {
+                let flag = shutdown_flag.clone();
+                tokio::spawn(async move {
+                    if sig.recv().await.is_some() {
+                        println!("[signal] SIGTERM received. Initiating graceful shutdown...");
+                        flag.store(true, Ordering::SeqCst);
+                    }
+                });
+            }
+            Err(e) => eprintln!("[signal] failed to install SIGTERM handler: {}", e),
+        }
+
+        return; // Done.
+    }
+
+    // Foreground mode: SIGINT triggers a detach.
     match signal(SignalKind::interrupt()) {
         Ok(mut sig) => {
             tokio::spawn(async move {
                 if sig.recv().await.is_some() {
-                    // If SIGINT is received...
                     println!(); // Print a newline.
                     println!("[signal] SIGINT (Ctrl+C) received. Detaching into the background...");
-                    daemonize(); // Detach the process.
-                    // The parent process exits here; the child continues.
+                    detach_to_background(); // Spawn a new background child and exit.
                 }
             });
         }
-        Err(e) => {
-            eprintln!("[signal] failed to install handler for SIGINT: {}", e);
-        }
+        Err(e) => eprintln!("[signal] failed to install SIGINT handler: {}", e),
     }
 
-    // Install SIGTERM handler for graceful shutdown.
+    // Foreground mode: SIGTERM triggers a graceful shutdown.
     match signal(SignalKind::terminate()) {
         Ok(mut sig) => {
-            let flag = shutdown_flag.clone(); // Clone the flag for the task.
+            let flag = shutdown_flag.clone();
             tokio::spawn(async move {
                 if sig.recv().await.is_some() {
-                    // If SIGTERM is received...
                     println!(); // Print a newline.
                     println!("[signal] SIGTERM (kill) received. Initiating graceful shutdown...");
-                    flag.store(true, Ordering::SeqCst); // Set the shutdown flag.
+                    flag.store(true, Ordering::SeqCst);
                 }
             });
         }
-        Err(e) => {
-            eprintln!("[signal] failed to install handler for SIGTERM: {}", e);
-        }
+        Err(e) => eprintln!("[signal] failed to install SIGTERM handler: {}", e),
     }
 
-    // Install SIGHUP handler for detaching.
+    // Foreground mode: SIGHUP triggers a detach (terminal closed).
     match signal(SignalKind::hangup()) {
         Ok(mut sig) => {
             tokio::spawn(async move {
                 if sig.recv().await.is_some() {
-                    // If SIGHUP is received...
                     println!(); // Print a newline.
                     println!("[signal] SIGHUP (terminal closed) received. Detaching into the background...");
-                    daemonize(); // Detach the process.
+                    detach_to_background(); // Spawn a new background child and exit.
                 }
             });
         }
-        Err(e) => {
-            eprintln!("[signal] failed to install handler for SIGHUP: {}", e);
-        }
+        Err(e) => eprintln!("[signal] failed to install SIGHUP handler: {}", e),
     }
 
-    // Install SIGQUIT handler for debug (does nothing).
+    // Foreground mode: SIGQUIT is a debug signal.
     match signal(SignalKind::quit()) {
         Ok(mut sig) => {
             tokio::spawn(async move {
                 loop {
                     if sig.recv().await.is_some() {
-                        // If SIGQUIT is received...
                         println!(); // Print a newline.
-                        println!("[signal] SIGQUIT (Ctrl+\\) received. The node continues to run."); // Log the signal.
+                        println!("[signal] SIGQUIT (Ctrl+\\) received. The node continues to run.");
                     }
                 }
             });
         }
-        Err(e) => {
-            eprintln!("[signal] failed to install handler for SIGQUIT: {}", e);
-        }
+        Err(e) => eprintln!("[signal] failed to install SIGQUIT handler: {}", e),
     }
 }
 
-// Detaches the current process from the terminal and continues in the background.
-// This is a simplified daemonization: the parent exits, and the child continues.
-// Note: This does NOT close stdout/stderr, so the node will still print to the
-// terminal until it is closed. For a full daemonization, you would also redirect
-// stdout/stderr to a log file and call `setsid()`.
-fn daemonize() {
-    use nix::unistd::{fork, ForkResult}; // For fork().
-    use std::process::exit; // For exit().
+// Spawns a new `zenachaind --daemon-child` process in the background, then exits.
+// The new process inherits the same network and runs independently.
+fn detach_to_background() {
+    use std::process::Command;
 
-    if IS_DAEMON.load(Ordering::SeqCst) {
-        // If already a daemon, do nothing.
-        println!("[daemon] already running in the background.");
-        return;
-    }
+    // Get the current executable path and arguments.
+    let exe = std::env::current_exe().expect("failed to get current exe");
+    let args: Vec<String> = std::env::args().collect();
 
-    match unsafe { fork() } {
-        Ok(ForkResult::Parent { .. }) => {
-            // Parent process: exit gracefully.
-            println!("[daemon] parent process exiting; node continues in the background.");
-            exit(0); // Exit the parent.
+    // Build the command: same executable + original args + --daemon-child.
+    let mut cmd = Command::new(exe);
+    for arg in &args[1..] {
+        // Skip the --daemon-child flag if it somehow exists.
+        if arg != "--daemon-child" {
+            cmd.arg(arg);
         }
-        Ok(ForkResult::Child) => {
-            // Child process: continue running as the daemon.
-            IS_DAEMON.store(true, Ordering::SeqCst); // Mark as daemon.
-            println!("[daemon] node is now running in the background.");
-            // Note: The child inherits the terminal's stdout/stderr. For a full
-            // daemonization, you would redirect them to a log file here.
+    }
+    cmd.arg("--daemon-child");
+
+    // Redirect stdout/stderr to the debug log.
+    let log_path = zenachain::datadir::debug_log_path();
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .expect("failed to open debug log");
+
+    let log_file_clone = log_file.try_clone().expect("failed to clone log file");
+
+    cmd.stdout(log_file);
+    cmd.stderr(log_file_clone);
+
+    // Spawn the child.
+    match cmd.spawn() {
+        Ok(child) => {
+            println!("[daemon] spawned background process (PID: {})", child.id());
+            println!("[daemon] parent process exiting; node continues in the background.");
+            // Exit the parent. The child continues independently.
+            std::process::exit(0);
         }
         Err(e) => {
-            // Fork failed: log the error and continue in the foreground.
-            eprintln!("[daemon] fork failed: {}. Continuing in the foreground.", e);
+            eprintln!("[daemon] failed to spawn background process: {}", e);
+            eprintln!("[daemon] continuing in the foreground.");
         }
     }
 }
