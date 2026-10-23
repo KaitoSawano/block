@@ -49,11 +49,9 @@ Kode berikut sudah **stabil dan teruji**. Jangan mengubahnya tanpa alasan yang s
 9.  `src/storage/state.rs` — `credit_reward`, `apply_transaction`, `rollback_to`.
 10. `src/p2p/sync.rs` — `handle_reorg`, `accept_block`.
 
-Tapi.. sebenarnya boleh saja mengubah memperbaiki. atau menambahkan kode. selagi ada bug atau keanehan pada kode. jika stabil dilarang keras menyentuh/mengubah kode!.
-
 ---
 
-## 3. Status Terkini (Terakhir Diperbarui: 2026-10-22)
+## 3. Status Terkini (Terakhir Diperbarui: 2026-10-23)
 
 ### 🟢 CHECKPOINT: `fase-4-lengkap`
 Sistem transfer *account-based* mainnet **STABIL** dan **TERUJI**. Fondasi penyimpanan telah dimigrasikan ke LevelDB + MPT. **Coinbase Maturity**, **Reorg Logic**, **DNS Seed Discovery**, dan **Uji Beban** telah diimplementasikan dan **diuji**.
@@ -108,6 +106,11 @@ Penyimpanan *state* telah dimigrasikan dari `HashMap` + JSON ke **LevelDB + Merk
 - ✅ **Pengujian:** Dilakukan menggunakan gabungan Testnet dan Regtest.
 - ✅ **Hasil:** Sistem stabil, tidak ada crash, mampu memproses jutaan transaksi.
 
+### 🟢 LISENSI: APACHE 2.0 (SELESAI)
+- ✅ **Lisensi:** Proyek beralih dari MIT ke Apache License 2.0.
+- ✅ **File:** `LICENSE` (teks lengkap Apache 2.0), `NOTICE` (atribusi), `Cargo.toml` (`license = "Apache-2.0"`).
+- ✅ **Header:** Semua file `.rs` telah diperbarui (tanpa baris "Zenachain Core developers").
+
 ---
 
 ## 4. Tugas Berikutnya (FASE 5: Dokumentasi, Audit, Testnet Publik)
@@ -142,12 +145,13 @@ Penyimpanan *state* telah dimigrasikan dari `HashMap` + JSON ke **LevelDB + Merk
 - **RPC `getblock`:** Field `index`, `nbits`, `reward`, `subsidy`, `total_fees` dikembalikan sebagai angka.
 - **RPC `submitblock`:** Mendeteksi reorg dan memanggil `handle_reorg`.
 - **Uji Beban:** Sistem sudah diuji dengan jutaan transaksi tanpa crash.
+- **Lisensi:** Apache 2.0 (bukan MIT lagi).
 
 ---
 
 ## 6. Cara Melanjutkan di Chat Baru
 Copy file ini dan tempel ke chat baru, lalu ketik:
-> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, 4 (Coinbase Maturity, Reorg Logic), DNS Seed, dan Uji Beban selesai. Lanjut FASE 5: Dokumentasi, Audit, dan Testnet Publik. Patuhi prinsip 'If it ain't broke, don't fix it'."
+> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, 4 (Coinbase Maturity, Reorg Logic), DNS Seed, Uji Beban, dan Lisensi Apache 2.0 selesai. Lanjut FASE 5: Dokumentasi, Audit, dan Testnet Publik. Patuhi prinsip 'If it ain't broke, don't fix it'."
 
 ---
 
