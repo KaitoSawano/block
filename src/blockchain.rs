@@ -12,7 +12,6 @@ use crate::pow; // Proof-of-work functions.
 use crate::storage::{Account, StateDB}; // Storage layer.
 use crate::transaction::Transaction; // The transaction structure.
 use crate::validation; // Validation rules.
-use serde::{Deserialize, Serialize}; // For JSON serialization.
 
 // Maximum size of the mempool in bytes (300 MB).
 pub const MAX_MEMPOOL_SIZE_BYTES: usize = 300 * 1024 * 1024;
@@ -160,7 +159,11 @@ pub fn genesis_nbits() -> u32 {
 }
 
 // The Blockchain struct, representing the full chain state.
-#[derive(Debug, Serialize, Deserialize)] // NOTE: `Clone` is intentionally NOT derived.
+// NOTE: `Clone` is intentionally NOT derived because `StateDB` cannot be
+// cloned. `Serialize` and `Deserialize` are also NOT derived because
+// `Blockchain` is never serialized as a whole; persistence is handled by
+// `storage::save_chain()` which writes the blocks and mempool separately.
+#[derive(Debug)] // Only `Debug` is derived.
 pub struct Blockchain {
     pub chain: Vec<Block>, // The list of blocks.
     pub nbits: u32, // The current difficulty target.
@@ -169,7 +172,6 @@ pub struct Blockchain {
     pub nonces: HashMap<String, u64>, // Legacy nonce map (unused).
     pub mempool_timestamps: HashMap<String, u64>, // Mempool timestamps.
     pub addresses: Vec<String>, // Known addresses.
-    #[serde(skip)] // Skip serialization for the state DB.
     pub state: StateDB, // The state database.
 }
 
