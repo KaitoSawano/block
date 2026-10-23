@@ -4,6 +4,7 @@
 
 //! Integration tests for ZenaChain.
 
+mod bug_regression_test;
 mod difficulty_test;
 mod genesis_test;
 mod halving_test;
