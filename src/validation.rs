@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Aldianokto
-// Copyright (c) 2026-present Zenachain Core developers
-// Distributed under the MIT software license, see the accompanying
-// file LICENSE or https://opensource.org/license/mit.
+// Distributed under the Apache License, see the accompanying
+// file LICENSE or https://www.apache.org/licenses/LICENSE-2.0.
 
 //! Consensus validation rules for ZenaChain.
 
