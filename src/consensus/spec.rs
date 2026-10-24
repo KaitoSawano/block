@@ -32,23 +32,9 @@ impl Network {
         }
     }
 
-    /// Prefix byte for Legacy (Base58Check) addresses.
-    pub fn legacy_prefix_byte(&self) -> u8 {
-        match self {
-            Network::Main => 0x30, // 48 decimal (similar to Litecoin's "L").
-            Network::Test => 0x6f,
-            Network::Regtest => 0x6f,
-        }
-    }
-
-    /// Human-Readable Part (HRP) for Native SegWit (Bech32) addresses.
-    pub fn bech32_hrp(&self) -> &'static str {
-        match self {
-            Network::Main => "zena",
-            Network::Test => "ztes",
-            Network::Regtest => "zreg",
-        }
-    }
+    // NOTE: legacy_prefix_byte and bech32_hrp have been moved to blockchain.rs.
+    // Do not add them back here. Use blockchain::legacy_prefix_byte() and
+    // blockchain::bech32_hrp() instead.
 
     pub fn magic(&self) -> [u8; 4] {
         match self {
