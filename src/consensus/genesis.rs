@@ -78,7 +78,7 @@ pub const TESTNET_EXPECTED_GENESIS_NONCE: u64 = 1892429;
 pub const REGTEST_GENESIS_TIMESTAMP: u128 = 1792303198447;
 
 // The expected regtest genesis hash.
-pub const REGTEST_EXPECTED_GENESIS_HASH: &str = "7c6e5e0514725895cdb0e0f1d0fe41ebb720c37a2b34da771b8f4e9ee4af7a4b";
+pub const REGTEST_EXPECTED_GENESIS_HASH: &str = "51220dcab6d89a4dec2d260eafbd21f0d77ab8c17058eb99de23950b3a036ae2";
 
 // The expected regtest genesis merkle root.
 pub const REGTEST_EXPECTED_GENESIS_MERKLE_ROOT: &str = "66b3fa4e2de637bb17964e16ecefe77e45872b8913f2aedc77b3fe354a2daf2b";
@@ -87,7 +87,7 @@ pub const REGTEST_EXPECTED_GENESIS_MERKLE_ROOT: &str = "66b3fa4e2de637bb17964e16
 pub const REGTEST_EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198447;
 
 // The expected regtest genesis nonce.
-pub const REGTEST_EXPECTED_GENESIS_NONCE: u64 = 3;
+pub const REGTEST_EXPECTED_GENESIS_NONCE: u64 = 0;
 
 // ----------------------------------------------------------------------
 // Network-aware accessors
