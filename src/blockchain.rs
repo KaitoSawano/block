@@ -67,12 +67,12 @@ pub fn bech32_hrp_for(network: spec::Network) -> &'static str {
 }
 
 // ============================================================
-// BIP 9 VERSION BITS DEPLOYMENTS (Bitcoin-style activation)
+// SOFT FORK DEPLOYMENTS
 // ============================================================
 
-/// BIP 9 deployment parameters, modeled after Bitcoin Core's BIP9Deployment.
+/// Parameters for a soft fork deployment.
 #[derive(Debug, Clone, Copy)]
-pub struct Bip9Deployment {
+pub struct SoftForkDeployment {
     /// Bit position to select the particular bit in nVersion (0-28).
     pub bit: u8,
     /// Start MedianTime for version bits miner confirmation.
@@ -96,9 +96,9 @@ pub const ALWAYS_ACTIVE: i64 = -1;
 /// Constant for timeout: no timeout.
 pub const NO_TIMEOUT: i64 = i64::MAX;
 
-/// The state of a BIP 9 deployment.
+/// The state of a soft fork deployment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThresholdState {
+pub enum SoftForkState {
     Defined,    // Before start_time.
     Started,    // Signaling period active.
     LockedIn,   // Threshold met, waiting for activation.
@@ -106,11 +106,11 @@ pub enum ThresholdState {
     Failed,     // Timeout without activation.
 }
 
-/// The registry of all BIP 9 deployments.
-pub const BIP9_DEPLOYMENTS: &[(&str, Bip9Deployment)] = &[
+/// The registry of all soft fork deployments.
+pub const SOFT_FORK_DEPLOYMENTS: &[(&str, SoftForkDeployment)] = &[
     (
         "disable_legacy_addresses",
-        Bip9Deployment {
+        SoftForkDeployment {
             bit: 0,
             start_time: NEVER_ACTIVE, // Not scheduled yet.
             timeout: NO_TIMEOUT,
@@ -122,14 +122,14 @@ pub const BIP9_DEPLOYMENTS: &[(&str, Bip9Deployment)] = &[
 ];
 
 /// Returns the deployment for a given name, if it exists.
-pub fn get_bip9_deployment(name: &str) -> Option<&'static Bip9Deployment> {
-    BIP9_DEPLOYMENTS
+pub fn get_softfork_deployment(name: &str) -> Option<&'static SoftForkDeployment> {
+    SOFT_FORK_DEPLOYMENTS
         .iter()
         .find(|(n, _)| *n == name)
         .map(|(_, d)| d)
 }
 
-/// Get the median time past of the last 11 blocks (BIP 113).
+/// Get the median time past of the last 11 blocks.
 pub fn median_time_past(chain: &Blockchain) -> i64 {
     let mut timestamps: Vec<i64> = chain
         .chain
@@ -150,7 +150,7 @@ pub fn count_signals(chain: &Blockchain, bit: u8, period: u32) -> u32 {
     let start = chain.chain.len().saturating_sub(period as usize);
     let mut count = 0;
     for block in &chain.chain[start..] {
-        // Bitcoin uses: (nVersion & (1 << bit)) != 0
+        // Check if the bit is set in nversion.
         if (block.nversion & (1u32 << bit)) != 0 {
             count += 1;
         }
@@ -158,48 +158,48 @@ pub fn count_signals(chain: &Blockchain, bit: u8, period: u32) -> u32 {
     count
 }
 
-/// Compute the BIP 9 state for a deployment at the current chain tip.
-pub fn get_bip9_state(name: &str, chain: &Blockchain) -> ThresholdState {
-    let deployment = match get_bip9_deployment(name) {
+/// Compute the soft fork state for a deployment at the current chain tip.
+pub fn get_softfork_state(name: &str, chain: &Blockchain) -> SoftForkState {
+    let deployment = match get_softfork_deployment(name) {
         Some(d) => d,
-        None => return ThresholdState::Defined,
+        None => return SoftForkState::Defined,
     };
 
     let height = chain.height();
     let mtp = median_time_past(chain);
 
     if deployment.start_time == NEVER_ACTIVE {
-        return ThresholdState::Defined;
+        return SoftForkState::Defined;
     }
 
     if deployment.start_time == ALWAYS_ACTIVE {
-        return ThresholdState::Active;
+        return SoftForkState::Active;
     }
 
     if mtp < deployment.start_time {
-        return ThresholdState::Defined;
+        return SoftForkState::Defined;
     }
 
     if mtp >= deployment.timeout {
-        return ThresholdState::Failed;
+        return SoftForkState::Failed;
     }
 
     let signals = count_signals(chain, deployment.bit, deployment.period);
 
     if signals >= deployment.threshold {
         if height >= deployment.min_activation_height {
-            return ThresholdState::Active;
+            return SoftForkState::Active;
         } else {
-            return ThresholdState::LockedIn;
+            return SoftForkState::LockedIn;
         }
     }
 
-    ThresholdState::Started
+    SoftForkState::Started
 }
 
-/// Returns `true` if the given BIP 9 deployment is active.
-pub fn is_bip9_active(name: &str, chain: &Blockchain) -> bool {
-    get_bip9_state(name, chain) == ThresholdState::Active
+/// Returns `true` if the given soft fork deployment is active.
+pub fn is_softfork_active(name: &str, chain: &Blockchain) -> bool {
+    get_softfork_state(name, chain) == SoftForkState::Active
 }
 
 // ============================================================
