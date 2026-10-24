@@ -7,6 +7,8 @@ Sekarang mendukung tiga jaringan: **Mainnet**, **Testnet**, dan **Regtest**, den
 
 **Fondasi penyimpanan *state* telah dimigrasikan ke LevelDB + Merkle Patricia Trie (MPT)**, dengan *snapshot* JSON untuk persistensi antar-*session*.
 
+**Sistem alamat telah dimigrasikan ke Base58Check (Legacy) dan Bech32 (Native SegWit)**, dengan parameter prefix yang terpusat di `blockchain.rs`.
+
 ### Parameter Konsensus Utama
 | Parameter | Mainnet | Testnet | Regtest |
 |---|---|---|---|
@@ -19,11 +21,12 @@ Sekarang mendukung tiga jaringan: **Mainnet**, **Testnet**, dan **Regtest**, den
 | Magic Bytes | `ZENA` (5a454e41) | `ZTES` (5a544553) | `ZREG` (5a524547) |
 | P2P Port | 8333 | 9422 | 18444 |
 | RPC Port | 8332 | 12255 | 18443 |
-| Address Prefix | `ZENA` | `ZTES` | `ZREG` |
+| **Legacy Prefix** | `0x30` (L...) | `0x6f` (m/n...) | `0x6f` (m/n...) |
+| **Bech32 HRP** | `zena` (zena1...) | `ztes` (ztes1...) | `zreg` (zreg1...) |
 | Datadir | `~/.zenachain` | `~/.zenachain-testnet` | `~/.zenachain-regtest` |
 | Genesis Timestamp | 1792303198445 | 1792303198446 | 1792303198447 |
 | Genesis NBITS | 0x1e0ffff0 | 0x1e0ffff0 | 0x207fffff |
-| Genesis Nonce | 849719 | 491730 | 0 |
+| Genesis Nonce | 2878713 | (menyesuaikan) | (menyesuaikan) |
 
 ---
 
@@ -39,22 +42,25 @@ Proyek ini menganut prinsip konservatif dalam pengembangan:
 Kode berikut sudah **stabil dan teruji**. Jangan mengubahnya tanpa alasan yang sangat kuat:
 
 1.  `src/transaction.rs` — Model transaksi, tanda tangan, nonce.
-2.  `src/blockchain.rs` — State chain, reward, difficulty, mempool.
+2.  `src/blockchain.rs` — State chain, reward, difficulty, mempool, **parameter prefix alamat**.
 3.  `src/storage/` — LevelDB, MPT, `Account`, `StateDB`.
 4.  `src/storage_legacy.rs` — Snapshot JSON.
 5.  `src/validation.rs` — Aturan konsensus.
-6.  `src/rpc.rs` — `m_sendtoaddress`, `m_getbalance`, `m_getnonce`, `m_stop`, `m_generatetoaddress`, `m_submitblock`.
+6.  `src/rpc.rs` — `m_sendtoaddress`, `m_getbalance`, `m_getnonce`, `m_stop`, `m_generatetoaddress`, `m_submitblock`, `m_getcreatewallet`, `m_getcreatewalletbech32`.
 7.  `src/p2p/dns_seed.rs` — Resolusi DNS.
 8.  `src/storage/account.rs` — Struktur `Account` dengan `immature_rewards`.
 9.  `src/storage/state.rs` — `credit_reward`, `apply_transaction`, `rollback_to`.
 10. `src/p2p/sync.rs` — `handle_reorg`, `accept_block`.
+11. `src/base58check.rs` — Encoding/decoding Base58Check (Legacy).
+12. `src/bech32.rs` — Encoding/decoding Bech32 (Native SegWit).
+13. `src/secp256k1/address.rs` — Derivasi alamat Legacy dan Bech32.
 
 ---
 
-## 3. Status Terkini (Terakhir Diperbarui: 2026-10-23)
+## 3. Status Terkini (Terakhir Diperbarui: 2026-10-24)
 
 ### 🟢 CHECKPOINT: `fase-4-lengkap`
-Sistem transfer *account-based* mainnet **STABIL** dan **TERUJI**. Fondasi penyimpanan telah dimigrasikan ke LevelDB + MPT. **Coinbase Maturity**, **Reorg Logic**, **DNS Seed Discovery**, dan **Uji Beban** telah diimplementasikan dan **diuji**.
+Sistem transfer *account-based* mainnet **STABIL** dan **TERUJI**. Fondasi penyimpanan telah dimigrasikan ke LevelDB + MPT. **Coinbase Maturity**, **Reorg Logic**, **DNS Seed Discovery**, dan **Uji Beban** telah diimplementasikan dan **diuji**. **Sistem alamat ganda (Base58Check + Bech32)** telah diimplementasikan dan **diuji**.
 
 ### 🟢 FASE 2: HARDENING MAINNET (SELESAI)
 Semua pilar keamanan dan ekonomi telah diimplementasikan:
@@ -106,10 +112,32 @@ Penyimpanan *state* telah dimigrasikan dari `HashMap` + JSON ke **LevelDB + Merk
 - ✅ **Pengujian:** Dilakukan menggunakan gabungan Testnet dan Regtest.
 - ✅ **Hasil:** Sistem stabil, tidak ada crash, mampu memproses jutaan transaksi.
 
+### 🟢 SISTEM ALAMAT GANDA: BASE58CHECK & BECH32 (SELESAI & TERUJI)
+- ✅ **Base58Check (Legacy):** Alamat diawali `L...` (Mainnet), `m...`/`n...` (Testnet/Regtest). Parameter prefix di `blockchain.rs`.
+- ✅ **Bech32 (Native SegWit):** Alamat diawali `zena1...` (Mainnet), `ztes1...` (Testnet), `zreg1...` (Regtest). HRP di `blockchain.rs`.
+- ✅ **Validasi Dua Format:** `rule_address_format` mendeteksi kedua format secara otomatis.
+- ✅ **RPC Baru:** `getcreatewallet` (Legacy) dan `getcreatewalletbech32` (Bech32).
+- ✅ **Pengujian:** Membuat alamat Legacy dan Bech32, memvalidasi, dan memastikan typo ditolak.
+
+### 🟢 PERBAIKAN BUG KRITIS (SELESAI)
+Enam bug kritis ditemukan dan diperbaiki selama *code review*:
+
+1.  ✅ **Genesis Nonce Mismatch:** `spec.rs` dan `genesis.rs` disinkronkan (`2878713`).
+2.  ✅ **Hardcoded `ADDRESS_PREFIX`:** Dipindahkan ke `blockchain.rs` dan dibuat *network-aware*.
+3.  ✅ **`StateDB` Clone Panic:** `Clone` dan `Default` dihapus dari `StateDB`.
+4.  ✅ **Race Condition `ZENAC_DATADIR`:** Ditambahkan `ENV_MUTEX` di test.
+5.  ✅ **Legacy Genesis Accessor:** Fungsi `expected_genesis_hash()` dkk. dihapus.
+6.  ✅ **Genesis Verification di `load_chain()`:** Tidak lagi memanggil `Block::genesis()` (menghindari mining ulang).
+
+### 🟢 TEST SUITE: 44/44 LULUS (SELESAI)
+- ✅ **12 unit test** (P2P framing, handshake, message).
+- ✅ **32 integration test** (genesis, halving, hash, pow, secp256k1, storage, validation, bug regression).
+- ✅ **Semua lulus** tanpa kegagalan.
+
 ### 🟢 LISENSI: APACHE 2.0 (SELESAI)
 - ✅ **Lisensi:** Proyek beralih dari MIT ke Apache License 2.0.
 - ✅ **File:** `LICENSE` (teks lengkap Apache 2.0), `NOTICE` (atribusi), `Cargo.toml` (`license = "Apache-2.0"`).
-- ✅ **Header:** Semua file `.rs` telah diperbarui (tanpa baris "Zenachain Core developers").
+- ✅ **Header:** Semua file `.rs` telah diperbarui.
 
 ---
 
@@ -119,6 +147,7 @@ Penyimpanan *state* telah dimigrasikan dari `HashMap` + JSON ke **LevelDB + Merk
 - [ ] **Uji P2P Sync Multi-Node:** Jalankan 3-5 node Testnet dan uji sinkronisasi.
 - [ ] **Isi Checkpoint:** Tambahkan hash blok yang sudah dikonfirmasi ke `CHECKPOINTS`.
 - [ ] **DNS Seed ZenaChain:** Daftarkan domain ZenaChain untuk *peer discovery*.
+- [ ] **Dokumentasi:** Tulis `README.md`, `docs/BUILDING.md`, `docs/RUNNING.md`, `docs/RPC.md`.
 
 ### Prioritas Sedang (Wajib sebelum Mainnet)
 - [ ] **Uji Difficulty Adjustment:** Di Testnet, uji dengan parameter dipercepat (misalnya `DIFFICULTY_ADJUST_INTERVAL = 100`).
@@ -146,12 +175,14 @@ Penyimpanan *state* telah dimigrasikan dari `HashMap` + JSON ke **LevelDB + Merk
 - **RPC `submitblock`:** Mendeteksi reorg dan memanggil `handle_reorg`.
 - **Uji Beban:** Sistem sudah diuji dengan jutaan transaksi tanpa crash.
 - **Lisensi:** Apache 2.0 (bukan MIT lagi).
+- **Alamat:** Mendukung dua format: Legacy (Base58Check) dan Bech32 (Native SegWit). Prefix di `blockchain.rs`, bukan `spec.rs`.
+- **Genesis:** Setiap perubahan parameter konsensus (prefix, HRP, reward) memerlukan mining ulang genesis. Perbarui `genesis.rs` dan `spec.rs`.
 
 ---
 
 ## 6. Cara Melanjutkan di Chat Baru
 Copy file ini dan tempel ke chat baru, lalu ketik:
-> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, 4 (Coinbase Maturity, Reorg Logic), DNS Seed, Uji Beban, dan Lisensi Apache 2.0 selesai. Lanjut FASE 5: Dokumentasi, Audit, dan Testnet Publik. Patuhi prinsip 'If it ain't broke, don't fix it'."
+> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, 4 (Coinbase Maturity, Reorg Logic), DNS Seed, Uji Beban, Lisensi Apache 2.0, dan Sistem Alamat Ganda (Base58Check + Bech32) selesai. Test suite 44/44 lulus. Lanjut FASE 5: Dokumentasi, Audit, dan Testnet Publik. Patuhi prinsip 'If it ain't broke, don't fix it'."
 
 ---
 
@@ -166,15 +197,17 @@ Copy file ini dan tempel ke chat baru, lalu ketik:
 - Start Node 1: `./zenachaind -testnet`
 - Start Node 2: `ZENAC_DATADIR=/root/.zenachain-testnet2 ./zenachaind -testnet`
 - RPC: `./zenachain -testnet getinfo`
-- Wallet Baru: `./zenachain -testnet getnewwallet`
-- Mining: `./zenachain -testnet generatetoaddress 10 "ZTES..."`
+- Wallet Baru (Legacy): `./zenachain -testnet getcreatewallet`
+- Wallet Baru (Bech32): `./zenachain -testnet getcreatewalletbech32`
+- Mining: `./zenachain -testnet generatetoaddress 10 "<alamat>"`
 - Reset: `./zenachain -testnet stop && rm -rf ~/.zenachain-testnet ~/.zenachain-testnet2`
 
 ### Regtest
 - Start: `./zenachaind -regtest`
 - RPC: `./zenachain -regtest getinfo`
-- Wallet Baru: `./zenachain -regtest getnewwallet`
-- Mining: `./zenachain -regtest generatetoaddress 10 "ZREG..."`
+- Wallet Baru (Legacy): `./zenachain -regtest getcreatewallet`
+- Wallet Baru (Bech32): `./zenachain -regtest getcreatewalletbech32`
+- Mining: `./zenachain -regtest generatetoaddress 10 "<alamat>"`
 - Reset: `./zenachain -regtest stop && rm -rf ~/.zenachain-regtest`
 
 ### Testing
