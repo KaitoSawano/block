@@ -16,6 +16,12 @@ pub const ADDRESS_PREFIX: &str = "ZENA";
 // The length of the hex part of an address (40 characters = 20 bytes).
 pub const ADDRESS_HEX_LEN: usize = 40;
 
+// The length of the checksum in hex characters (8 characters = 4 bytes).
+pub const ADDRESS_CHECKSUM_LEN: usize = 8;
+
+// The total length of an address: prefix (4) + hex (40) + checksum (8) = 52.
+pub const ADDRESS_TOTAL_LEN: usize = 4 + ADDRESS_HEX_LEN + ADDRESS_CHECKSUM_LEN;
+
 // The maximum number of transactions allowed in a single block.
 pub const MAX_TX_PER_BLOCK: usize = 10_000;
 
