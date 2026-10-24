@@ -6,7 +6,6 @@
 
 pub mod block; // Block structure and related operations.
 pub mod blockchain; // Blockchain state and consensus-related operations.
-pub mod checksum; // Address checksum computation and verification.
 pub mod config; // Configuration file parsing and persistence.
 pub mod consensus; // Consensus parameters and rules.
 pub mod datadir; // Data directory layout and path helpers.
