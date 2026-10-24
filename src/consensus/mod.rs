@@ -9,12 +9,13 @@ pub mod pow;
 pub mod rules;
 pub mod spec;
 
+use crate::blockchain; // For address prefix parameters.
 use crate::consensus::spec::Network;
 use zenachain_crypto::sha3_256_hex;
 
 pub fn consensus_fingerprint_for(network: Network) -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         network.name(),
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
@@ -37,7 +38,7 @@ pub fn consensus_fingerprint_for(network: Network) -> String {
         network.genesis_nbits(),
         pow::pow_limit(),
         rules::COINBASE_MATURITY,
-        network.bech32_hrp(),
+        blockchain::bech32_hrp_for(network), // Changed from network.bech32_hrp().
         rules::MAX_TX_PER_BLOCK,
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
@@ -52,7 +53,7 @@ pub fn consensus_fingerprint() -> String {
 
 pub fn parameter_fingerprint_for(network: Network) -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         network.name(),
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
@@ -75,7 +76,7 @@ pub fn parameter_fingerprint_for(network: Network) -> String {
         network.genesis_nbits(),
         pow::pow_limit(),
         rules::COINBASE_MATURITY,
-        network.bech32_hrp(),
+        blockchain::bech32_hrp_for(network), // Changed from network.bech32_hrp().
         rules::MAX_TX_PER_BLOCK,
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
