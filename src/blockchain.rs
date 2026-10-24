@@ -15,24 +15,18 @@ use crate::validation; // Validation rules.
 
 // ============================================================
 // ADDRESS PREFIX PARAMETERS
-// Change these values to customize the address format.
 // ============================================================
 
 /// Legacy (Base58Check) prefix byte for Mainnet.
 pub const LEGACY_PREFIX_MAIN: u8 = 0x30;
-
 /// Legacy (Base58Check) prefix byte for Testnet.
 pub const LEGACY_PREFIX_TEST: u8 = 0x6f;
-
 /// Legacy (Base58Check) prefix byte for Regtest.
 pub const LEGACY_PREFIX_REGTEST: u8 = 0x6f;
-
 /// Bech32 Human-Readable Part (HRP) for Mainnet.
 pub const BECH32_HRP_MAIN: &str = "zena";
-
 /// Bech32 Human-Readable Part (HRP) for Testnet.
 pub const BECH32_HRP_TEST: &str = "ztes";
-
 /// Bech32 Human-Readable Part (HRP) for Regtest.
 pub const BECH32_HRP_REGTEST: &str = "zreg";
 
@@ -73,33 +67,148 @@ pub fn bech32_hrp_for(network: spec::Network) -> &'static str {
 }
 
 // ============================================================
-// HARD FORK ACTIVATION HEIGHTS
-// Block height at which each feature becomes mandatory.
-// Set to 0 to disable the activation (feature is never active).
+// BIP 9 VERSION BITS DEPLOYMENTS (Bitcoin-style activation)
 // ============================================================
 
-/// Block height at which Bech32 (Native SegWit) addresses become mandatory.
-/// Before this height, both Legacy and Bech32 are accepted.
-/// After this height, only Bech32 is accepted (Legacy is rejected).
-pub const ACTIVATION_HEIGHT_BECH32_ONLY: u64 = 0; // 0 = not scheduled yet.
-
-/// Returns `true` if the given activation height has been reached.
-pub fn is_activation_active(activation_height: u64, current_height: u64) -> bool {
-    // If activation_height is 0, the feature is not scheduled.
-    if activation_height == 0 {
-        return false;
-    }
-    // The feature is active if the current height is >= activation height.
-    current_height >= activation_height
+/// BIP 9 deployment parameters, modeled after Bitcoin Core's BIP9Deployment.
+#[derive(Debug, Clone, Copy)]
+pub struct Bip9Deployment {
+    /// Bit position to select the particular bit in nVersion (0-28).
+    pub bit: u8,
+    /// Start MedianTime for version bits miner confirmation.
+    /// Use `NEVER_ACTIVE` for not scheduled.
+    pub start_time: i64,
+    /// Timeout/expiry MedianTime for the deployment attempt.
+    /// Use `NO_TIMEOUT` for no timeout.
+    pub timeout: i64,
+    /// If lock in occurs, delay activation until at least this block height.
+    pub min_activation_height: u64,
+    /// Period of blocks to check signalling in (usually retarget period).
+    pub period: u32,
+    /// Minimum blocks signaling in the period to lock in (e.g., 1916 for 95%).
+    pub threshold: u32,
 }
 
-// Maximum size of the mempool in bytes (300 MB).
+/// Constant for start_time: never active.
+pub const NEVER_ACTIVE: i64 = -2;
+/// Constant for start_time: always active (useful for testing).
+pub const ALWAYS_ACTIVE: i64 = -1;
+/// Constant for timeout: no timeout.
+pub const NO_TIMEOUT: i64 = i64::MAX;
+
+/// The state of a BIP 9 deployment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThresholdState {
+    Defined,    // Before start_time.
+    Started,    // Signaling period active.
+    LockedIn,   // Threshold met, waiting for activation.
+    Active,     // Rules enforced.
+    Failed,     // Timeout without activation.
+}
+
+/// The registry of all BIP 9 deployments.
+pub const BIP9_DEPLOYMENTS: &[(&str, Bip9Deployment)] = &[
+    (
+        "disable_legacy_addresses",
+        Bip9Deployment {
+            bit: 0,
+            start_time: NEVER_ACTIVE, // Not scheduled yet.
+            timeout: NO_TIMEOUT,
+            min_activation_height: 0,
+            period: 2016,
+            threshold: 1916, // 95%
+        },
+    ),
+];
+
+/// Returns the deployment for a given name, if it exists.
+pub fn get_bip9_deployment(name: &str) -> Option<&'static Bip9Deployment> {
+    BIP9_DEPLOYMENTS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, d)| d)
+}
+
+/// Get the median time past of the last 11 blocks (BIP 113).
+pub fn median_time_past(chain: &Blockchain) -> i64 {
+    let mut timestamps: Vec<i64> = chain
+        .chain
+        .iter()
+        .rev()
+        .take(11)
+        .map(|b| (b.timestamp / 1000) as i64) // Convert ms to seconds.
+        .collect();
+    if timestamps.is_empty() {
+        return 0;
+    }
+    timestamps.sort();
+    timestamps[timestamps.len() / 2]
+}
+
+/// Count how many blocks in the last `period` signaled for a given bit.
+pub fn count_signals(chain: &Blockchain, bit: u8, period: u32) -> u32 {
+    let start = chain.chain.len().saturating_sub(period as usize);
+    let mut count = 0;
+    for block in &chain.chain[start..] {
+        // Bitcoin uses: (nVersion & (1 << bit)) != 0
+        if (block.nversion & (1u32 << bit)) != 0 {
+            count += 1;
+        }
+    }
+    count
+}
+
+/// Compute the BIP 9 state for a deployment at the current chain tip.
+pub fn get_bip9_state(name: &str, chain: &Blockchain) -> ThresholdState {
+    let deployment = match get_bip9_deployment(name) {
+        Some(d) => d,
+        None => return ThresholdState::Defined,
+    };
+
+    let height = chain.height();
+    let mtp = median_time_past(chain);
+
+    if deployment.start_time == NEVER_ACTIVE {
+        return ThresholdState::Defined;
+    }
+
+    if deployment.start_time == ALWAYS_ACTIVE {
+        return ThresholdState::Active;
+    }
+
+    if mtp < deployment.start_time {
+        return ThresholdState::Defined;
+    }
+
+    if mtp >= deployment.timeout {
+        return ThresholdState::Failed;
+    }
+
+    let signals = count_signals(chain, deployment.bit, deployment.period);
+
+    if signals >= deployment.threshold {
+        if height >= deployment.min_activation_height {
+            return ThresholdState::Active;
+        } else {
+            return ThresholdState::LockedIn;
+        }
+    }
+
+    ThresholdState::Started
+}
+
+/// Returns `true` if the given BIP 9 deployment is active.
+pub fn is_bip9_active(name: &str, chain: &Blockchain) -> bool {
+    get_bip9_state(name, chain) == ThresholdState::Active
+}
+
+// ============================================================
+// MEMPOOL CONSTANTS
+// ============================================================
+
 pub const MAX_MEMPOOL_SIZE_BYTES: usize = 300 * 1024 * 1024;
-// Minimum relay fee per byte (1 satoshi).
 pub const MIN_RELAY_FEE_PER_BYTE: u64 = 1;
-// Mempool expiry time in seconds (14 days).
 pub const MEMPOOL_EXPIRY_SECS: u64 = 336 * 3600;
-// Minimum fee bump percentage for Replace-By-Fee (10%).
 pub const RBF_MIN_FEE_BUMP_PERCENT: u64 = 10;
 
 // Checkpoint module for hardcoded block hashes.
