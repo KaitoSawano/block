@@ -4,18 +4,18 @@
 
 //! Consensus module for ZenaChain.
 
-pub mod genesis;
-pub mod pow;
-pub mod rules;
-pub mod spec;
+pub mod genesis; // Genesis block parameters.
+pub mod pow; // Proof-of-work parameters.
+pub mod rules; // Consensus validation rules.
+pub mod spec; // Economic consensus parameters.
 
 use crate::blockchain; // For address prefix parameters.
-use crate::consensus::spec::Network;
-use zenachain_crypto::sha3_256_hex;
+use crate::consensus::spec::Network; // Network selector.
+use zenachain_crypto::sha3_256_hex; // For hashing.
 
 pub fn consensus_fingerprint_for(network: Network) -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", // 27 specifiers.
         network.name(),
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
@@ -38,7 +38,7 @@ pub fn consensus_fingerprint_for(network: Network) -> String {
         network.genesis_nbits(),
         pow::pow_limit(),
         rules::COINBASE_MATURITY,
-        blockchain::bech32_hrp_for(network), // Changed from network.bech32_hrp().
+        blockchain::bech32_hrp_for(network),
         rules::MAX_TX_PER_BLOCK,
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
@@ -53,7 +53,7 @@ pub fn consensus_fingerprint() -> String {
 
 pub fn parameter_fingerprint_for(network: Network) -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", // 27 specifiers.
         network.name(),
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
@@ -76,7 +76,7 @@ pub fn parameter_fingerprint_for(network: Network) -> String {
         network.genesis_nbits(),
         pow::pow_limit(),
         rules::COINBASE_MATURITY,
-        blockchain::bech32_hrp_for(network), // Changed from network.bech32_hrp().
+        blockchain::bech32_hrp_for(network),
         rules::MAX_TX_PER_BLOCK,
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
