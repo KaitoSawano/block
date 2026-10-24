@@ -4,18 +4,17 @@
 
 //! Consensus module for ZenaChain.
 
-pub mod genesis; // Genesis block parameters.
-pub mod pow; // Proof-of-work parameters.
-pub mod rules; // Consensus validation rules.
-pub mod spec; // Economic consensus parameters.
+pub mod genesis;
+pub mod pow;
+pub mod rules;
+pub mod spec;
 
-use crate::consensus::spec::Network; // Network selector.
-use zenachain_crypto::sha3_256_hex; // For hashing.
+use crate::consensus::spec::Network;
+use zenachain_crypto::sha3_256_hex;
 
-/// Compute the consensus fingerprint for the given network.
 pub fn consensus_fingerprint_for(network: Network) -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         network.name(),
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
@@ -38,25 +37,22 @@ pub fn consensus_fingerprint_for(network: Network) -> String {
         network.genesis_nbits(),
         pow::pow_limit(),
         rules::COINBASE_MATURITY,
-        network.address_prefix_byte(), // <-- Changed from address_prefix().
+        network.bech32_hrp(),
         rules::MAX_TX_PER_BLOCK,
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
         rules::ZERO_HASH,
-        genesis::expected_genesis_hash_for(network),
     );
     sha3_256_hex(payload.as_bytes())
 }
 
-/// Compute the consensus fingerprint for the currently active network.
 pub fn consensus_fingerprint() -> String {
     consensus_fingerprint_for(spec::current_network())
 }
 
-/// Compute the parameter fingerprint for the given network.
 pub fn parameter_fingerprint_for(network: Network) -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         network.name(),
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
@@ -79,22 +75,19 @@ pub fn parameter_fingerprint_for(network: Network) -> String {
         network.genesis_nbits(),
         pow::pow_limit(),
         rules::COINBASE_MATURITY,
-        network.address_prefix_byte(), // <-- Changed from address_prefix().
+        network.bech32_hrp(),
         rules::MAX_TX_PER_BLOCK,
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
         rules::ZERO_HASH,
-        genesis::expected_genesis_merkle_root_for(network),
     );
     sha3_256_hex(payload.as_bytes())
 }
 
-/// Compute the parameter fingerprint for the currently active network.
 pub fn parameter_fingerprint() -> String {
     parameter_fingerprint_for(spec::current_network())
 }
 
-/// Compute the genesis coinbase transaction identifier for the given network.
 pub fn genesis_coinbase_txid_for(network: Network) -> String {
     let fp = parameter_fingerprint_for(network);
     let payload = format!(
@@ -106,12 +99,10 @@ pub fn genesis_coinbase_txid_for(network: Network) -> String {
     sha3_256_hex(payload.as_bytes())
 }
 
-/// Compute the genesis coinbase transaction identifier for the currently active network.
 pub fn genesis_coinbase_txid() -> String {
     genesis_coinbase_txid_for(spec::current_network())
 }
 
-// Re-export consensus functions for convenience.
 pub use genesis::genesis_message;
 pub use genesis::genesis_output_script;
 pub use genesis::genesis_secret;
