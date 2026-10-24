@@ -4,14 +4,14 @@
 
 //! Command-line interface for ZenaChain.
 
-use serde_json::json;
-use zenachain::consensus::spec::{self, Network};
-use zenachain::rpc;
+use serde_json::json; // For JSON values.
+use zenachain::consensus::spec::{self, Network}; // Network selection.
+use zenachain::rpc; // RPC client.
 
 fn main() {
-    let raw_args: Vec<String> = std::env::args().collect();
+    let raw_args: Vec<String> = std::env::args().collect(); // Collect arguments.
 
-    // Parse -testnet / --testnet / -regtest / --regtest before dispatching RPC.
+    // Parse network flags.
     let mut filtered: Vec<String> = vec![raw_args[0].clone()];
     let mut selected_network = Network::Main;
 
@@ -53,6 +53,8 @@ fn main() {
         "getdifficulty" => rpc::call_and_print("getdifficulty", vec![]),
         "getchaintips" => rpc::call_and_print("getchaintips", vec![]),
         "getlistwallet" => rpc::call_and_print("getlistwallet", vec![]),
+        "getcreatewallet" => rpc::call_and_print("getcreatewallet", vec![]),
+        "getcreatewalletbech32" => rpc::call_and_print("getcreatewalletbech32", vec![]),
         "getaddressinfo" => {
             if args.len() < 3 {
                 println!("an address argument is required");
@@ -91,7 +93,6 @@ fn main() {
             }
             rpc::call_and_print("importprivkey", vec![json!(args[2])]);
         }
-        "getnewwallet" => rpc::call_and_print("getnewwallet", vec![]),
         "encryptwallet" => {
             if args.len() < 3 {
                 println!("usage: zenachain encryptwallet \"<password>\"");
@@ -205,7 +206,6 @@ fn main() {
             };
             rpc::call_and_print("getbalance", params);
         }
-        // --- NEW COMMANDS FOR REORG TESTING ---
         "submitblock" => {
             if args.len() < 3 {
                 println!("usage: zenachain submitblock <block_json_file>");
@@ -233,8 +233,6 @@ fn main() {
                 println!("usage: zenachain connect <addr>");
                 return;
             }
-            // This is a P2P command, but for now we can just print it.
-            // A full implementation would send a command to the network loop.
             println!("connect command is not yet implemented in CLI. Use P2P bootstrap instead.");
         }
         _ => {
@@ -279,10 +277,11 @@ fn print_help() {
     println!("  getmempoolinfo                      mempool summary");
     println!("  getnonce [address]                  next expected nonce for an address");
     println!("  getlistwallet                       list all addresses in the wallet");
+    println!("  getcreatewallet                     create a new Legacy (Base58Check) address in the wallet");
+    println!("  getcreatewalletbech32               create a new Native SegWit (Bech32) address in the wallet");
     println!("  getaddressinfo \"<address>\"          get detailed information for an address");
     println!("  setlabel \"<address>\" \"<label>\"      set a label for a wallet address");
     println!("  backupwallet \"<destination>\"        backup the wallet.dat file");
-    println!("  getnewwallet                        create a new address in the wallet");
     println!("  encryptwallet \"<password>\"          encrypt the wallet with a password");
     println!("  walletpassphrase \"<password>\"       unlock the wallet (for testing)");
     println!("  getaddtowallet                      use the default wallet address as the mining target");
