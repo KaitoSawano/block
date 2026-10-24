@@ -43,13 +43,13 @@ impl fmt::Display for ValidationError {
 }
 
 // Validates the address format.
-// If the BIP 9 deployment "disable_legacy_addresses" is active, only Bech32 is accepted.
+// If the soft fork "disable_legacy_addresses" is active, only Bech32 is accepted.
 pub fn rule_address_format(addr: &str, chain: &Blockchain) -> Result<(), ValidationError> {
     let hrp = crate::blockchain::bech32_hrp();
     let is_bech32 = addr.starts_with(&format!("{}1", hrp));
 
-    // Check if the BIP 9 deployment is active.
-    if crate::blockchain::is_bip9_active("disable_legacy_addresses", chain) && !is_bech32 {
+    // Check if the soft fork is active.
+    if crate::blockchain::is_softfork_active("disable_legacy_addresses", chain) && !is_bech32 {
         return Err(ValidationError::new(
             "E008",
             format!("legacy addresses are no longer accepted: {}", addr),
