@@ -14,7 +14,9 @@ use crate::transaction::Transaction; // The transaction structure.
 use std::fmt; // For implementing Display on ValidationError.
 
 // Re-export constants that are network-agnostic.
+pub use rules::ADDRESS_CHECKSUM_LEN; // Checksum length (8).
 pub use rules::ADDRESS_HEX_LEN; // Address hex length (40).
+pub use rules::ADDRESS_TOTAL_LEN; // Total address length (52).
 pub use rules::BLOCK_VERSION; // Block version (1).
 pub use rules::COINBASE_MATURITY; // Coinbase maturity (100).
 pub use rules::MAX_INPUTS_PER_TX; // Max inputs per tx.
@@ -58,7 +60,8 @@ impl fmt::Display for ValidationError {
     }
 }
 
-// Validates the address format: it must start with the network prefix followed by 40 hex characters.
+// Validates the address format: it must start with the network prefix,
+// followed by 40 hex characters, followed by 8 hex characters of checksum.
 pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
     let prefix = spec::current_network().address_prefix(); // Get the prefix for the active network.
     if !addr.starts_with(prefix) {
@@ -68,23 +71,30 @@ pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
             format!("address does not start with {}: {}", prefix, addr), // Clear message.
         ));
     }
-    let hex_part = &addr[prefix.len()..]; // Get the part after the prefix.
-    if hex_part.len() != ADDRESS_HEX_LEN {
-        // If the hex part is not exactly 40 characters, reject it.
+    if addr.len() != rules::ADDRESS_TOTAL_LEN {
+        // If the address does not have the correct total length, reject it.
         return Err(ValidationError::new(
-            "E002", // Error code: wrong hex length.
+            "E002", // Error code: wrong length.
             format!(
-                "address hex part must be {} characters, got {}",
-                ADDRESS_HEX_LEN,
-                hex_part.len()
+                "address must be {} characters, got {}",
+                rules::ADDRESS_TOTAL_LEN,
+                addr.len()
             ),
         ));
     }
+    let hex_part = &addr[prefix.len()..]; // Get the part after the prefix.
     if !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
         // If any character is not a hex digit, reject it.
         return Err(ValidationError::new(
             "E003", // Error code: non-hex character.
             format!("address contains a non-hexadecimal character: {}", addr),
+        ));
+    }
+    if !crate::checksum::verify_checksum(addr) {
+        // If the checksum is invalid, reject it.
+        return Err(ValidationError::new(
+            "E007", // Error code: invalid checksum.
+            format!("address checksum is invalid: {}", addr),
         ));
     }
     Ok(()) // The address is valid.
