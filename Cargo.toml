@@ -67,9 +67,6 @@ zenachain-crypto = { path = "crypto" }
 # Base58 encoding for addresses.
 bs58 = "0.5"
 
-# Daemonization support (fork, setsid, etc.).
-nix = { version = "0.29", features = ["process", "signal"] }
-
 # --- STORAGE DEPENDENCIES (Pure Rust) ---
 eth_trie = "0.6"
 rlp = "0.5"
