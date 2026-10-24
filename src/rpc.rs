@@ -11,7 +11,6 @@ use crate::consensus::spec::Network; // Network selector.
 use crate::datadir; // Data directory helpers.
 use crate::p2p::network::{NetworkCommand, PeerRegistry}; // P2P networking.
 use crate::pow; // Proof-of-work utilities.
-use crate::secp256k1::address; // Address derivation.
 use crate::storage; // Storage layer.
 use crate::transaction::Transaction; // Transaction structure.
 use crate::utils::{format_datetime, now_millis}; // Utility functions.
