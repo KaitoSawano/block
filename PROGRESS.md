@@ -7,7 +7,7 @@ Sekarang mendukung tiga jaringan: **Mainnet**, **Testnet**, dan **Regtest**, den
 
 **Fondasi penyimpanan *state* telah dimigrasikan ke LevelDB + Merkle Patricia Trie (MPT)**, dengan *snapshot* JSON untuk persistensi antar-*session*.
 
-**Sistem alamat telah dimigrasikan ke Base58Check (Legacy) dan Bech32 (Native SegWit)**, dengan parameter prefix yang terpusat di `blockchain.rs`.
+**Sistem alamat telah dimigrasikan ke Base58Check (Legacy) dan Bech32 (Native SegWit)**, dengan parameter prefix yang terpusat di `blockchain.rs`. Kedua format alamat dapat saling kirim kapan saja (seperti Bitcoin).
 
 ### Parameter Konsensus Utama
 | Parameter | Mainnet | Testnet | Regtest |
@@ -42,7 +42,7 @@ Proyek ini menganut prinsip konservatif dalam pengembangan:
 Kode berikut sudah **stabil dan teruji**. Jangan mengubahnya tanpa alasan yang sangat kuat:
 
 1.  `src/transaction.rs` — Model transaksi, tanda tangan, nonce.
-2.  `src/blockchain.rs` — State chain, reward, difficulty, mempool, **parameter prefix alamat**.
+2.  `src/blockchain.rs` — State chain, reward, difficulty, mempool, **parameter prefix alamat**, **registry soft fork**.
 3.  `src/storage/` — LevelDB, MPT, `Account`, `StateDB`.
 4.  `src/storage_legacy.rs` — Snapshot JSON.
 5.  `src/validation.rs` — Aturan konsensus.
@@ -60,7 +60,7 @@ Kode berikut sudah **stabil dan teruji**. Jangan mengubahnya tanpa alasan yang s
 ## 3. Status Terkini (Terakhir Diperbarui: 2026-10-24)
 
 ### 🟢 CHECKPOINT: `fase-4-lengkap`
-Sistem transfer *account-based* mainnet **STABIL** dan **TERUJI**. Fondasi penyimpanan telah dimigrasikan ke LevelDB + MPT. **Coinbase Maturity**, **Reorg Logic**, **DNS Seed Discovery**, dan **Uji Beban** telah diimplementasikan dan **diuji**. **Sistem alamat ganda (Base58Check + Bech32)** telah diimplementasikan dan **diuji**.
+Sistem transfer *account-based* mainnet **STABIL** dan **TERUJI**. Fondasi penyimpanan telah dimigrasikan ke LevelDB + MPT. **Coinbase Maturity**, **Reorg Logic**, **DNS Seed Discovery**, dan **Uji Beban** telah diimplementasikan dan **diuji**. **Sistem alamat ganda (Base58Check + Bech32)** dan **Soft Fork Registry** telah diimplementasikan dan **diuji**.
 
 ### 🟢 FASE 2: HARDENING MAINNET (SELESAI)
 Semua pilar keamanan dan ekonomi telah diimplementasikan:
@@ -118,6 +118,14 @@ Penyimpanan *state* telah dimigrasikan dari `HashMap` + JSON ke **LevelDB + Merk
 - ✅ **Validasi Dua Format:** `rule_address_format` mendeteksi kedua format secara otomatis.
 - ✅ **RPC Baru:** `getcreatewallet` (Legacy) dan `getcreatewalletbech32` (Bech32).
 - ✅ **Pengujian:** Membuat alamat Legacy dan Bech32, memvalidasi, dan memastikan typo ditolak.
+- ✅ **Transfer Bebas:** Legacy → Bech32, Bech32 → Legacy, Legacy → Legacy, Bech32 → Bech32 semuanya berfungsi.
+
+### 🟢 SOFT FORK REGISTRY (SELESAI & TERUJI)
+- ✅ **Struktur `SoftForkDeployment`:** Parameter `bit`, `start_time`, `timeout`, `min_activation_height`, `period`, `threshold`.
+- ✅ **State Machine `SoftForkState`:** `Defined`, `Started`, `LockedIn`, `Active`, `Failed`.
+- ✅ **Fungsi `is_softfork_active`:** Mengecek apakah soft fork aktif berdasarkan tinggi blok.
+- ✅ **Default:** Semua soft fork dinonaktifkan (`NEVER_ACTIVE`). Alamat Legacy dan Bech32 bebas digunakan selamanya.
+- ✅ **Pengujian:** Mengaktifkan `disable_legacy_addresses` secara manual (dengan `ALWAYS_ACTIVE` dan `min_activation_height = 10`), memastikan alamat Legacy ditolak setelah blok 10, dan Bech32 tetap diterima.
 
 ### 🟢 PERBAIKAN BUG KRITIS (SELESAI)
 Enam bug kritis ditemukan dan diperbaiki selama *code review*:
@@ -177,12 +185,13 @@ Enam bug kritis ditemukan dan diperbaiki selama *code review*:
 - **Lisensi:** Apache 2.0 (bukan MIT lagi).
 - **Alamat:** Mendukung dua format: Legacy (Base58Check) dan Bech32 (Native SegWit). Prefix di `blockchain.rs`, bukan `spec.rs`.
 - **Genesis:** Setiap perubahan parameter konsensus (prefix, HRP, reward) memerlukan mining ulang genesis. Perbarui `genesis.rs` dan `spec.rs`.
+- **Soft Fork:** Registry `SOFT_FORK_DEPLOYMENTS` sudah ada. Semua soft fork dinonaktifkan (`NEVER_ACTIVE`). Alamat Legacy dan Bech32 bebas digunakan selamanya.
 
 ---
 
 ## 6. Cara Melanjutkan di Chat Baru
 Copy file ini dan tempel ke chat baru, lalu ketik:
-> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, 4 (Coinbase Maturity, Reorg Logic), DNS Seed, Uji Beban, Lisensi Apache 2.0, dan Sistem Alamat Ganda (Base58Check + Bech32) selesai. Test suite 44/44 lulus. Lanjut FASE 5: Dokumentasi, Audit, dan Testnet Publik. Patuhi prinsip 'If it ain't broke, don't fix it'."
+> "Lanjut ZenaChain. Baca PROGRESS.md ini. Fase 2, 3, 4 (Coinbase Maturity, Reorg Logic), DNS Seed, Uji Beban, Lisensi Apache 2.0, Sistem Alamat Ganda (Base58Check + Bech32), dan Soft Fork Registry selesai. Test suite 44/44 lulus. Lanjut FASE 5: Dokumentasi, Audit, dan Testnet Publik. Patuhi prinsip 'If it ain't broke, don't fix it'."
 
 ---
 
