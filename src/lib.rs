@@ -4,6 +4,7 @@
 
 //! ZenaChain library crate.
 
+pub mod base58check; // Base58Check encoding and decoding for addresses.
 pub mod block; // Block structure and related operations.
 pub mod blockchain; // Blockchain state and consensus-related operations.
 pub mod config; // Configuration file parsing and persistence.
