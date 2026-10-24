@@ -4,21 +4,22 @@
 
 //! ZenaChain library crate.
 
-pub mod base58check; // Base58Check encoding and decoding for addresses.
-pub mod block; // Block structure and related operations.
-pub mod blockchain; // Blockchain state and consensus-related operations.
-pub mod config; // Configuration file parsing and persistence.
-pub mod consensus; // Consensus parameters and rules.
-pub mod datadir; // Data directory layout and path helpers.
-pub mod mempool; // Mempool representation.
-pub mod node; // Node state container.
-pub mod p2p; // Peer-to-peer networking.
-pub mod pow; // Proof-of-work primitives.
-pub mod rpc; // RPC server and client.
-pub mod secp256k1; // secp256k1 cryptographic primitives.
-pub mod storage; // Storage layer.
-pub mod storage_legacy; // Legacy storage functions.
-pub mod transaction; // Transaction structure.
-pub mod utils; // Utility functions.
-pub mod validation; // Consensus validation rules.
-pub mod wallet; // Wallet representation and persistence.
+pub mod base58check; // Legacy (Base58Check) address encoding.
+pub mod bech32; // Native SegWit (Bech32) address encoding.
+pub mod block;
+pub mod blockchain;
+pub mod config;
+pub mod consensus;
+pub mod datadir;
+pub mod mempool;
+pub mod node;
+pub mod p2p;
+pub mod pow;
+pub mod rpc;
+pub mod secp256k1;
+pub mod storage;
+pub mod storage_legacy;
+pub mod transaction;
+pub mod utils;
+pub mod validation;
+pub mod wallet;
