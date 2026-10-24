@@ -46,17 +46,30 @@ impl fmt::Display for ValidationError {
     }
 }
 
-// Validates the address format: it must be a valid Base58Check string
-// with the correct network prefix and checksum.
+// Validates the address format (Legacy Base58Check or Native SegWit Bech32).
 pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
-    if !address::verify_address(addr) {
-        // If the address is not a valid Base58Check string, reject it.
+    let hrp = crate::blockchain::bech32_hrp(); // Get the Bech32 HRP for the active network.
+    if addr.starts_with(&format!("{}1", hrp)) {
+        // If the address starts with the Bech32 HRP followed by "1"...
+        if !address::verify_bech32_address(addr) {
+            // Validate the Bech32 address.
+            return Err(ValidationError::new(
+                "E001", // Error code: invalid Bech32 address.
+                format!("invalid bech32 address: {}", addr),
+            ));
+        }
+        return Ok(()); // The Bech32 address is valid.
+    }
+
+    // Otherwise, treat it as a Legacy (Base58Check) address.
+    if !address::verify_legacy_address(addr) {
+        // Validate the Legacy address.
         return Err(ValidationError::new(
-            "E001", // Error code: invalid address.
-            format!("invalid address: {}", addr),
+            "E001", // Error code: invalid Legacy address.
+            format!("invalid legacy address: {}", addr),
         ));
     }
-    Ok(()) // The address is valid.
+    Ok(()) // The Legacy address is valid.
 }
 
 // Validates that the sender and recipient are not the same.
@@ -147,6 +160,9 @@ pub fn rule_address_matches_pubkey(tx: &Transaction) -> Result<(), ValidationErr
     })?;
     if expected != tx.from {
         // If the derived address does not match the sender, reject it.
+        // Note: This only checks Legacy addresses. For Bech32, we would
+        // need to derive the Bech32 address and compare. For now, we
+        // assume the wallet uses Legacy addresses for signing.
         return Err(ValidationError::new(
             "E011", // Error code: address does not match pubkey.
             format!(
