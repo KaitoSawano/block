@@ -3,17 +3,12 @@
 // file LICENSE or https://www.apache.org/licenses/LICENSE-2.0.
 
 //! Account-based transaction model with per-address nonces.
-//!
-//! The transaction identifier (`txid`) commits to every field except
-//! the signature, following the Bitcoin convention. The signature
-//! commits to a `signing_hash` that includes the sender nonce, so that
-//! a transaction cannot be replayed or reordered without invalidating
-//! the signature.
 
 use serde::{Deserialize, Serialize};
 use zenachain_crypto::sha3_256_hex;
 
 use crate::consensus::spec;
+use crate::secp256k1::address;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
@@ -92,9 +87,6 @@ impl Transaction {
         tx
     }
 
-    /// Compute the transaction identifier.
-    ///
-    /// The identifier commits to every field except the signature.
     pub fn compute_txid(&self) -> String {
         let payload = format!(
             "{}|{}|{}|{}|{}|{}|{}|{}",
@@ -110,21 +102,11 @@ impl Transaction {
         sha3_256_hex(payload.as_bytes())
     }
 
-    /// Compute the signing hash.
-    ///
-    /// The signing hash includes the nonce so that the signature binds
-    /// the transaction to a specific position in the sender's sequence.
-    /// The signature field is excluded because a signature cannot commit
-    /// to itself.
-    ///
-    /// IMPORTANT: The signing hash now includes the network's magic bytes
-    /// (acting as a Chain ID) to prevent cross-network replay attacks.
-    /// A transaction signed for Mainnet will be invalid on Testnet/Regtest.
     pub fn signing_hash(&self) -> String {
         let chain_id = spec::current_network().magic_hex();
         let payload = format!(
             "{}|{}|{}|{}|{}|{}|{}|{}|{}",
-            chain_id, // Inject Chain ID here
+            chain_id,
             self.from,
             self.to,
             self.amount,
@@ -162,17 +144,33 @@ impl Transaction {
             return None;
         }
         let pk = hex::decode(&self.public_key).ok()?;
-        crate::secp256k1::address::address_from_public_key(&pk).ok()
+        address::address_from_public_key(&pk).ok()
     }
 
+    /// Basic validation for the transaction (does not check against the chain state).
+    /// For chain-aware validation (nonce, balance, soft fork), use
+    /// `validation::validate_transaction`.
     pub fn is_valid(&self) -> bool {
-        crate::validation::rule_txid_consistent(self).is_ok()
-            && crate::validation::rule_address_format(&self.from).is_ok()
-            && crate::validation::rule_address_format(&self.to).is_ok()
-            && crate::validation::rule_self_send(self).is_ok()
-            && crate::validation::rule_amount_nonzero(self).is_ok()
-            && crate::validation::rule_note_length(self).is_ok()
-            && crate::validation::rule_signature(self).is_ok()
-            && crate::validation::rule_address_matches_pubkey(self).is_ok()
+        // Check txid consistency.
+        self.txid == self.compute_txid()
+            // Check sender address format (basic).
+            && (address::verify_legacy_address(&self.from)
+                || address::verify_bech32_address(&self.from))
+            // Check recipient address format (basic).
+            && (address::verify_legacy_address(&self.to)
+                || address::verify_bech32_address(&self.to))
+            // Check self-send.
+            && self.from != self.to
+            // Check amount.
+            && self.amount > 0
+            // Check note length.
+            && self.note.len() <= crate::consensus::rules::MAX_NOTE_LEN
+            // Check signature.
+            && self.verify_signature()
+            // Check address matches pubkey.
+            && self
+                .expected_address()
+                .map(|a| a == self.from)
+                .unwrap_or(false)
     }
 }
