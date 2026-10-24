@@ -9,12 +9,12 @@ pub mod pow;
 pub mod rules;
 pub mod spec;
 
-use crate::blockchain; // For address prefix parameters and BIP9 deployments.
+use crate::blockchain;
 use crate::consensus::spec::Network;
 use zenachain_crypto::sha3_256_hex;
 
 pub fn consensus_fingerprint_for(network: Network) -> String {
-    let bip9_fingerprint: String = blockchain::BIP9_DEPLOYMENTS
+    let softfork_fingerprint: String = blockchain::SOFT_FORK_DEPLOYMENTS
         .iter()
         .map(|(name, d)| format!("{}:{}:{}:{}:{}:{}:{}", name, d.bit, d.start_time, d.timeout, d.min_activation_height, d.period, d.threshold))
         .collect::<Vec<_>>()
@@ -49,7 +49,7 @@ pub fn consensus_fingerprint_for(network: Network) -> String {
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
         rules::ZERO_HASH,
-        bip9_fingerprint, // Tambahan untuk BIP 9.
+        softfork_fingerprint,
     );
     sha3_256_hex(payload.as_bytes())
 }
@@ -59,7 +59,7 @@ pub fn consensus_fingerprint() -> String {
 }
 
 pub fn parameter_fingerprint_for(network: Network) -> String {
-    let bip9_fingerprint: String = blockchain::BIP9_DEPLOYMENTS
+    let softfork_fingerprint: String = blockchain::SOFT_FORK_DEPLOYMENTS
         .iter()
         .map(|(name, d)| format!("{}:{}:{}:{}:{}:{}:{}", name, d.bit, d.start_time, d.timeout, d.min_activation_height, d.period, d.threshold))
         .collect::<Vec<_>>()
@@ -94,7 +94,7 @@ pub fn parameter_fingerprint_for(network: Network) -> String {
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
         rules::ZERO_HASH,
-        bip9_fingerprint, // Tambahan untuk BIP 9.
+        softfork_fingerprint,
     );
     sha3_256_hex(payload.as_bytes())
 }
