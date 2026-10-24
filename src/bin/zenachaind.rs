@@ -19,13 +19,7 @@ use zenachain::rpc::RpcServer; // The RPC server.
 use zenachain::storage; // The storage layer.
 
 // A flag that indicates a full shutdown was requested (via RPC `stop` or SIGTERM).
-// In this case, the node stops completely and does NOT spawn a background child.
 static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
-
-// A flag that indicates a detach (handover to background) was requested (via Ctrl+C).
-// In this case, the node saves state, releases locks, spawns a background child,
-// and the parent exits. The node itself continues running in the child.
-static DETACH_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 fn main() {
     let args: Vec<String> = std::env::args().collect(); // Collect command-line arguments.
@@ -256,6 +250,9 @@ fn install_signal_handlers(rpc_shutdown: Arc<AtomicBool>, is_daemon_child: bool)
         }
         Err(e) => eprintln!("[signal] failed to install SIGTERM handler: {}", e),
     }
+
+    // Silence the unused variable warning for `rpc_shutdown` if it is not used.
+    let _ = rpc_shutdown;
 }
 
 // Detaches the current process from the terminal and continues in the background.
