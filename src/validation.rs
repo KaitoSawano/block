@@ -42,13 +42,10 @@ impl fmt::Display for ValidationError {
     }
 }
 
-// Validates the address format.
-// If the soft fork "disable_legacy_addresses" is active, only Bech32 is accepted.
 pub fn rule_address_format(addr: &str, chain: &Blockchain) -> Result<(), ValidationError> {
     let hrp = crate::blockchain::bech32_hrp();
     let is_bech32 = addr.starts_with(&format!("{}1", hrp));
 
-    // Check if the soft fork is active.
     if crate::blockchain::is_softfork_active("disable_legacy_addresses", chain) && !is_bech32 {
         return Err(ValidationError::new(
             "E008",
@@ -166,10 +163,11 @@ pub fn rule_sufficient_balance(chain: &Blockchain, tx: &Transaction) -> Result<(
     if is_special_tx(tx) {
         return Ok(());
     }
-    let balance = chain.spendable_balance_of(&tx.from);
+    // Use mature_balance, which accounts for Coinbase Maturity.
+    let balance = chain.mature_balance_of(&tx.from);
     let need = tx.amount.saturating_add(tx.fee);
     if balance < need {
-        return Err(ValidationError::new("E021", format!("insufficient spendable balance: required {} sat, available {} sat", need, balance)));
+        return Err(ValidationError::new("E021", format!("insufficient mature balance: required {} sat, available {} sat", need, balance)));
     }
     Ok(())
 }
@@ -386,13 +384,13 @@ pub fn validate_block_transactions(
             return Err(ValidationError::new("E022", format!("invalid nonce for {}: got {}, expected {}", tx.from, tx.nonce, base_nonce)));
         }
 
-        let base_balance = overlay_balances.get(&tx.from).copied().unwrap_or_else(|| chain.spendable_balance_of(&tx.from));
+        let base_balance = overlay_balances.get(&tx.from).copied().unwrap_or_else(|| chain.mature_balance_of(&tx.from));
         let need = match tx.amount.checked_add(tx.fee) {
             Some(v) => v,
             None => return Err(ValidationError::new("E023", "amount + fee overflows u64")),
         };
         if base_balance < need {
-            return Err(ValidationError::new("E021", format!("insufficient spendable balance for {}: required {} sat, available {} sat", tx.from, need, base_balance)));
+            return Err(ValidationError::new("E021", format!("insufficient mature balance for {}: required {} sat, available {} sat", tx.from, need, base_balance)));
         }
 
         let new_from = base_balance - need;
