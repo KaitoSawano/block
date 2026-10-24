@@ -198,31 +198,25 @@ async fn async_main(selected_network: Network, is_daemon_child: bool) {
 }
 
 // Installs a SIGINT handler that triggers a detach (fork) BEFORE starting Tokio.
-// This is safe because it runs on the main thread, outside the Tokio runtime.
 fn install_detach_signal_handler() {
     use nix::sys::signal::{self, SigHandler, Signal}; // For signal handling.
 
     extern "C" fn handle_sigint(_: i32) {
-        // This handler runs on the main thread before Tokio starts.
-        // It forks the process and lets the child continue.
         detach_to_background();
     }
 
     unsafe {
-        // Install the SIGINT handler.
         signal::signal(Signal::SIGINT, SigHandler::Handler(handle_sigint))
             .expect("failed to install SIGINT handler");
     }
 }
 
 // Installs signal handlers for the async runtime.
-// SIGTERM triggers a full shutdown (without detach).
 fn install_signal_handlers(rpc_shutdown: Arc<AtomicBool>, is_daemon_child: bool) {
     use tokio::signal::unix::{signal, SignalKind}; // For Unix signal handling.
 
     if is_daemon_child {
         // The daemon child ignores SIGHUP so it survives terminal closure.
-        // SIGTERM triggers a graceful shutdown.
         match signal(SignalKind::hangup()) {
             Ok(mut sig) => {
                 tokio::spawn(async move {
@@ -251,13 +245,11 @@ fn install_signal_handlers(rpc_shutdown: Arc<AtomicBool>, is_daemon_child: bool)
         Err(e) => eprintln!("[signal] failed to install SIGTERM handler: {}", e),
     }
 
-    // Silence the unused variable warning for `rpc_shutdown` if it is not used.
+    // Silence the unused variable warning for `rpc_shutdown`.
     let _ = rpc_shutdown;
 }
 
 // Detaches the current process from the terminal and continues in the background.
-// This uses `fork()` + `setsid()` and does NOT save state.
-// The parent exits; the child continues running the node.
 fn detach_to_background() {
     use nix::unistd::{fork, ForkResult, setsid}; // For fork and setsid.
 
@@ -270,11 +262,9 @@ fn detach_to_background() {
         }
         Ok(ForkResult::Child) => {
             // Child process: continue running as the daemon.
-            // Create a new session so the child is not tied to the terminal.
-            let _ = setsid();
+            let _ = setsid(); // Create a new session.
             println!();
             println!("[daemon] node is now running in the background.");
-            // The child continues into the Tokio runtime.
         }
         Err(e) => {
             // Fork failed: log the error and continue in the foreground.
