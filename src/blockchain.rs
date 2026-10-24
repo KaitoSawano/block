@@ -158,11 +158,17 @@ pub fn genesis_nbits() -> u32 {
     spec::current_network().genesis_nbits() // Fetch from the spec.
 }
 
+/// Return the Legacy (Base58Check) address prefix byte for the active network.
+pub fn legacy_prefix_byte() -> u8 {
+    spec::current_network().legacy_prefix_byte() // Fetch from the spec.
+}
+
+/// Return the Native SegWit (Bech32) HRP for the active network.
+pub fn bech32_hrp() -> &'static str {
+    spec::current_network().bech32_hrp() // Fetch from the spec.
+}
+
 // The Blockchain struct, representing the full chain state.
-// NOTE: `Clone` is intentionally NOT derived because `StateDB` cannot be
-// cloned. `Serialize` and `Deserialize` are also NOT derived because
-// `Blockchain` is never serialized as a whole; persistence is handled by
-// `storage::save_chain()` which writes the blocks and mempool separately.
 #[derive(Debug)] // Only `Debug` is derived.
 pub struct Blockchain {
     pub chain: Vec<Block>, // The list of blocks.
