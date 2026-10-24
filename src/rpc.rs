@@ -1822,15 +1822,9 @@ fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
         Some(a) => a.to_string(),
         None => return RpcResponse::err("getaddtoaddress requires an address"),
     };
-    let w = Wallet::load_default().unwrap_or_else(|_| Wallet {
-        entries: Vec::new(),
-        created_at: now_millis(),
-        encrypted: false,
-        salt: String::new(),
-        nonce: String::new(),
-    });
     // Validate against the active network.
-    if !crate::validation::rule_address_format(&addr, &Blockchain::new()).is_ok() {
+    let chain = Blockchain::new();
+    if !validation::is_valid_address(&addr, &chain) {
         return RpcResponse::err("invalid address format");
     }
     let mut cfg = Config::load_or_default();
