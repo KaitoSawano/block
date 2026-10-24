@@ -105,23 +105,22 @@ fn transaction_with_self_send_is_rejected() {
 
 #[test]
 fn address_format_validation() {
-    // Generate a valid address for the active network.
     let kp = KeyPair::generate().expect("keypair generation failed");
     let valid_addr = address::address_from_public_key(&kp.public_key).expect("address failed");
-    assert!(validation::is_valid_address(&valid_addr));
+    
+    let chain = Blockchain::new();
+    assert!(validation::is_valid_address(&valid_addr, &chain));
 
-    // A random string should be invalid.
-    assert!(!validation::is_valid_address("ZENA123"));
-    assert!(!validation::is_valid_address("not-an-address"));
+    assert!(!validation::is_valid_address("ZENA123", &chain));
+    assert!(!validation::is_valid_address("not-an-address", &chain));
 
-    // A valid address with a typo in the checksum should be invalid.
     let mut chars: Vec<char> = valid_addr.chars().collect();
     let last_char = chars.pop().unwrap();
     let new_char = if last_char == 'a' { 'b' } else { 'a' };
     chars.push(new_char);
     let typo_addr: String = chars.into_iter().collect();
     assert!(
-        !validation::is_valid_address(&typo_addr),
+        !validation::is_valid_address(&typo_addr, &chain),
         "typo address should be invalid"
     );
 }
