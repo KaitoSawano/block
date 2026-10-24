@@ -107,14 +107,16 @@ pub enum SoftForkState {
 }
 
 /// The registry of all soft fork deployments.
+/// All soft forks are disabled by default (NEVER_ACTIVE).
+/// This means both Legacy and Bech32 addresses are always valid.
 pub const SOFT_FORK_DEPLOYMENTS: &[(&str, SoftForkDeployment)] = &[
     (
         "disable_legacy_addresses",
         SoftForkDeployment {
             bit: 0,
-            start_time: ALWAYS_ACTIVE, // Force active for testing.
+            start_time: NEVER_ACTIVE, // Never active: both address types are valid.
             timeout: NO_TIMEOUT,
-            min_activation_height: 10, // Activate after block 10.
+            min_activation_height: 0,
             period: 2016,
             threshold: 1916, // 95%
         },
@@ -168,7 +170,7 @@ pub fn get_softfork_state(name: &str, chain: &Blockchain) -> SoftForkState {
     let height = chain.height();
     let mtp = median_time_past(chain);
 
-    // If NEVER_ACTIVE, not scheduled.
+    // If NEVER_ACTIVE, the soft fork is not scheduled.
     if deployment.start_time == NEVER_ACTIVE {
         return SoftForkState::Defined;
     }
