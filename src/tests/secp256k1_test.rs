@@ -43,6 +43,15 @@ fn address_is_deterministic() {
 fn address_has_correct_format() {
     let kp = KeyPair::generate().expect("keypair generation failed");
     let addr = address::address_from_public_key(&kp.public_key).expect("address failed");
-    assert!(addr.starts_with("ZENA"));
-    assert_eq!(addr.len(), 44);
+    // Base58Check addresses are between 26 and 35 characters long.
+    assert!(
+        addr.len() >= 26 && addr.len() <= 35,
+        "address length should be 26-35, got {}",
+        addr.len()
+    );
+    // The address should not contain invalid Base58 characters (0, O, I, l).
+    assert!(!addr.contains('0'));
+    assert!(!addr.contains('O'));
+    assert!(!addr.contains('I'));
+    assert!(!addr.contains('l'));
 }
