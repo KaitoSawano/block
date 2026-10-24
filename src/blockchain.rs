@@ -112,9 +112,9 @@ pub const SOFT_FORK_DEPLOYMENTS: &[(&str, SoftForkDeployment)] = &[
         "disable_legacy_addresses",
         SoftForkDeployment {
             bit: 0,
-            start_time: NEVER_ACTIVE, // Not scheduled yet.
+            start_time: ALWAYS_ACTIVE, // Force active for testing.
             timeout: NO_TIMEOUT,
-            min_activation_height: 0,
+            min_activation_height: 10, // Activate after block 10.
             period: 2016,
             threshold: 1916, // 95%
         },
@@ -168,12 +168,18 @@ pub fn get_softfork_state(name: &str, chain: &Blockchain) -> SoftForkState {
     let height = chain.height();
     let mtp = median_time_past(chain);
 
+    // If NEVER_ACTIVE, not scheduled.
     if deployment.start_time == NEVER_ACTIVE {
         return SoftForkState::Defined;
     }
 
+    // If ALWAYS_ACTIVE, check min_activation_height.
     if deployment.start_time == ALWAYS_ACTIVE {
-        return SoftForkState::Active;
+        if height >= deployment.min_activation_height {
+            return SoftForkState::Active;
+        } else {
+            return SoftForkState::LockedIn;
+        }
     }
 
     if mtp < deployment.start_time {
