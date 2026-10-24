@@ -4,18 +4,24 @@
 
 //! Consensus module for ZenaChain.
 
-pub mod genesis; // Genesis block parameters.
-pub mod pow; // Proof-of-work parameters.
-pub mod rules; // Consensus validation rules.
-pub mod spec; // Economic consensus parameters.
+pub mod genesis;
+pub mod pow;
+pub mod rules;
+pub mod spec;
 
-use crate::blockchain; // For address prefix parameters.
-use crate::consensus::spec::Network; // Network selector.
-use zenachain_crypto::sha3_256_hex; // For hashing.
+use crate::blockchain; // For address prefix parameters and BIP9 deployments.
+use crate::consensus::spec::Network;
+use zenachain_crypto::sha3_256_hex;
 
 pub fn consensus_fingerprint_for(network: Network) -> String {
+    let bip9_fingerprint: String = blockchain::BIP9_DEPLOYMENTS
+        .iter()
+        .map(|(name, d)| format!("{}:{}:{}:{}:{}:{}:{}", name, d.bit, d.start_time, d.timeout, d.min_activation_height, d.period, d.threshold))
+        .collect::<Vec<_>>()
+        .join(",");
+
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", // 27 specifiers.
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         network.name(),
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
@@ -43,6 +49,7 @@ pub fn consensus_fingerprint_for(network: Network) -> String {
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
         rules::ZERO_HASH,
+        bip9_fingerprint, // Tambahan untuk BIP 9.
     );
     sha3_256_hex(payload.as_bytes())
 }
@@ -52,8 +59,14 @@ pub fn consensus_fingerprint() -> String {
 }
 
 pub fn parameter_fingerprint_for(network: Network) -> String {
+    let bip9_fingerprint: String = blockchain::BIP9_DEPLOYMENTS
+        .iter()
+        .map(|(name, d)| format!("{}:{}:{}:{}:{}:{}:{}", name, d.bit, d.start_time, d.timeout, d.min_activation_height, d.period, d.threshold))
+        .collect::<Vec<_>>()
+        .join(",");
+
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", // 27 specifiers.
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         network.name(),
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
@@ -81,6 +94,7 @@ pub fn parameter_fingerprint_for(network: Network) -> String {
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
         rules::ZERO_HASH,
+        bip9_fingerprint, // Tambahan untuk BIP 9.
     );
     sha3_256_hex(payload.as_bytes())
 }
