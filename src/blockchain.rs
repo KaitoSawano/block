@@ -19,22 +19,22 @@ use crate::validation; // Validation rules.
 // ============================================================
 
 /// Legacy (Base58Check) prefix byte for Mainnet.
-pub const LEGACY_PREFIX_MAIN: u8 = 0x30; // 48 decimal (produces "L" addresses).
+pub const LEGACY_PREFIX_MAIN: u8 = 0x30;
 
 /// Legacy (Base58Check) prefix byte for Testnet.
-pub const LEGACY_PREFIX_TEST: u8 = 0x6f; // 111 decimal (produces "m" or "n" addresses).
+pub const LEGACY_PREFIX_TEST: u8 = 0x6f;
 
 /// Legacy (Base58Check) prefix byte for Regtest.
-pub const LEGACY_PREFIX_REGTEST: u8 = 0x6f; // 111 decimal (same as Testnet).
+pub const LEGACY_PREFIX_REGTEST: u8 = 0x6f;
 
 /// Bech32 Human-Readable Part (HRP) for Mainnet.
-pub const BECH32_HRP_MAIN: &str = "zena"; // Produces "zena1..." addresses.
+pub const BECH32_HRP_MAIN: &str = "zena";
 
 /// Bech32 Human-Readable Part (HRP) for Testnet.
-pub const BECH32_HRP_TEST: &str = "ztes"; // Produces "ztes1..." addresses.
+pub const BECH32_HRP_TEST: &str = "ztes";
 
 /// Bech32 Human-Readable Part (HRP) for Regtest.
-pub const BECH32_HRP_REGTEST: &str = "zreg"; // Produces "zreg1..." addresses.
+pub const BECH32_HRP_REGTEST: &str = "zreg";
 
 /// Return the Legacy prefix byte for the active network.
 pub fn legacy_prefix_byte() -> u8 {
@@ -70,6 +70,27 @@ pub fn bech32_hrp_for(network: spec::Network) -> &'static str {
         spec::Network::Test => BECH32_HRP_TEST,
         spec::Network::Regtest => BECH32_HRP_REGTEST,
     }
+}
+
+// ============================================================
+// HARD FORK ACTIVATION HEIGHTS
+// Block height at which each feature becomes mandatory.
+// Set to 0 to disable the activation (feature is never active).
+// ============================================================
+
+/// Block height at which Bech32 (Native SegWit) addresses become mandatory.
+/// Before this height, both Legacy and Bech32 are accepted.
+/// After this height, only Bech32 is accepted (Legacy is rejected).
+pub const ACTIVATION_HEIGHT_BECH32_ONLY: u64 = 0; // 0 = not scheduled yet.
+
+/// Returns `true` if the given activation height has been reached.
+pub fn is_activation_active(activation_height: u64, current_height: u64) -> bool {
+    // If activation_height is 0, the feature is not scheduled.
+    if activation_height == 0 {
+        return false;
+    }
+    // The feature is active if the current height is >= activation height.
+    current_height >= activation_height
 }
 
 // Maximum size of the mempool in bytes (300 MB).
