@@ -142,6 +142,7 @@ pub fn rule_signature(tx: &Transaction) -> Result<(), ValidationError> {
 }
 
 // Validates that the public key matches the sender address.
+// Supports both Legacy (Base58Check) and Bech32 addresses.
 pub fn rule_address_matches_pubkey(tx: &Transaction) -> Result<(), ValidationError> {
     if is_special_tx(tx) {
         // Special transactions do not need this check.
@@ -154,15 +155,23 @@ pub fn rule_address_matches_pubkey(tx: &Transaction) -> Result<(), ValidationErr
     let pk = hex::decode(&tx.public_key)
         // Decode the public key; error out if it fails.
         .map_err(|_| ValidationError::new("E011", "public key is not hexadecimal"))?;
-    let expected = address::address_from_public_key(&pk).map_err(|_| {
-        // Derive the address from the public key; error out if it fails.
-        ValidationError::new("E011", "public key cannot be converted to an address")
-    })?;
+
+    // Detect the address format based on the prefix.
+    let hrp = crate::blockchain::bech32_hrp();
+    let expected = if tx.from.starts_with(&format!("{}1", hrp)) {
+        // Bech32 address.
+        address::address_from_public_key_bech32(&pk).map_err(|_| {
+            ValidationError::new("E011", "public key cannot be converted to a bech32 address")
+        })?
+    } else {
+        // Legacy address.
+        address::address_from_public_key(&pk).map_err(|_| {
+            ValidationError::new("E011", "public key cannot be converted to a legacy address")
+        })?
+    };
+
     if expected != tx.from {
         // If the derived address does not match the sender, reject it.
-        // Note: This only checks Legacy addresses. For Bech32, we would
-        // need to derive the Bech32 address and compare. For now, we
-        // assume the wallet uses Legacy addresses for signing.
         return Err(ValidationError::new(
             "E011", // Error code: address does not match pubkey.
             format!(
