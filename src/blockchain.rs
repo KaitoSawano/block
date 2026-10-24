@@ -13,6 +13,65 @@ use crate::storage::{Account, StateDB}; // Storage layer.
 use crate::transaction::Transaction; // The transaction structure.
 use crate::validation; // Validation rules.
 
+// ============================================================
+// ADDRESS PREFIX PARAMETERS
+// Change these values to customize the address format.
+// ============================================================
+
+/// Legacy (Base58Check) prefix byte for Mainnet.
+pub const LEGACY_PREFIX_MAIN: u8 = 0x30; // 48 decimal (produces "L" addresses).
+
+/// Legacy (Base58Check) prefix byte for Testnet.
+pub const LEGACY_PREFIX_TEST: u8 = 0x6f; // 111 decimal (produces "m" or "n" addresses).
+
+/// Legacy (Base58Check) prefix byte for Regtest.
+pub const LEGACY_PREFIX_REGTEST: u8 = 0x6f; // 111 decimal (same as Testnet).
+
+/// Bech32 Human-Readable Part (HRP) for Mainnet.
+pub const BECH32_HRP_MAIN: &str = "zena"; // Produces "zena1..." addresses.
+
+/// Bech32 Human-Readable Part (HRP) for Testnet.
+pub const BECH32_HRP_TEST: &str = "ztes"; // Produces "ztes1..." addresses.
+
+/// Bech32 Human-Readable Part (HRP) for Regtest.
+pub const BECH32_HRP_REGTEST: &str = "zreg"; // Produces "zreg1..." addresses.
+
+/// Return the Legacy prefix byte for the active network.
+pub fn legacy_prefix_byte() -> u8 {
+    match spec::current_network() {
+        spec::Network::Main => LEGACY_PREFIX_MAIN,
+        spec::Network::Test => LEGACY_PREFIX_TEST,
+        spec::Network::Regtest => LEGACY_PREFIX_REGTEST,
+    }
+}
+
+/// Return the Bech32 HRP for the active network.
+pub fn bech32_hrp() -> &'static str {
+    match spec::current_network() {
+        spec::Network::Main => BECH32_HRP_MAIN,
+        spec::Network::Test => BECH32_HRP_TEST,
+        spec::Network::Regtest => BECH32_HRP_REGTEST,
+    }
+}
+
+/// Return the Legacy prefix byte for a specific network.
+pub fn legacy_prefix_byte_for(network: spec::Network) -> u8 {
+    match network {
+        spec::Network::Main => LEGACY_PREFIX_MAIN,
+        spec::Network::Test => LEGACY_PREFIX_TEST,
+        spec::Network::Regtest => LEGACY_PREFIX_REGTEST,
+    }
+}
+
+/// Return the Bech32 HRP for a specific network.
+pub fn bech32_hrp_for(network: spec::Network) -> &'static str {
+    match network {
+        spec::Network::Main => BECH32_HRP_MAIN,
+        spec::Network::Test => BECH32_HRP_TEST,
+        spec::Network::Regtest => BECH32_HRP_REGTEST,
+    }
+}
+
 // Maximum size of the mempool in bytes (300 MB).
 pub const MAX_MEMPOOL_SIZE_BYTES: usize = 300 * 1024 * 1024;
 // Minimum relay fee per byte (1 satoshi).
@@ -156,16 +215,6 @@ pub fn pow_limit() -> &'static str {
 // Returns the genesis nBits.
 pub fn genesis_nbits() -> u32 {
     spec::current_network().genesis_nbits() // Fetch from the spec.
-}
-
-/// Return the Legacy (Base58Check) address prefix byte for the active network.
-pub fn legacy_prefix_byte() -> u8 {
-    spec::current_network().legacy_prefix_byte() // Fetch from the spec.
-}
-
-/// Return the Native SegWit (Bech32) HRP for the active network.
-pub fn bech32_hrp() -> &'static str {
-    spec::current_network().bech32_hrp() // Fetch from the spec.
 }
 
 // The Blockchain struct, representing the full chain state.
