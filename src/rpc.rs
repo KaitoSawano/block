@@ -4,43 +4,44 @@
 
 //! RPC server and client for ZenaChain.
 
-use crate::blockchain::{self, Blockchain};
-use crate::config::Config;
-use crate::consensus;
-use crate::consensus::spec::Network;
-use crate::datadir;
-use crate::p2p::network::{NetworkCommand, PeerRegistry};
-use crate::pow;
-use crate::storage;
-use crate::transaction::Transaction;
-use crate::utils::{format_datetime, now_millis};
-use crate::validation;
-use crate::wallet::Wallet;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::{mpsc, RwLock};
+use crate::blockchain::{self, Blockchain}; // Blockchain state and constants.
+use crate::config::Config; // Configuration file parsing.
+use crate::consensus; // Consensus parameters.
+use crate::consensus::spec::Network; // Network selector.
+use crate::datadir; // Data directory helpers.
+use crate::p2p::network::{NetworkCommand, PeerRegistry}; // P2P networking.
+use crate::pow; // Proof-of-work utilities.
+use crate::secp256k1::address; // Address derivation.
+use crate::storage; // Storage layer.
+use crate::transaction::Transaction; // Transaction structure.
+use crate::utils::{format_datetime, now_millis}; // Utility functions.
+use crate::validation; // Validation rules.
+use crate::wallet::{Wallet, WalletEntry}; // Wallet structures.
+use serde::{Deserialize, Serialize}; // Serialization.
+use serde_json::{json, Value}; // JSON handling.
+use std::io::{BufRead, BufReader, Read, Write}; // I/O traits.
+use std::net::{TcpListener, TcpStream}; // Networking.
+use std::sync::atomic::{AtomicBool, Ordering}; // Atomic operations.
+use std::sync::Arc; // Shared ownership.
+use std::time::Duration; // Timeouts.
+use tokio::sync::{mpsc, RwLock}; // Async synchronization.
 
-pub const DEFAULT_RPC_ADDR: &str = "127.0.0.1:8332";
-pub const DEFAULT_FEE_SATOSHI: u64 = 100_000;
+pub const DEFAULT_RPC_ADDR: &str = "127.0.0.1:8332"; // Default RPC address.
+pub const DEFAULT_FEE_SATOSHI: u64 = 100_000; // Default fee (0.001 ZENAC).
 
-const SATOSHI_PER_ZENAC: u64 = 100_000_000;
+const SATOSHI_PER_ZENAC: u64 = 100_000_000; // Satoshi per ZENAC.
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RpcRequest {
-    pub method: String,
-    pub params: Vec<Value>,
+    pub method: String, // The RPC method name.
+    pub params: Vec<Value>, // The parameters.
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RpcResponse {
-    pub ok: bool,
-    pub result: Value,
-    pub error: String,
+    pub ok: bool, // Whether the request succeeded.
+    pub result: Value, // The result.
+    pub error: String, // The error message (if any).
 }
 
 impl RpcResponse {
@@ -62,44 +63,45 @@ impl RpcResponse {
 }
 
 fn get_or_create_cookie() -> std::io::Result<String> {
-    let path = datadir::cookie_path();
+    let path = datadir::cookie_path(); // Cookie file path.
     if let Ok(data) = std::fs::read_to_string(&path) {
+        // If the file exists and is not empty...
         let trimmed = data.trim().to_string();
         if !trimmed.is_empty() {
-            return Ok(trimmed);
+            return Ok(trimmed); // Return the existing cookie.
         }
     }
 
-    let random = crate::utils::random_hex(32);
+    let random = crate::utils::random_hex(32); // Generate a random cookie.
     let cookie = format!("__cookie__:{}", random);
 
-    datadir::ensure_dirs()?;
-    std::fs::write(&path, &cookie)?;
-    
+    datadir::ensure_dirs()?; // Ensure the data directory exists.
+    std::fs::write(&path, &cookie)?; // Write the cookie.
+
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let mut perms = std::fs::metadata(&path)?.permissions();
-        perms.set_mode(0o600);
+        perms.set_mode(0o600); // Set permissions to 600 (owner only).
         std::fs::set_permissions(&path, perms)?;
     }
 
-    Ok(cookie)
+    Ok(cookie) // Return the new cookie.
 }
 
 fn read_cookie_for_client() -> std::io::Result<String> {
-    let path = datadir::cookie_path();
-    let data = std::fs::read_to_string(&path)?;
-    Ok(data.trim().to_string())
+    let path = datadir::cookie_path(); // Cookie file path.
+    let data = std::fs::read_to_string(&path)?; // Read the cookie.
+    Ok(data.trim().to_string()) // Return the trimmed cookie.
 }
 
 pub fn call(method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
-    let cfg = Config::load_or_default();
-    call_at(&cfg, method, params)
+    let cfg = Config::load_or_default(); // Load the configuration.
+    call_at(&cfg, method, params) // Call the RPC.
 }
 
 pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Result<RpcResponse> {
-    let mut stream = TcpStream::connect(&cfg.rpc_addr)?;
+    let mut stream = TcpStream::connect(&cfg.rpc_addr)?; // Connect to the RPC server.
 
     let auth = match read_cookie_for_client() {
         Ok(c) => c,
@@ -115,7 +117,7 @@ pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Resul
         method: method.to_string(),
         params,
     };
-    let body = serde_json::to_string(&req).unwrap();
+    let body = serde_json::to_string(&req).unwrap(); // Serialize the request.
 
     let request = format!(
         "POST / HTTP/1.1\r\nHost: {}\r\nAuthorization: {}\r\nContent-Length: {}\r\n\r\n{}",
@@ -125,7 +127,7 @@ pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Resul
         body
     );
 
-    stream.write_all(request.as_bytes())?;
+    stream.write_all(request.as_bytes())?; // Write the request.
     stream.flush()?;
 
     let mut reader = BufReader::new(stream);
@@ -147,9 +149,9 @@ pub fn call_at(cfg: &Config, method: &str, params: Vec<Value>) -> std::io::Resul
 }
 
 fn to_coin(satoshi: u64) -> String {
-    let whole = satoshi / SATOSHI_PER_ZENAC;
-    let frac = satoshi % SATOSHI_PER_ZENAC;
-    format!("{}.{:08}", whole, frac)
+    let whole = satoshi / SATOSHI_PER_ZENAC; // Whole ZENAC.
+    let frac = satoshi % SATOSHI_PER_ZENAC; // Fractional ZENAC.
+    format!("{}.{:08}", whole, frac) // Format with 8 decimals.
 }
 
 fn parse_zenac_to_satoshi(s: &str) -> Result<u64, String> {
@@ -208,25 +210,25 @@ fn parse_zenac_to_satoshi(s: &str) -> Result<u64, String> {
 }
 
 struct RpcState {
-    chain: Arc<RwLock<Blockchain>>,
-    network: Network,
-    shutdown: Arc<AtomicBool>,
-    interrupt: Arc<AtomicBool>,
-    cookie: String,
-    wallet_password: Arc<RwLock<Option<String>>>,
-    peer_registry: PeerRegistry,
-    network_cmd_tx: mpsc::Sender<NetworkCommand>,
+    chain: Arc<RwLock<Blockchain>>, // The blockchain.
+    network: Network, // The network.
+    shutdown: Arc<AtomicBool>, // Shutdown flag.
+    interrupt: Arc<AtomicBool>, // Interrupt flag.
+    cookie: String, // The cookie.
+    wallet_password: Arc<RwLock<Option<String>>>, // Wallet password.
+    peer_registry: PeerRegistry, // Peer registry.
+    network_cmd_tx: mpsc::Sender<NetworkCommand>, // Network command sender.
 }
 
 impl RpcState {
     fn fingerprint(&self) -> String {
-        consensus::consensus_fingerprint_for(self.network)
+        consensus::consensus_fingerprint_for(self.network) // Consensus fingerprint.
     }
 }
 
 pub struct RpcServer {
-    state: Arc<RpcState>,
-    rpc_addr: String,
+    state: Arc<RpcState>, // The state.
+    rpc_addr: String, // The RPC address.
 }
 
 impl RpcServer {
@@ -237,7 +239,7 @@ impl RpcServer {
         network_cmd_tx: mpsc::Sender<NetworkCommand>,
         network: Network,
     ) -> Self {
-        let is_local = cfg.rpc_addr.starts_with("127.0.0.1") || cfg.rpc_addr.starts_with("localhost");
+        let is_local = cfg.rpc_addr.starts_with("127.0.0.1") || cfg.rpc_addr.starts_with("localhost"); // Check if local.
         if !is_local {
             panic!(
                 "SECURITY ERROR: RPC is bound to {} but cookie authentication is only safe for local connections. Use an SSH tunnel or a reverse proxy with TLS for remote access.",
@@ -267,23 +269,23 @@ impl RpcServer {
     }
 
     pub fn shutdown_flag(&self) -> Arc<AtomicBool> {
-        self.state.shutdown.clone()
+        self.state.shutdown.clone() // Return shutdown flag.
     }
 
     pub fn listen(&mut self) -> std::io::Result<()> {
-        let listener = TcpListener::bind(&self.rpc_addr)?;
-        let _ = listener.set_nonblocking(true);
+        let listener = TcpListener::bind(&self.rpc_addr)?; // Bind listener.
+        let _ = listener.set_nonblocking(true); // Set non-blocking.
         println!("[rpc] listening on {}", self.rpc_addr);
         println!("[rpc] authentication: cookie file at {}", datadir::as_str(&datadir::cookie_path()));
 
         loop {
             if self.state.shutdown.load(Ordering::SeqCst) {
-                break;
+                break; // Exit if shutdown requested.
             }
 
             match listener.accept() {
                 Ok((stream, _)) => {
-                    let state = self.state.clone();
+                    let state = self.state.clone(); // Clone state.
                     std::thread::spawn(move || {
                         let mut handler = RpcHandler { state };
                         if let Err(e) = handler.handle(stream) {
@@ -292,7 +294,7 @@ impl RpcServer {
                     });
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(50));
+                    std::thread::sleep(Duration::from_millis(50)); // Sleep if no connection.
                 }
                 Err(e) => eprintln!("[rpc] accept failed: {}", e),
             }
@@ -302,7 +304,7 @@ impl RpcServer {
 }
 
 struct RpcHandler {
-    state: Arc<RpcState>,
+    state: Arc<RpcState>, // The state.
 }
 
 impl RpcHandler {
@@ -377,7 +379,8 @@ impl RpcHandler {
             "getlistwallet" => m_getlistwallet(self.state.chain.clone()),
             "dumpprivkey" => m_dumpprivkey(req),
             "importprivkey" => m_importprivkey(req),
-            "getnewwallet" => self.m_getnewwallet(),
+            "getcreatewallet" => self.m_getcreatewallet(),
+            "getcreatewalletbech32" => self.m_getcreatewalletbech32(),
             "encryptwallet" => m_encryptwallet(req),
             "walletpassphrase" => self.m_walletpassphrase(req),
             "getaddressinfo" => m_getaddressinfo(req),
@@ -399,8 +402,8 @@ impl RpcHandler {
     }
 
     fn m_getnetworkinfo(&self) -> RpcResponse {
-        let reg = self.state.peer_registry.lock().unwrap();
-        let connected = reg.iter().filter(|p| p.state == "Connected").count();
+        let reg = self.state.peer_registry.lock().unwrap(); // Lock peer registry.
+        let connected = reg.iter().filter(|p| p.state == "Connected").count(); // Count connected peers.
         RpcResponse::ok(json!({
             "network": self.state.network.name(),
             "magic": self.state.network.magic_hex(),
@@ -415,7 +418,7 @@ impl RpcHandler {
     }
 
     fn m_getpeerinfo(&self) -> RpcResponse {
-        let reg = self.state.peer_registry.lock().unwrap();
+        let reg = self.state.peer_registry.lock().unwrap(); // Lock peer registry.
         let peers: Vec<Value> = reg.iter().map(|p| json!({
             "id": p.id,
             "addr": p.addr,
@@ -430,10 +433,10 @@ impl RpcHandler {
         println!("[node] Stopping the running node. Please wait...");
         println!("[node] Saving blockchain data...");
 
-        self.state.interrupt.store(true, Ordering::SeqCst);
-        self.state.shutdown.store(true, Ordering::SeqCst);
+        self.state.interrupt.store(true, Ordering::SeqCst); // Set interrupt.
+        self.state.shutdown.store(true, Ordering::SeqCst); // Set shutdown.
 
-        let chain = self.state.chain.blocking_read();
+        let chain = self.state.chain.blocking_read(); // Read chain.
         match storage::save_chain(&chain) {
             Ok(_) => {
                 println!("[node]   blocks     : {}", chain.chain.len());
@@ -466,7 +469,7 @@ impl RpcHandler {
     }
 
     fn m_getinfo(&self) -> RpcResponse {
-        let c = self.state.chain.blocking_read();
+        let c = self.state.chain.blocking_read(); // Read chain.
         RpcResponse::ok(json!({
             "coin_name": consensus::coin_name(),
             "symbol": consensus::symbol(),
@@ -502,8 +505,8 @@ impl RpcHandler {
     }
 
     fn m_getblockchaininfo(&self) -> RpcResponse {
-        let c = self.state.chain.blocking_read();
-        let tip = c.chain.last().unwrap();
+        let c = self.state.chain.blocking_read(); // Read chain.
+        let tip = c.chain.last().unwrap(); // Get tip.
         RpcResponse::ok(json!({
             "chain": self.state.network.name(),
             "blocks": c.height(),
@@ -534,14 +537,14 @@ impl RpcHandler {
     }
 
     fn m_getblocktemplate(&self) -> RpcResponse {
-        let c = self.state.chain.blocking_read();
-        let next_height = c.height() + 1;
-        let subsidy = Blockchain::calculate_reward(next_height);
-        let prev = c.chain.last().unwrap();
-        let prev_hash = prev.hash.clone();
-        let previous_chainwork = prev.chainwork;
-        let total_fees: u64 = c.mempool.iter().map(|tx| tx.fee).sum();
-        let reward = subsidy.saturating_add(total_fees);
+        let c = self.state.chain.blocking_read(); // Read chain.
+        let next_height = c.height() + 1; // Next height.
+        let subsidy = Blockchain::calculate_reward(next_height); // Subsidy.
+        let prev = c.chain.last().unwrap(); // Previous block.
+        let prev_hash = prev.hash.clone(); // Previous hash.
+        let previous_chainwork = prev.chainwork; // Previous chainwork.
+        let total_fees: u64 = c.mempool.iter().map(|tx| tx.fee).sum(); // Total fees.
+        let reward = subsidy.saturating_add(total_fees); // Total reward.
         RpcResponse::ok(json!({
             "height": next_height,
             "previous_hash": prev_hash,
@@ -1426,7 +1429,7 @@ impl RpcHandler {
         }))
     }
 
-    fn m_getnewwallet(&mut self) -> RpcResponse {
+    fn m_getcreatewallet(&mut self) -> RpcResponse {
         if let Err(e) = datadir::ensure_dirs() {
             return RpcResponse::err(&format!("failed to prepare datadir: {}", e));
         }
@@ -1467,6 +1470,64 @@ impl RpcHandler {
                 "public_key": entry.public_key,
                 "secret": entry.secret,
                 "created_at": entry.created_at,
+                "type": "legacy",
+            })),
+            Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
+        }
+    }
+
+    fn m_getcreatewalletbech32(&mut self) -> RpcResponse {
+        if let Err(e) = datadir::ensure_dirs() {
+            return RpcResponse::err(&format!("failed to prepare datadir: {}", e));
+        }
+
+        let mut w = Wallet::load_default().unwrap_or_else(|_| Wallet {
+            entries: Vec::new(),
+            created_at: now_millis(),
+            encrypted: false,
+            salt: String::new(),
+            nonce: String::new(),
+        });
+
+        if w.encrypted {
+            let pass_opt = self.state.wallet_password.blocking_read().clone();
+            match pass_opt {
+                Some(pass) => match w.decrypt(&pass) {
+                    Ok(decrypted) => w = decrypted,
+                    Err(_) => {
+                        return RpcResponse::err(
+                            "wallet is locked. Run walletpassphrase first.",
+                        )
+                    }
+                },
+                None => {
+                    return RpcResponse::err(
+                        "wallet is locked. Run walletpassphrase first.",
+                    )
+                }
+            }
+        }
+
+        let kp = crate::secp256k1::keypair::KeyPair::generate().expect("keypair generation failed");
+        let address = crate::secp256k1::address::address_from_public_key_bech32(&kp.public_key)
+            .expect("bech32 address generation failed");
+
+        let entry = WalletEntry {
+            address: address.clone(),
+            public_key: kp.public_key_hex(),
+            secret: kp.secret_key_hex(),
+            label: "bech32".to_string(),
+            created_at: now_millis(),
+            encryption_nonce: String::new(),
+        };
+        w.entries.push(entry);
+
+        match w.save_default() {
+            Ok(_) => RpcResponse::ok(json!({
+                "address": address,
+                "public_key": kp.public_key_hex(),
+                "secret": kp.secret_key_hex(),
+                "type": "bech32",
             })),
             Err(e) => RpcResponse::err(&format!("failed to save wallet: {}", e)),
         }
