@@ -4,31 +4,18 @@
 
 //! Consensus module for ZenaChain.
 
-pub mod genesis;
-pub mod pow;
-pub mod rules;
-pub mod spec;
+pub mod genesis; // Genesis block parameters.
+pub mod pow; // Proof-of-work parameters.
+pub mod rules; // Consensus validation rules.
+pub mod spec; // Economic consensus parameters.
 
-use crate::consensus::spec::Network;
-use zenachain_crypto::sha3_256_hex;
+use crate::consensus::spec::Network; // Network selector.
+use zenachain_crypto::sha3_256_hex; // For hashing.
 
 /// Compute the consensus fingerprint for the given network.
-///
-/// The fingerprint is the SHA3-256 digest of all consensus parameters,
-/// including the expected genesis hash, merkle root, and nonce. It
-/// binds the genesis block to the current parameter set. Any change to
-/// a consensus parameter, or any change to the code that produces the
-/// genesis block, results in a different fingerprint and therefore in a
-/// hard fork.
-///
-/// Note: `genesis_coinbase_txid` must not depend on this fingerprint,
-/// because the fingerprint depends on the genesis hash, which depends on
-/// the genesis coinbase transaction identifier. To break the cycle,
-/// `genesis_coinbase_txid` is derived from a separate parameter
-/// fingerprint that excludes the genesis hash, merkle root, and nonce.
 pub fn consensus_fingerprint_for(network: Network) -> String {
     let payload = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         network.name(),
         spec::HASH_ALGO,
         spec::SIGNATURE_ALGO,
@@ -49,17 +36,14 @@ pub fn consensus_fingerprint_for(network: Network) -> String {
         network.genesis_timestamp(),
         genesis::GENESIS_OUTPUT_SCRIPT,
         network.genesis_nbits(),
-        pow::pow_limit(), // <-- Changed from POW_LIMIT
+        pow::pow_limit(),
         rules::COINBASE_MATURITY,
-        network.address_prefix(),
-        rules::ADDRESS_HEX_LEN,
+        network.address_prefix_byte(), // <-- Changed from address_prefix().
         rules::MAX_TX_PER_BLOCK,
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
         rules::ZERO_HASH,
         genesis::expected_genesis_hash_for(network),
-        genesis::expected_genesis_merkle_root_for(network),
-        genesis::expected_genesis_nonce_for(network),
     );
     sha3_256_hex(payload.as_bytes())
 }
@@ -70,10 +54,6 @@ pub fn consensus_fingerprint() -> String {
 }
 
 /// Compute the parameter fingerprint for the given network.
-///
-/// This fingerprint excludes the expected genesis hash, merkle root, and
-/// nonce. It is used to derive the genesis coinbase transaction
-/// identifier without creating a circular dependency.
 pub fn parameter_fingerprint_for(network: Network) -> String {
     let payload = format!(
         "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
@@ -97,14 +77,14 @@ pub fn parameter_fingerprint_for(network: Network) -> String {
         network.genesis_timestamp(),
         genesis::GENESIS_OUTPUT_SCRIPT,
         network.genesis_nbits(),
-        pow::pow_limit(), // <-- Changed from POW_LIMIT
+        pow::pow_limit(),
         rules::COINBASE_MATURITY,
-        network.address_prefix(),
-        rules::ADDRESS_HEX_LEN,
+        network.address_prefix_byte(), // <-- Changed from address_prefix().
         rules::MAX_TX_PER_BLOCK,
         rules::MAX_NOTE_LEN,
         rules::BLOCK_VERSION,
         rules::ZERO_HASH,
+        genesis::expected_genesis_merkle_root_for(network),
     );
     sha3_256_hex(payload.as_bytes())
 }
@@ -114,14 +94,7 @@ pub fn parameter_fingerprint() -> String {
     parameter_fingerprint_for(spec::current_network())
 }
 
-/// Compute the genesis coinbase transaction identifier for the given
-/// network.
-///
-/// The identifier is derived from the parameter fingerprint, the
-/// genesis timestamp, and the genesis nBits. It intentionally does not
-/// depend on the consensus fingerprint, because the consensus
-/// fingerprint depends on the genesis hash, which in turn depends on
-/// this identifier.
+/// Compute the genesis coinbase transaction identifier for the given network.
 pub fn genesis_coinbase_txid_for(network: Network) -> String {
     let fp = parameter_fingerprint_for(network);
     let payload = format!(
@@ -133,12 +106,12 @@ pub fn genesis_coinbase_txid_for(network: Network) -> String {
     sha3_256_hex(payload.as_bytes())
 }
 
-/// Compute the genesis coinbase transaction identifier for the currently
-/// active network.
+/// Compute the genesis coinbase transaction identifier for the currently active network.
 pub fn genesis_coinbase_txid() -> String {
     genesis_coinbase_txid_for(spec::current_network())
 }
 
+// Re-export consensus functions for convenience.
 pub use genesis::genesis_message;
 pub use genesis::genesis_output_script;
 pub use genesis::genesis_secret;
