@@ -4,24 +4,24 @@
 
 //! RPC server and client for ZenaChain.
 
-use crate::blockchain::{self, Blockchain}; // Blockchain state and constants.
-use crate::config::Config; // Configuration file parsing.
+use crate::blockchain::{self, Blockchain}; // Blockchain state.
+use crate::config::Config; // Configuration.
 use crate::consensus; // Consensus parameters.
-use crate::consensus::spec::Network; // Network selector.
-use crate::datadir; // Data directory helpers.
+use crate::consensus::spec::Network; // Network selection.
+use crate::datadir; // Data directory.
 use crate::p2p::network::{NetworkCommand, PeerRegistry}; // P2P networking.
-use crate::pow; // Proof-of-work utilities.
+use crate::pow; // Proof-of-work.
 use crate::storage; // Storage layer.
 use crate::transaction::Transaction; // Transaction structure.
 use crate::utils::{format_datetime, now_millis}; // Utility functions.
 use crate::validation; // Validation rules.
-use crate::wallet::{Wallet, WalletEntry}; // Wallet structures.
+use crate::wallet::{Wallet, WalletEntry}; // Wallet.
 use serde::{Deserialize, Serialize}; // Serialization.
-use serde_json::{json, Value}; // JSON handling.
-use std::io::{BufRead, BufReader, Read, Write}; // I/O traits.
+use serde_json::{json, Value}; // JSON.
+use std::io::{BufRead, BufReader, Read, Write}; // I/O.
 use std::net::{TcpListener, TcpStream}; // Networking.
 use std::sync::atomic::{AtomicBool, Ordering}; // Atomic operations.
-use std::sync::Arc; // Shared ownership.
+use std::sync::Arc; // Shared state.
 use std::time::Duration; // Timeouts.
 use tokio::sync::{mpsc, RwLock}; // Async synchronization.
 
@@ -642,13 +642,14 @@ impl RpcHandler {
 
     fn m_getbalance(&self, req: &RpcRequest) -> RpcResponse {
         if let Some(addr) = req.params.first().and_then(|v| v.as_str()) {
-            if !validation::is_valid_address(addr) {
+            let chain = self.state.chain.blocking_read();
+            if !validation::is_valid_address(addr, &chain) {
                 return RpcResponse::err("invalid address format");
             }
-            let chain = self.state.chain.blocking_read();
             let balance = chain.balance_of(addr);
             let spendable = chain.spendable_balance_of(addr);
             let nonce = chain.nonce_of(addr);
+            drop(chain);
             return RpcResponse::ok(json!({
                 "address": addr,
                 "balance": to_coin(balance),
@@ -688,9 +689,11 @@ impl RpcHandler {
             },
         };
 
-        if !validation::is_valid_address(&addr) {
+        let chain = self.state.chain.blocking_read();
+        if !validation::is_valid_address(&addr, &chain) {
             return RpcResponse::err("invalid address format");
         }
+        drop(chain);
 
         let chain = self.state.chain.blocking_read();
         RpcResponse::ok(json!({
@@ -1090,8 +1093,12 @@ impl RpcHandler {
             None => return RpcResponse::err("generatetoaddress requires an address"),
         };
 
-        if !validation::is_valid_address(&addr) {
-            return RpcResponse::err("invalid address format");
+        {
+            let chain = self.state.chain.blocking_read();
+            if !validation::is_valid_address(&addr, &chain) {
+                return RpcResponse::err("invalid address format");
+            }
+            drop(chain);
         }
 
         self.state.interrupt.store(false, Ordering::SeqCst);
@@ -1219,8 +1226,12 @@ impl RpcHandler {
             None => return RpcResponse::err("invalid destination address"),
         };
 
-        if !validation::is_valid_address(&to) {
-            return RpcResponse::err("invalid destination address format");
+        {
+            let chain = self.state.chain.blocking_read();
+            if !validation::is_valid_address(&to, &chain) {
+                return RpcResponse::err("invalid destination address format");
+            }
+            drop(chain);
         }
 
         let mut wallet = match Wallet::load_default() {
@@ -1275,6 +1286,14 @@ impl RpcHandler {
 
         if from_address == to {
             return RpcResponse::err("sender and recipient addresses are identical");
+        }
+
+        {
+            let chain = self.state.chain.blocking_read();
+            if !validation::is_valid_address(&from_address, &chain) {
+                return RpcResponse::err("invalid sender address format");
+            }
+            drop(chain);
         }
 
         let entry = match wallet.get_entry(&from_address) {
@@ -1803,7 +1822,15 @@ fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
         Some(a) => a.to_string(),
         None => return RpcResponse::err("getaddtoaddress requires an address"),
     };
-    if !validation::is_valid_address(&addr) {
+    let w = Wallet::load_default().unwrap_or_else(|_| Wallet {
+        entries: Vec::new(),
+        created_at: now_millis(),
+        encrypted: false,
+        salt: String::new(),
+        nonce: String::new(),
+    });
+    // Validate against the active network.
+    if !crate::validation::rule_address_format(&addr, &Blockchain::new()).is_ok() {
         return RpcResponse::err("invalid address format");
     }
     let mut cfg = Config::load_or_default();
