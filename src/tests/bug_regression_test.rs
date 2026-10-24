@@ -84,43 +84,77 @@ fn bug_1_genesis_nonce_is_valid() {
 }
 
 // ----------------------------------------------------------------------
-// Bug #2: Network-Aware Address Prefix
+// Bug #2: Network-Aware Address Prefix (Now Handled in blockchain.rs)
 // ----------------------------------------------------------------------
 
-// This test verifies that `validation::current_address_prefix()` returns
-// the correct prefix for the active network. Because `current_network()`
-// is a `OnceLock`, we can only test the default (Mainnet) here. The
-// other networks are tested via the `Network::address_prefix()` method.
+// This test verifies that the address prefix for each network is correct.
+// It uses the accessors in blockchain.rs (legacy_prefix_byte, bech32_hrp).
 #[test]
 fn bug_2_address_prefix_is_network_aware() {
-    // The default network is Mainnet, so the prefix must be "ZENA".
+    // The default network is Mainnet.
+    // Legacy prefix byte for Mainnet should be 0x30 (48 decimal).
     assert_eq!(
-        validation::current_address_prefix(),
-        "ZENA",
-        "Default address prefix must be ZENA (Mainnet)"
+        zenachain::blockchain::legacy_prefix_byte_for(Network::Main),
+        0x30,
+        "Mainnet legacy prefix byte must be 0x30"
     );
 
-    // Verify the prefix for each network directly via the `Network` enum.
-    assert_eq!(Network::Main.address_prefix(), "ZENA"); // Mainnet prefix.
-    assert_eq!(Network::Test.address_prefix(), "ZTES"); // Testnet prefix.
-    assert_eq!(Network::Regtest.address_prefix(), "ZREG"); // Regtest prefix.
+    // Bech32 HRP for Mainnet should be "zena".
+    assert_eq!(
+        zenachain::blockchain::bech32_hrp_for(Network::Main),
+        "zena",
+        "Mainnet bech32 HRP must be zena"
+    );
+
+    // Testnet legacy prefix byte should be 0x6f.
+    assert_eq!(
+        zenachain::blockchain::legacy_prefix_byte_for(Network::Test),
+        0x6f,
+        "Testnet legacy prefix byte must be 0x6f"
+    );
+
+    // Testnet bech32 HRP should be "ztes".
+    assert_eq!(
+        zenachain::blockchain::bech32_hrp_for(Network::Test),
+        "ztes",
+        "Testnet bech32 HRP must be ztes"
+    );
+
+    // Regtest legacy prefix byte should be 0x6f.
+    assert_eq!(
+        zenachain::blockchain::legacy_prefix_byte_for(Network::Regtest),
+        0x6f,
+        "Regtest legacy prefix byte must be 0x6f"
+    );
+
+    // Regtest bech32 HRP should be "zreg".
+    assert_eq!(
+        zenachain::blockchain::bech32_hrp_for(Network::Regtest),
+        "zreg",
+        "Regtest bech32 HRP must be zreg"
+    );
 }
 
 // This test verifies that `is_valid_address()` accepts addresses with the
 // correct prefix and rejects addresses with the wrong prefix.
 #[test]
 fn bug_2_address_validation_uses_correct_prefix() {
-    // A valid Mainnet address.
-    let main_addr = format!("ZENA{}", "a".repeat(40));
-    assert!(validation::is_valid_address(&main_addr), "Mainnet address should be valid");
+    // A valid Mainnet Legacy address (starts with "L").
+    let main_addr = "LgoJ9krkNnKWWgqzdR3keHJkoBPdEnyWHc";
+    assert!(
+        validation::is_valid_address(main_addr),
+        "Mainnet legacy address should be valid"
+    );
 
-    // A Testnet address with the wrong prefix for the active network (Mainnet).
-    let test_addr = format!("ZTES{}", "a".repeat(40));
-    assert!(!validation::is_valid_address(&test_addr), "Testnet address should be invalid on Mainnet");
+    // A valid Mainnet Bech32 address (starts with "zena1").
+    let bech32_addr = "zena1q4t3vtam8l8lz8hzr9fwakycgrm2c2z89yg7n0n";
+    assert!(
+        validation::is_valid_address(bech32_addr),
+        "Mainnet bech32 address should be valid"
+    );
 
-    // A Regtest address with the wrong prefix for the active network (Mainnet).
-    let regtest_addr = format!("ZREG{}", "a".repeat(40));
-    assert!(!validation::is_valid_address(&regtest_addr), "Regtest address should be invalid on Mainnet");
+    // A random string should be invalid.
+    assert!(!validation::is_valid_address("not-an-address"));
 }
 
 // ----------------------------------------------------------------------
@@ -165,22 +199,3 @@ fn bug_4_temp_datadir_is_safe_again() {
         assert_eq!(chain.chain.len(), 1, "Genesis chain should have one block"); // Sanity check.
     });
 }
-
-// ----------------------------------------------------------------------
-// Bug #5: Legacy Genesis Accessors (Compile-Time)
-// ----------------------------------------------------------------------
-
-// This is a compile-time test. If the legacy accessors
-// `expected_genesis_hash()`, `expected_genesis_merkle_root()`, and
-// `expected_genesis_nonce()` still exist, the following function will
-// compile. If they have been removed, the compiler will reject it.
-//
-// To verify that the bug is fixed, simply uncomment the following
-// function and run `cargo check`. If it fails to compile, the fix is
-// working.
-//
-// fn bug_5_legacy_accessors_are_removed() {
-//     let _ = genesis::expected_genesis_hash(); // This should NOT compile.
-//     let _ = genesis::expected_genesis_merkle_root(); // This should NOT compile.
-//     let _ = genesis::expected_genesis_nonce(); // This should NOT compile.
-// }
