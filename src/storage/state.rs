@@ -83,10 +83,18 @@ impl StateDB {
         }
     }
 
-    // Returns the spendable (mature) balance for an address.
-    pub fn spendable_balance_of(&self, address: &str) -> u64 {
+    // Returns the mature (spendable) balance for an address.
+    pub fn mature_balance_of(&self, address: &str) -> u64 {
         match self.get_account(address) {
             Ok(Some(acc)) => acc.balance, // Return the mature balance.
+            _ => 0, // The account does not exist; balance is zero.
+        }
+    }
+
+    // Returns the immature (unspendable) balance for an address.
+    pub fn immature_balance_of(&self, address: &str) -> u64 {
+        match self.get_account(address) {
+            Ok(Some(acc)) => acc.immature_rewards.iter().map(|(_, a)| a).sum(), // Sum the immature rewards.
             _ => 0, // The account does not exist; balance is zero.
         }
     }
@@ -194,8 +202,3 @@ impl std::fmt::Debug for StateDB {
 }
 
 // NOTE: `Clone` and `Default` are intentionally NOT implemented for StateDB.
-// Cloning a StateDB is dangerous because it would create a second independent
-// trie that shares the same LevelDB adapter, leading to data corruption.
-// Default is also dangerous because it would create a StateDB without a path,
-// which cannot be persisted. By omitting these traits, we force the compiler
-// to catch any accidental misuse at compile time.
