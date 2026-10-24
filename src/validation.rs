@@ -14,9 +14,6 @@ use crate::transaction::Transaction; // The transaction structure.
 use std::fmt; // For implementing Display on ValidationError.
 
 // Re-export constants that are network-agnostic.
-pub use rules::ADDRESS_CHECKSUM_LEN; // Checksum length (8).
-pub use rules::ADDRESS_HEX_LEN; // Address hex length (40).
-pub use rules::ADDRESS_TOTAL_LEN; // Total address length (52).
 pub use rules::BLOCK_VERSION; // Block version (1).
 pub use rules::COINBASE_MATURITY; // Coinbase maturity (100).
 pub use rules::MAX_INPUTS_PER_TX; // Max inputs per tx.
@@ -24,17 +21,6 @@ pub use rules::MAX_NOTE_LEN; // Max note length.
 pub use rules::MAX_OUTPUTS_PER_TX; // Max outputs per tx.
 pub use rules::MAX_TX_PER_BLOCK; // Max tx per block.
 pub use rules::ZERO_HASH; // Zero hash for genesis.
-
-// NOTE: `rules::ADDRESS_PREFIX` is intentionally NOT re-exported here.
-// If other code needs the address prefix, it must use
-// `spec::current_network().address_prefix()` so that it adapts to the
-// active network automatically.
-
-/// Returns the address prefix for the currently active network.
-/// This function replaces the direct use of the hardcoded `ADDRESS_PREFIX` constant.
-pub fn current_address_prefix() -> &'static str {
-    spec::current_network().address_prefix() // Fetch the prefix from the active network spec.
-}
 
 /// A validation error with a code and a human-readable message.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,41 +46,14 @@ impl fmt::Display for ValidationError {
     }
 }
 
-// Validates the address format: it must start with the network prefix,
-// followed by 40 hex characters, followed by 8 hex characters of checksum.
+// Validates the address format: it must be a valid Base58Check string
+// with the correct network prefix and checksum.
 pub fn rule_address_format(addr: &str) -> Result<(), ValidationError> {
-    let prefix = spec::current_network().address_prefix(); // Get the prefix for the active network.
-    if !addr.starts_with(prefix) {
-        // If the address does not start with the correct prefix, reject it.
+    if !address::verify_address(addr) {
+        // If the address is not a valid Base58Check string, reject it.
         return Err(ValidationError::new(
-            "E001", // Error code: wrong prefix.
-            format!("address does not start with {}: {}", prefix, addr), // Clear message.
-        ));
-    }
-    if addr.len() != rules::ADDRESS_TOTAL_LEN {
-        // If the address does not have the correct total length, reject it.
-        return Err(ValidationError::new(
-            "E002", // Error code: wrong length.
-            format!(
-                "address must be {} characters, got {}",
-                rules::ADDRESS_TOTAL_LEN,
-                addr.len()
-            ),
-        ));
-    }
-    let hex_part = &addr[prefix.len()..]; // Get the part after the prefix.
-    if !hex_part.chars().all(|c| c.is_ascii_hexdigit()) {
-        // If any character is not a hex digit, reject it.
-        return Err(ValidationError::new(
-            "E003", // Error code: non-hex character.
-            format!("address contains a non-hexadecimal character: {}", addr),
-        ));
-    }
-    if !crate::checksum::verify_checksum(addr) {
-        // If the checksum is invalid, reject it.
-        return Err(ValidationError::new(
-            "E007", // Error code: invalid checksum.
-            format!("address checksum is invalid: {}", addr),
+            "E001", // Error code: invalid address.
+            format!("invalid address: {}", addr),
         ));
     }
     Ok(()) // The address is valid.
