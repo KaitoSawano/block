@@ -73,42 +73,29 @@ pub fn bech32_hrp_for(network: spec::Network) -> &'static str {
 /// Parameters for a soft fork deployment.
 #[derive(Debug, Clone, Copy)]
 pub struct SoftForkDeployment {
-    /// Bit position to select the particular bit in nVersion (0-28).
     pub bit: u8,
-    /// Start MedianTime for version bits miner confirmation.
-    /// Use `NEVER_ACTIVE` for not scheduled.
     pub start_time: i64,
-    /// Timeout/expiry MedianTime for the deployment attempt.
-    /// Use `NO_TIMEOUT` for no timeout.
     pub timeout: i64,
-    /// If lock in occurs, delay activation until at least this block height.
     pub min_activation_height: u64,
-    /// Period of blocks to check signalling in (usually retarget period).
     pub period: u32,
-    /// Minimum blocks signaling in the period to lock in (e.g., 1916 for 95%).
     pub threshold: u32,
 }
 
-/// Constant for start_time: never active.
 pub const NEVER_ACTIVE: i64 = -2;
-/// Constant for start_time: always active (useful for testing).
 pub const ALWAYS_ACTIVE: i64 = -1;
-/// Constant for timeout: no timeout.
 pub const NO_TIMEOUT: i64 = i64::MAX;
 
-/// The state of a soft fork deployment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SoftForkState {
-    Defined,    // Before start_time.
-    Started,    // Signaling period active.
-    LockedIn,   // Threshold met, waiting for activation.
-    Active,     // Rules enforced.
-    Failed,     // Timeout without activation.
+    Defined,
+    Started,
+    LockedIn,
+    Active,
+    Failed,
 }
 
-/// The registry of all soft fork deployments.
-/// All soft forks are disabled by default (NEVER_ACTIVE).
-/// This means both Legacy and Bech32 addresses are always valid.
+/// Registry of all soft forks.
+/// All disabled by default (NEVER_ACTIVE). Both Legacy and Bech32 are always valid.
 pub const SOFT_FORK_DEPLOYMENTS: &[(&str, SoftForkDeployment)] = &[
     (
         "disable_legacy_addresses",
@@ -118,12 +105,11 @@ pub const SOFT_FORK_DEPLOYMENTS: &[(&str, SoftForkDeployment)] = &[
             timeout: NO_TIMEOUT,
             min_activation_height: 0,
             period: 2016,
-            threshold: 1916, // 95%
+            threshold: 1916,
         },
     ),
 ];
 
-/// Returns the deployment for a given name, if it exists.
 pub fn get_softfork_deployment(name: &str) -> Option<&'static SoftForkDeployment> {
     SOFT_FORK_DEPLOYMENTS
         .iter()
@@ -131,14 +117,13 @@ pub fn get_softfork_deployment(name: &str) -> Option<&'static SoftForkDeployment
         .map(|(_, d)| d)
 }
 
-/// Get the median time past of the last 11 blocks.
 pub fn median_time_past(chain: &Blockchain) -> i64 {
     let mut timestamps: Vec<i64> = chain
         .chain
         .iter()
         .rev()
         .take(11)
-        .map(|b| (b.timestamp / 1000) as i64) // Convert ms to seconds.
+        .map(|b| (b.timestamp / 1000) as i64)
         .collect();
     if timestamps.is_empty() {
         return 0;
@@ -147,12 +132,10 @@ pub fn median_time_past(chain: &Blockchain) -> i64 {
     timestamps[timestamps.len() / 2]
 }
 
-/// Count how many blocks in the last `period` signaled for a given bit.
 pub fn count_signals(chain: &Blockchain, bit: u8, period: u32) -> u32 {
     let start = chain.chain.len().saturating_sub(period as usize);
     let mut count = 0;
     for block in &chain.chain[start..] {
-        // Check if the bit is set in nversion.
         if (block.nversion & (1u32 << bit)) != 0 {
             count += 1;
         }
@@ -160,7 +143,6 @@ pub fn count_signals(chain: &Blockchain, bit: u8, period: u32) -> u32 {
     count
 }
 
-/// Compute the soft fork state for a deployment at the current chain tip.
 pub fn get_softfork_state(name: &str, chain: &Blockchain) -> SoftForkState {
     let deployment = match get_softfork_deployment(name) {
         Some(d) => d,
@@ -170,12 +152,10 @@ pub fn get_softfork_state(name: &str, chain: &Blockchain) -> SoftForkState {
     let height = chain.height();
     let mtp = median_time_past(chain);
 
-    // If NEVER_ACTIVE, the soft fork is not scheduled.
     if deployment.start_time == NEVER_ACTIVE {
         return SoftForkState::Defined;
     }
 
-    // If ALWAYS_ACTIVE, check min_activation_height.
     if deployment.start_time == ALWAYS_ACTIVE {
         if height >= deployment.min_activation_height {
             return SoftForkState::Active;
@@ -205,7 +185,6 @@ pub fn get_softfork_state(name: &str, chain: &Blockchain) -> SoftForkState {
     SoftForkState::Started
 }
 
-/// Returns `true` if the given soft fork deployment is active.
 pub fn is_softfork_active(name: &str, chain: &Blockchain) -> bool {
     get_softfork_state(name, chain) == SoftForkState::Active
 }
@@ -219,564 +198,481 @@ pub const MIN_RELAY_FEE_PER_BYTE: u64 = 1;
 pub const MEMPOOL_EXPIRY_SECS: u64 = 336 * 3600;
 pub const RBF_MIN_FEE_BUMP_PERCENT: u64 = 10;
 
-// Checkpoint module for hardcoded block hashes.
+// Checkpoint module
 pub mod checkpoint {
-    // A single checkpoint entry.
     pub struct Checkpoint {
-        pub height: u64, // The block height.
-        pub hash: &'static str, // The expected block hash.
+        pub height: u64,
+        pub hash: &'static str,
     }
 
-    // The list of known checkpoints.
     pub const CHECKPOINTS: &[Checkpoint] = &[Checkpoint {
-        height: 0, // Genesis checkpoint.
-        hash: "0000000000000000000000000000000000000000000000000000000000000000", // Zero hash.
+        height: 0,
+        hash: "0000000000000000000000000000000000000000000000000000000000000000",
     }];
 
-    // Finds the expected hash for a given height, if any.
     pub fn find(height: u64) -> Option<&'static str> {
-        CHECKPOINTS.iter().find(|c| c.height == height).map(|c| c.hash) // Search the list.
+        CHECKPOINTS.iter().find(|c| c.height == height).map(|c| c.hash)
     }
 
-    // Checks whether a given height is a checkpoint.
     pub fn is_checkpoint(height: u64) -> bool {
-        CHECKPOINTS.iter().any(|c| c.height == height) // Check if any checkpoint matches.
+        CHECKPOINTS.iter().any(|c| c.height == height)
     }
 
-    // Returns the highest checkpoint height.
     pub fn highest() -> u64 {
-        CHECKPOINTS.iter().map(|c| c.height).max().unwrap_or(0) // Find the maximum height.
+        CHECKPOINTS.iter().map(|c| c.height).max().unwrap_or(0)
     }
 
-    // Verifies that a block hash matches the checkpoint (if one exists).
     pub fn verify(height: u64, hash: &str) -> bool {
         match find(height) {
-            Some(expected) => expected == hash, // If a checkpoint exists, compare hashes.
-            None => true, // If no checkpoint exists, accept the block.
+            Some(expected) => expected == hash,
+            None => true,
         }
     }
 }
 
-// DNS seeds for peer discovery.
+// DNS seeds
 pub mod dns_seed {
-    use crate::consensus::spec; // For network selection.
+    use crate::consensus::spec;
 
-    // Mainnet DNS seeds (currently using Bitcoin seeds for testing).
-    pub const MAINNET_SEEDS: &[&str] = &[
-        "seed.bitcoin.sipa.be", // Bitcoin seed (for testing).
-        "dnsseed.bluematt.me", // Bitcoin seed (for testing).
-    ];
-
-    // Testnet DNS seeds (currently using Bitcoin testnet seeds for testing).
-    pub const TESTNET_SEEDS: &[&str] = &[
-        "testnet-seed.bitcoin.jonasschnelli.ch", // Bitcoin testnet seed (for testing).
-    ];
-
-    // Regtest does not use DNS seeds.
+    pub const MAINNET_SEEDS: &[&str] = &["seed.bitcoin.sipa.be", "dnsseed.bluematt.me"];
+    pub const TESTNET_SEEDS: &[&str] = &["testnet-seed.bitcoin.jonasschnelli.ch"];
     pub const REGTEST_SEEDS: &[&str] = &[];
 
-    // Returns the DNS seeds for the currently active network.
     pub fn seeds_for_current_network() -> &'static [&'static str] {
         match spec::current_network() {
-            spec::Network::Main => MAINNET_SEEDS, // Mainnet seeds.
-            spec::Network::Test => TESTNET_SEEDS, // Testnet seeds.
-            spec::Network::Regtest => REGTEST_SEEDS, // Regtest seeds (empty).
+            spec::Network::Main => MAINNET_SEEDS,
+            spec::Network::Test => TESTNET_SEEDS,
+            spec::Network::Regtest => REGTEST_SEEDS,
         }
     }
 }
 
-// Network-related constants and helpers.
+// Network helpers
 pub mod network {
-    use crate::consensus::spec; // For network selection.
+    use crate::consensus::spec;
 
-    // The height after which pruning is allowed.
     pub const PRUNE_AFTER_HEIGHT: u64 = 100_000;
-    // The assumed blockchain size in MB (for pruning).
     pub const ASSUMED_BLOCKCHAIN_SIZE: u64 = 496;
-    // The assumed chain state size in MB (for pruning).
     pub const ASSUMED_CHAIN_STATE_SIZE: u64 = 6;
 
-    // Returns the name of the active network.
     pub fn network_name() -> &'static str {
-        spec::current_network().name() // Fetch the name from the spec.
+        spec::current_network().name()
     }
 
-    // Returns the default P2P port for the active network.
     pub fn default_port() -> u16 {
-        spec::current_network().default_port() // Fetch the port from the spec.
+        spec::current_network().default_port()
     }
 
-    // Returns the magic bytes of the active network as a hex string.
     pub fn network_magic_hex() -> String {
-        spec::current_network().magic_hex() // Fetch the magic bytes from the spec.
+        spec::current_network().magic_hex()
     }
 }
 
-// Re-export consensus functions for convenience.
-pub use consensus::consensus_fingerprint; // Consensus fingerprint.
-pub use consensus::consensus_fingerprint_for; // Consensus fingerprint for a network.
-pub use consensus::genesis_coinbase_txid; // Genesis coinbase txid.
-pub use consensus::genesis_coinbase_txid_for; // Genesis coinbase txid for a network.
-pub use genesis::genesis_message; // Genesis message.
-pub use genesis::genesis_output_script; // Genesis output script.
-pub use genesis::genesis_secret; // Genesis secret.
-pub use genesis::genesis_timestamp; // Genesis timestamp.
-pub use spec::coin_name; // Coin name.
-pub use spec::decimals; // Decimal places.
-pub use spec::difficulty_adjust_interval; // Difficulty adjustment interval.
-pub use spec::hash_algo; // Hash algorithm.
-pub use spec::initial_reward; // Initial reward.
-pub use spec::initial_reward_zenac; // Initial reward in ZENAC.
-pub use spec::max_halvings; // Maximum halvings.
-pub use spec::max_supply; // Maximum supply.
-pub use spec::max_supply_zenac; // Maximum supply in ZENAC.
-pub use spec::miner_confirmation_window; // Miner confirmation window.
-pub use spec::pow_target_spacing_secs; // PoW target spacing.
-pub use spec::pow_target_timespan_secs; // PoW target timespan.
-pub use spec::protocol_version; // Protocol version.
-pub use spec::satoshi; // Satoshi unit.
-pub use spec::signature_algo; // Signature algorithm.
-pub use spec::subsidy_halving_interval; // Subsidy halving interval.
-pub use spec::symbol; // Coin symbol.
-pub use spec::version; // Version string.
+// Re-exports
+pub use consensus::consensus_fingerprint;
+pub use consensus::consensus_fingerprint_for;
+pub use consensus::genesis_coinbase_txid;
+pub use consensus::genesis_coinbase_txid_for;
+pub use genesis::genesis_message;
+pub use genesis::genesis_output_script;
+pub use genesis::genesis_secret;
+pub use genesis::genesis_timestamp;
+pub use spec::coin_name;
+pub use spec::decimals;
+pub use spec::difficulty_adjust_interval;
+pub use spec::hash_algo;
+pub use spec::initial_reward;
+pub use spec::initial_reward_zenac;
+pub use spec::max_halvings;
+pub use spec::max_supply;
+pub use spec::max_supply_zenac;
+pub use spec::miner_confirmation_window;
+pub use spec::pow_target_spacing_secs;
+pub use spec::pow_target_timespan_secs;
+pub use spec::protocol_version;
+pub use spec::satoshi;
+pub use spec::signature_algo;
+pub use spec::subsidy_halving_interval;
+pub use spec::symbol;
+pub use spec::version;
 
-// Returns the maximum number of transactions per block.
 pub fn max_tx_per_block() -> usize {
-    rules::MAX_TX_PER_BLOCK // Return the constant.
+    rules::MAX_TX_PER_BLOCK
 }
 
-// Returns the PoW limit as a hex string.
 pub fn pow_limit() -> &'static str {
-    cpow::pow_limit() // Return the limit.
+    cpow::pow_limit()
 }
 
-// Returns the genesis nBits.
 pub fn genesis_nbits() -> u32 {
-    spec::current_network().genesis_nbits() // Fetch from the spec.
+    spec::current_network().genesis_nbits()
 }
 
-// The Blockchain struct, representing the full chain state.
-#[derive(Debug)] // Only `Debug` is derived.
+// Blockchain struct
+#[derive(Debug)]
 pub struct Blockchain {
-    pub chain: Vec<Block>, // The list of blocks.
-    pub nbits: u32, // The current difficulty target.
-    pub mempool: Vec<Transaction>, // The mempool.
-    pub balances: HashMap<String, u64>, // Legacy balance map (unused).
-    pub nonces: HashMap<String, u64>, // Legacy nonce map (unused).
-    pub mempool_timestamps: HashMap<String, u64>, // Mempool timestamps.
-    pub addresses: Vec<String>, // Known addresses.
-    pub state: StateDB, // The state database.
+    pub chain: Vec<Block>,
+    pub nbits: u32,
+    pub mempool: Vec<Transaction>,
+    pub balances: HashMap<String, u64>,
+    pub nonces: HashMap<String, u64>,
+    pub mempool_timestamps: HashMap<String, u64>,
+    pub addresses: Vec<String>,
+    pub state: StateDB,
 }
 
 impl Blockchain {
-    // Creates a new Blockchain instance with the genesis block.
     pub fn new() -> Self {
-        let genesis = Block::genesis(); // Create the genesis block.
-        let db_path = crate::datadir::state_db_path(); // Get the state DB path.
-        let mut state = StateDB::open(&db_path).expect("failed to open state db"); // Open the state DB.
+        let genesis = Block::genesis();
+        let db_path = crate::datadir::state_db_path();
+        let mut state = StateDB::open(&db_path).expect("failed to open state db");
 
-        let genesis_acc = state.get_account("GENESIS").unwrap_or(None); // Check if the genesis account exists.
+        let genesis_acc = state.get_account("GENESIS").unwrap_or(None);
         if genesis_acc.is_none() {
-            // If it does not exist, create it.
             state
                 .update_account(
-                    "GENESIS", // Genesis account address.
+                    "GENESIS",
                     &Account {
-                        nonce: 0, // Initial nonce.
-                        balance: genesis.reward, // Initial balance (genesis reward).
-                        immature_rewards: Vec::new(), // No immature rewards.
+                        nonce: 0,
+                        balance: genesis.reward,
+                        immature_rewards: Vec::new(),
                     },
                 )
-                .expect("failed to init genesis account"); // Panic on failure.
+                .expect("failed to init genesis account");
         }
 
-        // Fill the genesis state_root after initialization and
-        // recalculate the hash to include the new state_root.
-        let mut genesis = genesis; // Make the genesis block mutable.
+        let mut genesis = genesis;
         if let Ok(root) = state.root_hash() {
-            // If the root hash is available...
-            genesis.state_root = hex::encode(root); // Set the state_root.
-            genesis.hash = genesis.calculate_hash(); // Recalculate the hash.
+            genesis.state_root = hex::encode(root);
+            genesis.hash = genesis.calculate_hash();
         }
 
         Blockchain {
-            chain: vec![genesis], // Start with the genesis block.
-            nbits: spec::current_network().genesis_nbits(), // Set the initial nbits.
-            mempool: Vec::new(), // Empty mempool.
-            balances: HashMap::new(), // Empty legacy balances.
-            nonces: HashMap::new(), // Empty legacy nonces.
-            mempool_timestamps: HashMap::new(), // Empty mempool timestamps.
-            addresses: vec!["GENESIS".to_string()], // Start with the genesis address.
-            state, // The state DB.
+            chain: vec![genesis],
+            nbits: spec::current_network().genesis_nbits(),
+            mempool: Vec::new(),
+            balances: HashMap::new(),
+            nonces: HashMap::new(),
+            mempool_timestamps: HashMap::new(),
+            addresses: vec!["GENESIS".to_string()],
+            state,
         }
     }
 
-    // Returns the current chain height.
     pub fn height(&self) -> u64 {
-        self.chain.last().unwrap().index // The index of the last block.
+        self.chain.last().unwrap().index
     }
 
-    // Returns the circulating supply.
     pub fn circulating_supply(&self) -> u64 {
-        self.chain
-            .iter()
-            .fold(0u64, |acc, b| acc.saturating_add(b.reward)) // Sum all block rewards.
+        self.chain.iter().fold(0u64, |acc, b| acc.saturating_add(b.reward))
     }
 
-    // Calculates the reward for a given height.
     pub fn calculate_reward(height: u64) -> u64 {
-        let halvings = (height / spec::SUBSIDY_HALVING_INTERVAL) as u32; // Compute the halving era.
+        let halvings = (height / spec::SUBSIDY_HALVING_INTERVAL) as u32;
         if halvings >= spec::MAX_HALVINGS {
-            // If we have reached the maximum halvings...
-            return 0; // The reward is zero.
+            return 0;
         }
-        spec::INITIAL_REWARD >> halvings // Otherwise, return the halved reward.
+        spec::INITIAL_REWARD >> halvings
     }
 
-    // Returns the current era (halving epoch).
     pub fn current_era(&self) -> u64 {
-        self.height() / spec::SUBSIDY_HALVING_INTERVAL // Compute the era.
+        self.height() / spec::SUBSIDY_HALVING_INTERVAL
     }
 
-    // Returns the number of blocks until the next halving.
     pub fn blocks_until_halving(&self) -> u64 {
-        let next = (self.current_era() + 1) * spec::SUBSIDY_HALVING_INTERVAL; // Compute the next halving height.
-        next.saturating_sub(self.height()) // Return the difference.
+        let next = (self.current_era() + 1) * spec::SUBSIDY_HALVING_INTERVAL;
+        next.saturating_sub(self.height())
     }
 
-    // Returns the total balance for an address.
     pub fn balance_of(&self, addr: &str) -> u64 {
-        self.state.balance_of(addr) // Delegate to the state DB.
+        self.state.balance_of(addr)
     }
 
-    // Returns the spendable balance for an address.
-    pub fn spendable_balance_of(&self, addr: &str) -> u64 {
-        self.state.spendable_balance_of(addr) // Delegate to the state DB.
+    // Returns the mature (spendable) balance.
+    pub fn mature_balance_of(&self, addr: &str) -> u64 {
+        self.state.mature_balance_of(addr)
     }
 
-    // Returns the nonce for an address.
+    // Returns the immature (unspendable) balance.
+    pub fn immature_balance_of(&self, addr: &str) -> u64 {
+        self.state.immature_balance_of(addr)
+    }
+
     pub fn nonce_of(&self, addr: &str) -> u64 {
-        self.state.nonce_of(addr) // Delegate to the state DB.
+        self.state.nonce_of(addr)
     }
 
-    // Returns the next nonce for an address, accounting for the mempool.
     pub fn next_nonce_for(&self, addr: &str) -> u64 {
-        let base = self.state.nonce_of(addr); // The base nonce from the state.
-        let mut next = base; // Start with the base nonce.
+        let base = self.state.nonce_of(addr);
+        let mut next = base;
         loop {
-            let has = self
-                .mempool
-                .iter()
-                .any(|tx| tx.from == addr && tx.nonce == next); // Check if the nonce is in the mempool.
+            let has = self.mempool.iter().any(|tx| tx.from == addr && tx.nonce == next);
             if !has {
-                // If it is not in the mempool...
-                return next; // This is the next nonce.
+                return next;
             }
-            next = next.saturating_add(1); // Otherwise, increment and try again.
+            next = next.saturating_add(1);
         }
     }
 
-    // Applies a transaction to the state.
     pub fn apply_transaction(&mut self, tx: &Transaction) -> Result<(), String> {
         if !self.addresses.contains(&tx.from) {
-            self.addresses.push(tx.from.clone()); // Track the sender address.
+            self.addresses.push(tx.from.clone());
         }
         if !self.addresses.contains(&tx.to) {
-            self.addresses.push(tx.to.clone()); // Track the recipient address.
+            self.addresses.push(tx.to.clone());
         }
-        self.state
-            .apply_transaction(&tx.from, &tx.to, tx.amount, tx.fee, tx.nonce) // Delegate to the state DB.
+        self.state.apply_transaction(&tx.from, &tx.to, tx.amount, tx.fee, tx.nonce)
     }
 
-    // Credits a mining reward to an account.
     pub fn credit_reward(&mut self, miner: &str, reward: u64, block_height: u64) -> Result<(), String> {
         if !self.addresses.contains(&miner.to_string()) {
-            self.addresses.push(miner.to_string()); // Track the miner address.
+            self.addresses.push(miner.to_string());
         }
-        self.state.credit_reward(miner, reward, block_height) // Delegate to the state DB.
+        self.state.credit_reward(miner, reward, block_height)
     }
 
-    // Returns the total work of the current chain.
     pub fn total_chainwork(&self) -> u128 {
-        self.chain.last().map(|b| b.chainwork).unwrap_or(0) // The chainwork of the last block.
+        self.chain.last().map(|b| b.chainwork).unwrap_or(0)
     }
 
-    // Returns the size of a transaction in bytes.
     pub fn tx_size_bytes(tx: &Transaction) -> usize {
-        let base = 32 + tx.from.len() + tx.to.len() + 8 + 8 + 8 + tx.public_key.len() + tx.signature.len(); // Compute the base size.
-        base + tx.note.len() // Add the note size.
+        let base = 32 + tx.from.len() + tx.to.len() + 8 + 8 + 8 + tx.public_key.len() + tx.signature.len();
+        base + tx.note.len()
     }
 
-    // Returns the total size of the mempool in bytes.
     pub fn mempool_size_bytes(&self) -> usize {
-        self.mempool.iter().map(|tx| Self::tx_size_bytes(tx)).sum() // Sum the sizes.
+        self.mempool.iter().map(|tx| Self::tx_size_bytes(tx)).sum()
     }
 
-    // Returns the fee rate of a transaction (fee per byte).
     pub fn fee_rate(tx: &Transaction) -> u64 {
-        let size = Self::tx_size_bytes(tx).max(1) as u64; // Get the size (at least 1).
-        tx.fee / size // Compute the fee rate.
+        let size = Self::tx_size_bytes(tx).max(1) as u64;
+        tx.fee / size
     }
 
-    // Evicts the lowest-fee transactions from the mempool to make room.
     fn evict_lowest_fee_transactions(&mut self, needed_space: usize) {
         self.mempool.sort_by(|a, b| {
-            // Sort the mempool by fee rate.
-            let fee_a = Self::fee_rate(a); // Fee rate of A.
-            let fee_b = Self::fee_rate(b); // Fee rate of B.
-            fee_a.cmp(&fee_b) // Compare.
+            let fee_a = Self::fee_rate(a);
+            let fee_b = Self::fee_rate(b);
+            fee_a.cmp(&fee_b)
         });
 
-        let mut freed = 0; // Space freed so far.
-        let mut to_remove = Vec::new(); // Indices to remove.
+        let mut freed = 0;
+        let mut to_remove = Vec::new();
 
         for (i, tx) in self.mempool.iter().enumerate() {
-            // Iterate over the mempool.
             if freed >= needed_space {
-                break; // Stop if we have freed enough.
+                break;
             }
-            freed += Self::tx_size_bytes(tx); // Add the size of this tx.
-            to_remove.push(i); // Mark it for removal.
+            freed += Self::tx_size_bytes(tx);
+            to_remove.push(i);
         }
 
         for i in to_remove.into_iter().rev() {
-            // Remove in reverse order to avoid index shifts.
-            let removed = self.mempool.remove(i); // Remove the tx.
-            self.mempool_timestamps.remove(&removed.txid); // Remove its timestamp.
-            println!("[mempool] Evicted tx {} (fee rate {}) to make room", removed.txid, Self::fee_rate(&removed)); // Log the eviction.
+            let removed = self.mempool.remove(i);
+            self.mempool_timestamps.remove(&removed.txid);
+            println!("[mempool] Evicted tx {} (fee rate {}) to make room", removed.txid, Self::fee_rate(&removed));
         }
     }
 
-    // Evicts expired transactions from the mempool.
     pub fn evict_expired_transactions(&mut self) {
-        let now = (crate::utils::now_millis() / 1000) as u64; // Current time in seconds.
-        let mut to_remove = Vec::new(); // Txids to remove.
+        let now = (crate::utils::now_millis() / 1000) as u64;
+        let mut to_remove = Vec::new();
 
         for tx in &self.mempool {
-            // Iterate over the mempool.
             if let Some(&ts) = self.mempool_timestamps.get(&tx.txid) {
-                // If the tx has a timestamp...
                 if now.saturating_sub(ts) > MEMPOOL_EXPIRY_SECS {
-                    // And it has expired...
-                    to_remove.push(tx.txid.clone()); // Mark it for removal.
+                    to_remove.push(tx.txid.clone());
                 }
             }
         }
 
         for txid in to_remove {
-            // Remove the expired txs.
-            self.mempool.retain(|tx| tx.txid != txid); // Remove from the mempool.
-            self.mempool_timestamps.remove(&txid); // Remove its timestamp.
-            println!("[mempool] Evicted expired tx {}", txid); // Log the eviction.
+            self.mempool.retain(|tx| tx.txid != txid);
+            self.mempool_timestamps.remove(&txid);
+            println!("[mempool] Evicted expired tx {}", txid);
         }
     }
 
-    // Adds a transaction to the mempool.
     pub fn add_transaction(&mut self, tx: Transaction) -> bool {
         if self.mempool.iter().any(|t| t.txid == tx.txid) {
-            // If the tx is already in the mempool...
-            return false; // Reject it.
+            return false;
         }
 
-        let rbf_pos = self.mempool.iter().position(|t| t.from == tx.from && t.nonce == tx.nonce); // Find a tx with the same sender and nonce (RBF).
+        let rbf_pos = self.mempool.iter().position(|t| t.from == tx.from && t.nonce == tx.nonce);
 
         if let Some(pos) = rbf_pos {
-            // If an RBF candidate exists...
-            let old_tx = &self.mempool[pos]; // The old tx.
-            let old_fee_rate = Self::fee_rate(old_tx); // Its fee rate.
-            let new_fee_rate = Self::fee_rate(&tx); // The new tx's fee rate.
+            let old_tx = &self.mempool[pos];
+            let old_fee_rate = Self::fee_rate(old_tx);
+            let new_fee_rate = Self::fee_rate(&tx);
 
-            let min_new_fee_rate = old_fee_rate + (old_fee_rate * RBF_MIN_FEE_BUMP_PERCENT / 100).max(1); // Compute the minimum fee bump.
+            let min_new_fee_rate = old_fee_rate + (old_fee_rate * RBF_MIN_FEE_BUMP_PERCENT / 100).max(1);
 
             if new_fee_rate >= min_new_fee_rate {
-                // If the new fee rate is sufficient...
                 println!(
                     "[mempool] RBF: Replacing tx {} (fee rate {}) with {} (fee rate {})",
-                    old_tx.txid, old_fee_rate, tx.txid, new_fee_rate // Log the replacement.
+                    old_tx.txid, old_fee_rate, tx.txid, new_fee_rate
                 );
-                self.mempool_timestamps.remove(&old_tx.txid); // Remove the old timestamp.
-                self.mempool.remove(pos); // Remove the old tx.
+                self.mempool_timestamps.remove(&old_tx.txid);
+                self.mempool.remove(pos);
             } else {
-                // If the new fee rate is insufficient...
                 println!(
                     "[mempool] Rejected RBF attempt: new fee rate {} < required {}",
-                    new_fee_rate, min_new_fee_rate // Log the rejection.
+                    new_fee_rate, min_new_fee_rate
                 );
-                return false; // Reject the new tx.
+                return false;
             }
         }
 
         if validation::validate_transaction(self, &tx).is_err() {
-            // If the tx is invalid...
-            println!("[mempool] Rejected tx {}: validation failed", tx.txid); // Log the rejection.
-            return false; // Reject it.
+            println!("[mempool] Rejected tx {}: validation failed", tx.txid);
+            return false;
         }
 
-        let tx_size = Self::tx_size_bytes(&tx); // The tx size.
-        let fee_rate = Self::fee_rate(&tx); // The tx fee rate.
+        let tx_size = Self::tx_size_bytes(&tx);
+        let fee_rate = Self::fee_rate(&tx);
 
         if fee_rate < MIN_RELAY_FEE_PER_BYTE {
-            // If the fee rate is below the minimum...
-            println!("[mempool] Rejected tx {}: fee rate {} < minRelayTxFee {}", tx.txid, fee_rate, MIN_RELAY_FEE_PER_BYTE); // Log the rejection.
-            return false; // Reject it.
+            println!("[mempool] Rejected tx {}: fee rate {} < minRelayTxFee {}", tx.txid, fee_rate, MIN_RELAY_FEE_PER_BYTE);
+            return false;
         }
 
         if self.mempool_size_bytes() + tx_size > MAX_MEMPOOL_SIZE_BYTES {
-            // If the mempool is full...
-            self.evict_lowest_fee_transactions(tx_size); // Evict low-fee txs.
+            self.evict_lowest_fee_transactions(tx_size);
         }
 
         if self.mempool_size_bytes() + tx_size > MAX_MEMPOOL_SIZE_BYTES {
-            // If it is still full...
-            return false; // Reject the tx.
+            return false;
         }
 
         if self.mempool.len() >= rules::MAX_TX_PER_BLOCK {
-            // If the mempool has too many txs...
-            return false; // Reject the tx.
+            return false;
         }
 
-        let now = (crate::utils::now_millis() / 1000) as u64; // Current time.
-        self.mempool_timestamps.insert(tx.txid.clone(), now); // Store the timestamp.
-        self.mempool.push(tx); // Add the tx to the mempool.
-        true // Accept the tx.
+        let now = (crate::utils::now_millis() / 1000) as u64;
+        self.mempool_timestamps.insert(tx.txid.clone(), now);
+        self.mempool.push(tx);
+        true
     }
 
-    // Mines all pending transactions in the mempool.
     pub fn mine_pending(&mut self) -> Result<u64, String> {
-        let prev = self.chain.last().unwrap().clone(); // The previous block.
-        let next_index = prev.index + 1; // The next block index.
-        let subsidy = Self::calculate_reward(next_index); // The block subsidy.
-        let total_fees: u64 = self.mempool.iter().map(|tx| tx.fee).sum(); // The total fees.
-        let reward = subsidy.saturating_add(total_fees); // The total reward.
+        let prev = self.chain.last().unwrap().clone();
+        let next_index = prev.index + 1;
+        let subsidy = Self::calculate_reward(next_index);
+        let total_fees: u64 = self.mempool.iter().map(|tx| tx.fee).sum();
+        let reward = subsidy.saturating_add(total_fees);
 
         if self.circulating_supply().saturating_add(reward) > spec::MAX_SUPPLY {
-            // If the max supply would be exceeded...
-            return Err("max supply reached".into()); // Return an error.
+            return Err("max supply reached".into());
         }
 
-        let txs = std::mem::take(&mut self.mempool); // Take the mempool txs.
-        self.mempool_timestamps.clear(); // Clear the timestamps.
+        let txs = std::mem::take(&mut self.mempool);
+        self.mempool_timestamps.clear();
 
         for tx in &txs {
-            // Apply all txs to the state.
-            self.apply_transaction(tx)?; // Error out on failure.
+            self.apply_transaction(tx)?;
         }
-        self.credit_reward(&prev.mined_for, reward, next_index)?; // Credit the reward.
+        self.credit_reward(&prev.mined_for, reward, next_index)?;
 
-        let state_root = hex::encode(self.state.root_hash().map_err(|e| e.to_string())?); // Compute the state root.
+        let state_root = hex::encode(self.state.root_hash().map_err(|e| e.to_string())?);
 
         let mut new_block = Block::new_for(
-            next_index, // The new index.
-            prev.hash.clone(), // The previous hash.
-            subsidy, // The subsidy.
-            total_fees, // The total fees.
-            self.nbits, // The current nbits.
-            txs.clone(), // The transactions.
-            String::new(), // The mined_for address (empty for now).
-            state_root, // The state root.
-            prev.chainwork, // The previous chainwork.
+            next_index,
+            prev.hash.clone(),
+            subsidy,
+            total_fees,
+            self.nbits,
+            txs.clone(),
+            String::new(),
+            state_root,
+            prev.chainwork,
         );
         if !pow::mine(&mut new_block, self.nbits) {
-            // Mine the block.
-            return Err("mining failed: nonce exhausted".into()); // Return an error on failure.
+            return Err("mining failed: nonce exhausted".into());
         }
 
-        let nonce = new_block.nonce; // The block nonce.
-        self.chain.push(new_block); // Add the block to the chain.
-        self.adjust_difficulty(); // Adjust the difficulty.
-        Ok(nonce) // Return the nonce.
+        let nonce = new_block.nonce;
+        self.chain.push(new_block);
+        self.adjust_difficulty();
+        Ok(nonce)
     }
 
-    // Adjusts the difficulty based on the last interval.
     pub fn adjust_difficulty(&mut self) {
         if spec::current_network() == spec::Network::Regtest {
-            // Regtest does not adjust difficulty.
             return;
         }
 
-        let height = self.height(); // The current height.
+        let height = self.height();
         if height == 0 || !height.is_multiple_of(spec::DIFFICULTY_ADJUST_INTERVAL) {
-            // If we are not at an adjustment interval...
-            return; // Do nothing.
+            return;
         }
 
-        let interval = spec::DIFFICULTY_ADJUST_INTERVAL as usize; // The adjustment interval.
-        let last = &self.chain[height as usize]; // The last block.
-        let first = &self.chain[height as usize - interval]; // The first block in the interval.
+        let interval = spec::DIFFICULTY_ADJUST_INTERVAL as usize;
+        let last = &self.chain[height as usize];
+        let first = &self.chain[height as usize - interval];
 
-        let actual_time_ms = last.timestamp.saturating_sub(first.timestamp) as u64; // The actual time taken.
-        let actual_time_secs = actual_time_ms / 1000; // Convert to seconds.
-        let expected_time_secs = spec::POW_TARGET_TIMESPAN_SECS; // The expected time.
+        let actual_time_ms = last.timestamp.saturating_sub(first.timestamp) as u64;
+        let actual_time_secs = actual_time_ms / 1000;
+        let expected_time_secs = spec::POW_TARGET_TIMESPAN_SECS;
 
         if actual_time_secs == 0 {
-            // If no time has passed...
-            return; // Do nothing.
+            return;
         }
 
-        let current_target = pow::nbits_to_target(self.nbits); // The current target.
-        let scale = (actual_time_secs as u128) * 256 / (expected_time_secs as u128); // The scale factor.
-        let new_target = scale_target(&current_target, scale); // Scale the target.
-        let new_nbits = target_to_nbits(&new_target); // Convert back to nbits.
+        let current_target = pow::nbits_to_target(self.nbits);
+        let scale = (actual_time_secs as u128) * 256 / (expected_time_secs as u128);
+        let new_target = scale_target(&current_target, scale);
+        let new_nbits = target_to_nbits(&new_target);
 
         if new_nbits != self.nbits {
-            // If the nbits has changed...
-            self.nbits = new_nbits; // Update the nbits.
+            self.nbits = new_nbits;
         }
     }
 
-    // Validates the entire chain.
     pub fn is_valid(&self) -> bool {
-        validation::validate_chain(self).is_ok() // Delegate to the validation module.
+        validation::validate_chain(self).is_ok()
     }
 }
 
 impl Default for Blockchain {
-    // Default implementation for Blockchain.
     fn default() -> Self {
-        Self::new() // Create a new Blockchain.
+        Self::new()
     }
 }
 
-// Scales a 256-bit target by a 256-based factor.
 fn scale_target(target: &[u8; 32], scale_256: u128) -> [u8; 32] {
-    let mut result = [0u8; 32]; // The result array.
-    let mut carry: u128 = 0; // The carry value.
+    let mut result = [0u8; 32];
+    let mut carry: u128 = 0;
 
     for i in (0..32).rev() {
-        // Iterate from the least significant byte.
-        let v = (target[i] as u128) * scale_256 + carry; // Multiply and add carry.
-        result[i] = (v & 0xff) as u8; // Store the low byte.
-        carry = v >> 8; // Store the carry.
+        let v = (target[i] as u128) * scale_256 + carry;
+        result[i] = (v & 0xff) as u8;
+        carry = v >> 8;
     }
-    result // Return the result.
+    result
 }
 
-// Converts a 256-bit target to nBits.
 fn target_to_nbits(target: &[u8; 32]) -> u32 {
-    let mut i = 0; // The index of the first non-zero byte.
+    let mut i = 0;
     while i < 32 && target[i] == 0 {
-        i += 1; // Skip leading zeros.
+        i += 1;
     }
     if i == 32 {
-        // If the target is zero...
-        return spec::current_network().genesis_nbits(); // Return the genesis nbits.
+        return spec::current_network().genesis_nbits();
     }
 
-    let size = 32 - i; // The size of the target.
-    let mut mantissa: u32 = (target[i] as u32) << 16; // The mantissa (3 bytes).
+    let size = 32 - i;
+    let mut mantissa: u32 = (target[i] as u32) << 16;
     if i + 1 < 32 {
-        mantissa |= (target[i + 1] as u32) << 8; // Add the second byte.
+        mantissa |= (target[i + 1] as u32) << 8;
     }
     if i + 2 < 32 {
-        mantissa |= target[i + 2] as u32; // Add the third byte.
+        mantissa |= target[i + 2] as u32;
     }
 
     if mantissa & 0x00800000 == 0 {
-        // If the sign bit is not set...
-        mantissa <<= 8; // Shift the mantissa.
-        return (((size - 1) as u32) << 24) | (mantissa & 0x00ffffff); // Return the nbits.
+        mantissa <<= 8;
+        return (((size - 1) as u32) << 24) | (mantissa & 0x00ffffff);
     }
 
-    ((size as u32) << 24) | (mantissa & 0x00ffffff) // Return the nbits.
+    ((size as u32) << 24) | (mantissa & 0x00ffffff)
 }
