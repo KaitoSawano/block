@@ -647,15 +647,18 @@ impl RpcHandler {
                 return RpcResponse::err("invalid address format");
             }
             let balance = chain.balance_of(addr);
-            let spendable = chain.spendable_balance_of(addr);
+            let mature = chain.mature_balance_of(addr);
+            let immature = chain.immature_balance_of(addr);
             let nonce = chain.nonce_of(addr);
             drop(chain);
             return RpcResponse::ok(json!({
                 "address": addr,
                 "balance": to_coin(balance),
                 "balance_satoshi": balance,
-                "spendable_balance": to_coin(spendable),
-                "spendable_balance_satoshi": spendable,
+                "mature_balance": to_coin(mature),
+                "mature_balance_satoshi": mature,
+                "immature_balance": to_coin(immature),
+                "immature_balance_satoshi": immature,
                 "nonce": nonce,
             }));
         }
@@ -1267,7 +1270,7 @@ impl RpcHandler {
                 if entry.address == to {
                     continue;
                 }
-                let bal = chain.spendable_balance_of(&entry.address);
+                let bal = chain.mature_balance_of(&entry.address);
                 match &best {
                     Some((_, b)) if *b >= bal => {}
                     _ => best = Some((entry.address.clone(), bal)),
@@ -1310,11 +1313,11 @@ impl RpcHandler {
 
         let amount_sat = if is_sendall {
             let chain = self.state.chain.blocking_read();
-            let bal = chain.spendable_balance_of(&entry.address);
+            let bal = chain.mature_balance_of(&entry.address);
             drop(chain);
             if bal <= fee {
                 return RpcResponse::err(&format!(
-                    "spendable balance {} sat is too small to cover the fee of {} sat",
+                    "mature balance {} sat is too small to cover the fee of {} sat",
                     bal, fee
                 ));
             }
@@ -1360,24 +1363,24 @@ impl RpcHandler {
         };
         {
             let chain = self.state.chain.blocking_read();
-            let bal = chain.spendable_balance_of(&entry.address);
+            let bal = chain.mature_balance_of(&entry.address);
             drop(chain);
             if bal < need {
                 let chain = self.state.chain.blocking_read();
                 let total: u64 = wallet
                     .entries
                     .iter()
-                    .map(|e| chain.spendable_balance_of(&e.address))
+                    .map(|e| chain.mature_balance_of(&e.address))
                     .sum();
                 drop(chain);
                 if total < need {
                     return RpcResponse::err(&format!(
-                        "insufficient spendable wallet balance: required {} sat (amount {} + fee {}), available {} sat",
+                        "insufficient mature wallet balance: required {} sat (amount {} + fee {}), available {} sat",
                         need, amount_sat, fee, total
                     ));
                 }
                 return RpcResponse::err(&format!(
-                    "selected address {} has insufficient spendable balance: required {} sat, available {} sat; use a different source address",
+                    "selected address {} has insufficient mature balance: required {} sat, available {} sat; use a different source address",
                     entry.address, need, bal
                 ));
             }
@@ -1599,7 +1602,8 @@ fn m_getlistwallet(chain_arc: Arc<RwLock<Blockchain>>) -> RpcResponse {
 
     for entry in &w.entries {
         let balance = chain.balance_of(&entry.address);
-        let spendable = chain.spendable_balance_of(&entry.address);
+        let mature = chain.mature_balance_of(&entry.address);
+        let immature = chain.immature_balance_of(&entry.address);
         total_balance = total_balance.saturating_add(balance);
 
         addresses.push(json!({
@@ -1609,8 +1613,10 @@ fn m_getlistwallet(chain_arc: Arc<RwLock<Blockchain>>) -> RpcResponse {
             "created_at": entry.created_at,
             "balance": to_coin(balance),
             "balance_satoshi": balance,
-            "spendable_balance": to_coin(spendable),
-            "spendable_balance_satoshi": spendable,
+            "mature_balance": to_coin(mature),
+            "mature_balance_satoshi": mature,
+            "immature_balance": to_coin(immature),
+            "immature_balance_satoshi": immature,
             "nonce": chain.nonce_of(&entry.address),
         }));
     }
@@ -1822,7 +1828,6 @@ fn m_getaddtoaddress(req: &RpcRequest) -> RpcResponse {
         Some(a) => a.to_string(),
         None => return RpcResponse::err("getaddtoaddress requires an address"),
     };
-    // Validate against the active network.
     let chain = Blockchain::new();
     if !validation::is_valid_address(&addr, &chain) {
         return RpcResponse::err("invalid address format");
