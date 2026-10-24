@@ -31,7 +31,7 @@ pub const GENESIS_TIMESTAMP: u128 = 1792303198445;
 
 // The expected mainnet genesis hash.
 pub const EXPECTED_GENESIS_HASH: &str =
-    "00000ea2d2209b4386d910937e832ad5f9bfd9beb0f973bf5add0fe1fd8eee29";
+    "00000c656c2e593a9be0a31c3dd39fb9077cf3b6cc0df1d714c436f750fb3bf1";
 
 // The expected mainnet genesis merkle root.
 pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =
@@ -41,7 +41,7 @@ pub const EXPECTED_GENESIS_MERKLE_ROOT: &str =
 pub const EXPECTED_GENESIS_TIMESTAMP: u128 = 1792303198445;
 
 // The expected mainnet genesis nonce.
-pub const EXPECTED_GENESIS_NONCE: u64 = 2543905;
+pub const EXPECTED_GENESIS_NONCE: u64 = 2878713;
 
 // ----------------------------------------------------------------------
 // Testnet genesis
